@@ -63,7 +63,7 @@ upload(
 
 ## Contributing
 
-PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
+PRs accepted at https://github.com/tauri-apps/plugins-workspace. Please make sure to read the Contributing Guide before making a pull request.
 
 ## License
 
