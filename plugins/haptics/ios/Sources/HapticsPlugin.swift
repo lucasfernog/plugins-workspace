@@ -99,31 +99,40 @@ class HapticsPlugin: Plugin {
     invoke.resolve()
   }
 
+  // Commands run on Tauri's IPC queue, but UIKit feedback generators must only be used from the
+  // main thread.
+
   @objc public func impactFeedback(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(ImpactFeedbackOptions.self)
-    let generator = UIImpactFeedbackGenerator(style: args.style.into())
-    generator.prepare()
-    generator.impactOccurred()
+    DispatchQueue.main.async {
+      let generator = UIImpactFeedbackGenerator(style: args.style.into())
+      generator.prepare()
+      generator.impactOccurred()
 
-    invoke.resolve()
+      invoke.resolve()
+    }
   }
 
   @objc public func notificationFeedback(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(NotificationFeedbackOptions.self)
-    let generator = UINotificationFeedbackGenerator()
-    generator.prepare()
-    generator.notificationOccurred(args.type.into())
+    DispatchQueue.main.async {
+      let generator = UINotificationFeedbackGenerator()
+      generator.prepare()
+      generator.notificationOccurred(args.type.into())
 
-    invoke.resolve()
+      invoke.resolve()
+    }
   }
 
   // TODO: Consider breaking this up into Start,Change,End like capacitor
   @objc public func selectionFeedback(_ invoke: Invoke) throws {
-    let generator = UISelectionFeedbackGenerator()
-    generator.prepare()
-    generator.selectionChanged()
+    DispatchQueue.main.async {
+      let generator = UISelectionFeedbackGenerator()
+      generator.prepare()
+      generator.selectionChanged()
 
-    invoke.resolve()
+      invoke.resolve()
+    }
   }
 }
 
