@@ -64,7 +64,8 @@ pub fn pick_file<R: Runtime, F: FnOnce(Option<FilePath>) + Send + 'static>(
             .0
             .run_mobile_plugin::<FilePickerResponse>("showFilePicker", dialog.payload(false));
         if let Ok(response) = res {
-            f(Some(response.files.into_iter().next().unwrap()))
+            // the native side can resolve with an empty list
+            f(response.files.into_iter().next())
         } else {
             f(None)
         }
