@@ -65,11 +65,28 @@ Afterwards all the plugin's APIs are available through the JavaScript guest bind
 
 ```javascript
 import { exit, relaunch } from '@tauri-apps/plugin-process'
-// exit the app with the given status code
+
+// exit the app with the given status code (defaults to 0)
 await exit(0)
-// restart the app
+
+// or restart the app
 await relaunch()
 ```
+
+Both go through `RunEvent::ExitRequested`, so the app can still prevent them with `api.prevent_exit()`.
+
+From Rust you don't need this plugin: call `AppHandle::exit` and `AppHandle::request_restart` directly. The plugin only exposes them to JavaScript.
+
+### Permissions
+
+The `process:default` permission set allows both commands. Note that `relaunch()` calls the `restart` command, so its permission is `process:allow-restart`:
+
+| JavaScript   | Permission              |
+| ------------ | ----------------------- |
+| `exit()`     | `process:allow-exit`    |
+| `relaunch()` | `process:allow-restart` |
+
+Any window or remote origin you grant these permissions can terminate or restart your app.
 
 ## Contributing
 
