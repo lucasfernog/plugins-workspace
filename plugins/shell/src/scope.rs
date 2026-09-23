@@ -57,6 +57,16 @@ impl From<Vec<String>> for ExecuteArgs {
     }
 }
 
+/// Whether two environment variable names refer to the same variable
+/// (they are case-insensitive on Windows).
+fn env_key_eq(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
 /// A configured scoped shell command.
 #[derive(Debug, Clone)]
 pub struct ScopeAllowedCommand {
@@ -71,6 +81,12 @@ pub struct ScopeAllowedCommand {
 
     /// If this command is a sidecar command.
     pub sidecar: bool,
+
+    /// The environment variables the webview may set, `None` meaning any.
+    pub env: Option<Vec<String>>,
+
+    /// Whether the webview may set the working directory.
+    pub cwd: bool,
 }
 
 impl ScopeObject for ScopeAllowedCommand {
@@ -110,11 +126,19 @@ impl ScopeObject for ScopeAllowedCommand {
             scope.command.clone()
         };
 
+        let env = match scope.env {
+            crate::scope_entry::ShellAllowedEnv::Flag(true) => None,
+            crate::scope_entry::ShellAllowedEnv::Flag(false) => Some(Vec::new()),
+            crate::scope_entry::ShellAllowedEnv::List(list) => Some(list),
+        };
+
         Ok(Self {
             name: scope.name,
             command,
             args,
             sidecar: scope.sidecar,
+            env,
+            cwd: scope.cwd,
         })
     }
 }
@@ -200,6 +224,19 @@ pub enum Error {
     #[error("Scoped command {0} received arguments in an unexpected format")]
     InvalidInput(String),
 
+    /// The webview set an environment variable the scoped command does not allow.
+    #[error("Scoped command {command} does not allow setting the environment variable {variable}")]
+    EnvNotAllowed {
+        /// Name of the command.
+        command: String,
+        /// Name of the environment variable.
+        variable: String,
+    },
+
+    /// The webview set the working directory, which the scoped command does not allow.
+    #[error("Scoped command {0} does not allow setting the working directory")]
+    CwdNotAllowed(String),
+
     /// A generic IO error that occurs while executing specified shell commands.
     #[error("Scoped shell IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -252,6 +289,37 @@ impl ShellScope<'_> {
     /// Validates argument inputs and creates a Tauri [`Command`].
     pub fn prepare(&self, command_name: &str, args: ExecuteArgs) -> Result<Command, Error> {
         self._prepare(command_name, args, None)
+    }
+
+    /// Validates the environment variables and working directory the webview wants to set
+    /// against the scope entry of the command.
+    pub fn validate_options<'k>(
+        &self,
+        command_name: &str,
+        mut env_keys: impl Iterator<Item = &'k str>,
+        sets_cwd: bool,
+    ) -> Result<(), Error> {
+        let command = match self.scopes.iter().find(|s| s.name == command_name) {
+            Some(command) => command,
+            None => return Err(Error::NotFound(command_name.into())),
+        };
+
+        if sets_cwd && !command.cwd {
+            return Err(Error::CwdNotAllowed(command_name.into()));
+        }
+
+        if let Some(allowed) = &command.env {
+            if let Some(variable) =
+                env_keys.find(|key| !allowed.iter().any(|allowed| env_key_eq(allowed, key)))
+            {
+                return Err(Error::EnvNotAllowed {
+                    command: command_name.into(),
+                    variable: variable.into(),
+                });
+            }
+        }
+
+        Ok(())
     }
 
     /// Validates argument inputs and creates a Tauri [`Command`].
@@ -348,7 +416,40 @@ mod tests {
             command: cmd.into(),
             args,
             sidecar: false,
+            env: None,
+            cwd: true,
         })
+    }
+
+    #[test]
+    fn env_and_cwd_can_be_restricted() {
+        let any = entry("any", "echo", None);
+        let mut restricted = ScopeAllowedCommand::clone(&entry("restricted", "echo", None));
+        restricted.env = Some(vec!["ALLOWED".into()]);
+        restricted.cwd = false;
+        let restricted = Arc::new(restricted);
+        let scope = ShellScope {
+            scopes: vec![&any, &restricted],
+            denied: vec![],
+        };
+
+        assert!(scope
+            .validate_options("any", ["PATH", "LD_PRELOAD"].into_iter(), true)
+            .is_ok());
+        assert!(scope
+            .validate_options("restricted", ["ALLOWED"].into_iter(), false)
+            .is_ok());
+        assert!(scope
+            .validate_options("restricted", std::iter::empty(), false)
+            .is_ok());
+        assert!(matches!(
+            scope.validate_options("restricted", ["ALLOWED", "PATH"].into_iter(), false),
+            Err(Error::EnvNotAllowed { variable, .. }) if variable == "PATH"
+        ));
+        assert!(matches!(
+            scope.validate_options("restricted", std::iter::empty(), true),
+            Err(Error::CwdNotAllowed(_))
+        ));
     }
 
     #[test]

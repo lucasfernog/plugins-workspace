@@ -63,6 +63,33 @@ impl Default for ShellScopeEntryAllowedArgs {
     }
 }
 
+/// The environment variables the webview API may set for a command.
+///
+/// A value of `true` (the default) allows the webview to set any environment variable. `false`
+/// allows none, and a list of variable names only allows those. Clearing the environment with
+/// `env: null` is always allowed.
+#[derive(Debug, PartialEq, Eq, Clone, Hash, JsonSchema)]
+#[serde(untagged, deny_unknown_fields)]
+#[non_exhaustive]
+pub enum ShellScopeEntryAllowedEnv {
+    /// Allow (`true`) or disallow (`false`) setting any environment variable.
+    Flag(bool),
+
+    /// The names of the environment variables the webview may set.
+    List(Vec<String>),
+}
+
+impl Default for ShellScopeEntryAllowedEnv {
+    fn default() -> Self {
+        Self::Flag(true)
+    }
+}
+
+#[allow(dead_code)]
+fn default_true() -> bool {
+    true
+}
+
 /// Shell scope entry.
 #[derive(JsonSchema)]
 #[serde(untagged, deny_unknown_fields)]
@@ -86,6 +113,19 @@ pub(crate) enum ShellScopeEntry {
         /// The allowed arguments for the command execution.
         #[serde(default)]
         args: ShellScopeEntryAllowedArgs,
+        /// The environment variables the webview may set when calling this command
+        /// (the `env` option of the webview API).
+        ///
+        /// `true` (the default) allows any variable, `false` allows none and a list only allows
+        /// the variables it names. Variables such as `PATH`, `LD_PRELOAD` or
+        /// `DYLD_INSERT_LIBRARIES` change which program runs or what code it loads,
+        /// so restrict this for commands that untrusted content can call.
+        #[serde(default)]
+        env: ShellScopeEntryAllowedEnv,
+        /// Whether the webview may set the working directory of this command
+        /// (the `cwd` option of the webview API). Defaults to `true`.
+        #[serde(default = "default_true")]
+        cwd: bool,
     },
     Sidecar {
         /// The name for this allowed shell command configuration.
@@ -98,6 +138,19 @@ pub(crate) enum ShellScopeEntry {
         args: ShellScopeEntryAllowedArgs,
         /// If this command is a sidecar command.
         sidecar: bool,
+        /// The environment variables the webview may set when calling this command
+        /// (the `env` option of the webview API).
+        ///
+        /// `true` (the default) allows any variable, `false` allows none and a list only allows
+        /// the variables it names. Variables such as `PATH`, `LD_PRELOAD` or
+        /// `DYLD_INSERT_LIBRARIES` change which program runs or what code it loads,
+        /// so restrict this for commands that untrusted content can call.
+        #[serde(default)]
+        env: ShellScopeEntryAllowedEnv,
+        /// Whether the webview may set the working directory of this command
+        /// (the `cwd` option of the webview API). Defaults to `true`.
+        #[serde(default = "default_true")]
+        cwd: bool,
     },
 }
 
@@ -111,11 +164,15 @@ fn _f() {
         name: String::new(),
         args: ShellScopeEntryAllowedArgs::Flag(false),
         sidecar: true,
+        env: ShellScopeEntryAllowedEnv::Flag(true),
+        cwd: true,
     }) {
         ShellScopeEntry::Command {
             name,
             command,
             args,
+            env,
+            cwd,
         } => scope_entry::EntryRaw {
             name,
             command: Some(command),
@@ -135,11 +192,18 @@ fn _f() {
                 ),
             },
             sidecar: false,
+            env: match env {
+                ShellScopeEntryAllowedEnv::Flag(flag) => scope_entry::ShellAllowedEnv::Flag(flag),
+                ShellScopeEntryAllowedEnv::List(list) => scope_entry::ShellAllowedEnv::List(list),
+            },
+            cwd,
         },
         ShellScopeEntry::Sidecar {
             name,
             args,
             sidecar,
+            env,
+            cwd,
         } => scope_entry::EntryRaw {
             name,
             command: None,
@@ -159,6 +223,11 @@ fn _f() {
                 ),
             },
             sidecar,
+            env: match env {
+                ShellScopeEntryAllowedEnv::Flag(flag) => scope_entry::ShellAllowedEnv::Flag(flag),
+                ShellScopeEntryAllowedEnv::List(list) => scope_entry::ShellAllowedEnv::List(list),
+            },
+            cwd,
         },
     };
 }

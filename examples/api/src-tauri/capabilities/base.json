@@ -77,6 +77,30 @@
         {
           "name": "e2e-denied",
           "cmd": "e2e-denied"
+        },
+        {
+          "name": "sh-restricted",
+          "cmd": "sh",
+          "args": [
+            "-c",
+            {
+              "validator": ".+"
+            }
+          ],
+          "env": ["E2E_ALLOWED"],
+          "cwd": false
+        },
+        {
+          "name": "cmd-restricted",
+          "cmd": "cmd",
+          "args": [
+            "/C",
+            {
+              "validator": ".+"
+            }
+          ],
+          "env": ["E2E_ALLOWED"],
+          "cwd": false
         }
       ],
       "deny": [

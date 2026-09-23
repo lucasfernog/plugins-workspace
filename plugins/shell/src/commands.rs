@@ -117,6 +117,7 @@ fn prepare_cmd<R: Runtime>(
             .collect(),
     };
 
+    let program_name = program.clone();
     let mut command = if options.sidecar {
         let program = PathBuf::from(program);
         let program_as_string = program.display().to_string();
@@ -151,6 +152,14 @@ fn prepare_cmd<R: Runtime>(
             }
         }
     };
+    scope.validate_options(
+        &program_name,
+        options
+            .env
+            .iter()
+            .flat_map(|env| env.keys().map(String::as_str)),
+        options.cwd.is_some(),
+    )?;
     if let Some(cwd) = options.cwd {
         command = command.current_dir(cwd);
     }

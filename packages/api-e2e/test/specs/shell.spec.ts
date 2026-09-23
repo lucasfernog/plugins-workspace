@@ -16,6 +16,13 @@ const shell =
     ? { program: 'cmd', flag: '/C' }
     : { program: 'sh', flag: '-c' }
 
+// Scope entries that only allow setting `E2E_ALLOWED` and no working directory.
+const restricted = {
+  program: platform === 'win32' ? 'cmd-restricted' : 'sh-restricted',
+  flag: shell.flag,
+  script: platform === 'win32' ? 'echo %E2E_ALLOWED%' : 'echo "$E2E_ALLOWED"'
+}
+
 // Running a child process works on desktop and on Android (`/system/bin/sh`),
 // but iOS does not let an app spawn one at all. The scope specs below stay on
 // every platform: `prepare_cmd` rejects before anything is executed.
@@ -209,6 +216,49 @@ describePlugin('shell', () => {
       expect(result.code).toBeNull()
       expect(result.signal).toBe(9)
     }
+  })
+
+  itSpawns('a scope can allow some environment variables', async () => {
+    const stdout = await tauri(
+      async (api, program, flag, script) =>
+        (
+          await api.shell.Command.create(program, [flag, script], {
+            env: { E2E_ALLOWED: 'allowed' }
+          }).execute()
+        ).stdout.trim(),
+      restricted.program,
+      restricted.flag,
+      restricted.script
+    )
+    expect(stdout).toBe('allowed')
+  })
+
+  it('rejects environment variables the scope does not allow', async () => {
+    const message = await tauriError(
+      (api, program, flag, script) =>
+        api.shell.Command.create(program, [flag, script], {
+          env: { E2E_ALLOWED: 'allowed', PATH: '/tmp' }
+        }).execute(),
+      restricted.program,
+      restricted.flag,
+      restricted.script
+    )
+    expect(message).toMatch(
+      /does not allow setting the environment variable PATH/
+    )
+  })
+
+  it('rejects a working directory when the scope does not allow it', async () => {
+    const message = await tauriError(
+      (api, program, flag, script) =>
+        api.shell.Command.create(program, [flag, script], {
+          cwd: '/'
+        }).execute(),
+      restricted.program,
+      restricted.flag,
+      restricted.script
+    )
+    expect(message).toMatch(/does not allow setting the working directory/)
   })
 
   it('rejects programs that are not in the scope', async () => {
