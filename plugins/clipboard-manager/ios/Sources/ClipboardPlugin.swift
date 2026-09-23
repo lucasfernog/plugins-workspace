@@ -22,9 +22,6 @@ class ClipboardPlugin: Plugin {
     switch options {
     case .plainText(let text):
       clipboard.string = text
-    default:
-      invoke.unimplemented()
-      return
     }
     invoke.resolve()
 
