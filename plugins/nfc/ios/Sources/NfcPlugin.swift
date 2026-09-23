@@ -240,6 +240,9 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
   }
 
   private func closeSession(_ session: NFCReaderSession, error: String) {
+    // reject the pending call now: the didInvalidateWithError delegate runs after
+    // self.session is cleared, so it cannot reject it anymore
+    self.session?.invoke.reject(error)
     session.invalidate(errorMessage: error)
     self.session = nil
   }
