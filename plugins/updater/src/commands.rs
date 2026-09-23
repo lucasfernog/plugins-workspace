@@ -131,17 +131,22 @@ async fn download_with_events(
     update: &Update,
     on_event: &Channel<DownloadEvent>,
 ) -> Result<Vec<u8>> {
-    let mut first_chunk = true;
+    let started = std::sync::atomic::AtomicBool::new(false);
     update
         .download(
             |chunk_length, content_length| {
-                if first_chunk {
-                    first_chunk = !first_chunk;
+                if !started.swap(true, std::sync::atomic::Ordering::Relaxed) {
                     let _ = on_event.send(DownloadEvent::Started { content_length });
                 }
                 let _ = on_event.send(DownloadEvent::Progress { chunk_length });
             },
             || {
+                // an empty body has no chunk, but must still report the download as started
+                if !started.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    let _ = on_event.send(DownloadEvent::Started {
+                        content_length: Some(0),
+                    });
+                }
                 let _ = on_event.send(DownloadEvent::Finished);
             },
         )
