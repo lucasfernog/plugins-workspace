@@ -17,9 +17,13 @@ import { invoke } from '@tauri-apps/api/core'
  */
 interface ArgMatch {
   /**
-   * string if takes value
-   * boolean if flag
-   * string[] or null if takes multiple values
+   * - `boolean` for a flag (an argument without `takesValue`): whether it was passed.
+   * - `string`, or `null` if it was not passed, for an argument with `takesValue`.
+   * - `string[]`, or `null` if it was not passed, for an argument with `takesValue` and `multiple`.
+   *
+   * `--help` and `--version` are not printed by the plugin, and the app does not exit.
+   * Instead, the matches only contain a `help` entry, whose value is the rendered help text,
+   * or a `version` entry. The app should print it and exit.
    */
   value: string | boolean | string[] | null
   /**
