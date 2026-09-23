@@ -21,7 +21,7 @@ class CameraView: UIView {
     case UIInterfaceOrientation.landscapeRight:
       return AVCaptureVideoOrientation.landscapeRight
     default:
-      return AVCaptureVideoOrientation.portraitUpsideDown
+      return AVCaptureVideoOrientation.portrait
     }
   }
 

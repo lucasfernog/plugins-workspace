@@ -113,7 +113,9 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
       return
     }
 
-    let found = metadataObjects[0] as! AVMetadataMachineReadableCodeObject
+    guard let found = metadataObjects[0] as? AVMetadataMachineReadableCodeObject else {
+      return
+    }
     if scanFormats.contains(found.type) {
       var jsObject: JsonObject = [:]
 
