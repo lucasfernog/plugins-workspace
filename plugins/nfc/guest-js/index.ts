@@ -380,7 +380,14 @@ export function uriRecord(uri: string, id?: string | number[]): NFCRecord {
 
 function mapScanKind(kind: ScanKind): Record<string, unknown> {
   const { type: scanKind, ...kindOptions } = kind
-  return { [scanKind]: kindOptions }
+  const options: Record<string, unknown> = kindOptions
+  if (kind.type === 'ndef' && kind.techLists) {
+    // the native side identifies technologies by name, not by the enum's numeric value
+    options.techLists = kind.techLists.map((techs) =>
+      techs.map((tech) => (typeof tech === 'number' ? TechKind[tech] : tech))
+    )
+  }
+  return { [scanKind]: options }
 }
 
 /**
