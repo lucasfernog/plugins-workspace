@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Display;
 
 /// Arguments of the [`Nfc::scan`](crate::Nfc::scan) API.
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanRequest {
     /// The kind of scan to perform, which defines how tags are matched.
@@ -21,7 +21,7 @@ pub struct ScanRequest {
 /// An NDEF record to be written to a tag.
 ///
 /// Use [`NFCTypeNameFormat`] to describe how [`Self::kind`] must be interpreted.
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NfcRecord {
     /// The Type Name Format (TNF) of the record.
@@ -40,7 +40,9 @@ pub struct NfcRecord {
 /// The Type Name Format (TNF) of an NDEF record, which defines how the record type is interpreted.
 ///
 /// Serialized as its numeric value.
-#[derive(serde_repr::Deserialize_repr, serde_repr::Serialize_repr)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde_repr::Deserialize_repr, serde_repr::Serialize_repr,
+)]
 #[repr(u8)]
 pub enum NFCTypeNameFormat {
     /// The record is empty: type, identifier and payload must be empty.
@@ -63,7 +65,7 @@ pub enum NFCTypeNameFormat {
 }
 
 /// An NDEF record read from a scanned tag.
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct NfcTagRecord {
     /// The Type Name Format (TNF) of the record, which defines how [`Self::kind`] is interpreted.
     pub tnf: NFCTypeNameFormat,
@@ -76,7 +78,7 @@ pub struct NfcTagRecord {
 }
 
 /// An NFC tag that has been scanned.
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct NfcTag {
     /// The tag identifier, as reported by the operating system.
     pub id: String,
@@ -87,7 +89,7 @@ pub struct NfcTag {
 }
 
 /// Response of the [`Nfc::scan`](crate::Nfc::scan) API.
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ScanResponse {
     /// The tag that has been scanned.
     pub tag: NfcTag,
@@ -97,7 +99,7 @@ pub struct ScanResponse {
 ///
 /// Every field is optional and only the ones that are set take part in the filter.
 /// **Android only**: the iOS implementation ignores this filter.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UriFilter {
     /// Only match URIs with this scheme, e.g. `https`.
@@ -111,7 +113,7 @@ pub struct UriFilter {
 /// The NFC technologies a tag can support, mirroring the `android.nfc.tech` classes.
 ///
 /// **Android only**. Serialized as the technology name, e.g. `"IsoDep"`.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TechKind {
     /// ISO-DEP (ISO 14443-4) properties and I/O operations.
     IsoDep,
@@ -166,7 +168,7 @@ impl Serialize for TechKind {
 }
 
 /// The kind of scan to perform, which defines which tags are matched.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ScanKind {
     /// Only match tags that carry an NDEF message.
