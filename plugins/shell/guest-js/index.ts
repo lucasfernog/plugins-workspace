@@ -837,7 +837,7 @@ class Command<O extends IOPayload> extends EventEmitter<CommandEvents> {
    * const output = await Command.create('echo', 'message').execute();
    * assert(output.code === 0);
    * assert(output.signal === null);
-   * assert(output.stdout === 'message');
+   * assert(output.stdout === 'message\n');
    * assert(output.stderr === '');
    * ```
    *
