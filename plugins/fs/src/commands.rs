@@ -463,7 +463,11 @@ pub async fn read_dir<R: Runtime>(
     path: SafeFilePath,
     options: Option<BaseOptions>,
 ) -> CommandResult<Vec<DirEntry>> {
-    let resolved_path = resolve_path(
+    let ResolvedPath {
+        handle: resolved_path,
+        real_path,
+        forbidden,
+    } = resolve_path_checked(
         "read-dir",
         &webview,
         &global_scope,
@@ -482,6 +486,11 @@ pub async fn read_dir<R: Runtime>(
     let entries = entries
         .filter_map(|entry| {
             let entry = entry.ok()?;
+            // do not disclose entries denied by the scope
+            if forbidden.matches_entry(&[&real_path, &resolved_path], Path::new(&entry.file_name()))
+            {
+                return None;
+            }
             let name = entry.file_name().into_string().ok()?;
             let metadata = entry.file_type();
             macro_rules! method_or_false {
@@ -729,7 +738,11 @@ pub fn remove<R: Runtime>(
     path: SafeFilePath,
     options: Option<RemoveOptions>,
 ) -> CommandResult<()> {
-    let resolved_path = resolve_path(
+    let ResolvedPath {
+        handle: resolved_path,
+        real_path,
+        forbidden,
+    } = resolve_path_checked(
         "remove",
         &webview,
         &global_scope,
@@ -751,6 +764,13 @@ pub fn remove<R: Runtime>(
     let res = if file_type.is_file() {
         std::fs::remove_file(&resolved_path)
     } else if options.as_ref().and_then(|o| o.recursive).unwrap_or(false) {
+        // the scope only checked the directory itself, make sure it does not contain denied entries
+        if file_type.is_dir() {
+            if let Some(denied) = forbidden.find_in_tree(&real_path, &[&real_path, &resolved_path])
+            {
+                return Err(CommandError::Plugin(Error::PathForbidden(denied)));
+            }
+        }
         std::fs::remove_dir_all(&resolved_path)
     } else if file_type.is_symlink() {
         #[cfg(unix)]
@@ -799,7 +819,11 @@ pub fn rename<R: Runtime>(
     new_path: SafeFilePath,
     options: Option<RenameOptions>,
 ) -> CommandResult<()> {
-    let resolved_old_path = resolve_path(
+    let ResolvedPath {
+        handle: resolved_old_path,
+        real_path: real_old_path,
+        forbidden,
+    } = resolve_path_checked(
         "rename",
         &webview,
         &global_scope,
@@ -807,7 +831,11 @@ pub fn rename<R: Runtime>(
         old_path,
         options.as_ref().and_then(|o| o.old_path_base_dir),
     )?;
-    let resolved_new_path = resolve_path(
+    let ResolvedPath {
+        handle: resolved_new_path,
+        real_path: real_new_path,
+        ..
+    } = resolve_path_checked(
         "rename",
         &webview,
         &global_scope,
@@ -815,6 +843,22 @@ pub fn rename<R: Runtime>(
         new_path,
         options.as_ref().and_then(|o| o.new_path_base_dir),
     )?;
+
+    // the scope only checked the paths themselves: when moving a directory,
+    // make sure no denied entry is moved out of, or into, a denied location
+    if std::fs::symlink_metadata(&resolved_old_path).is_ok_and(|m| m.is_dir()) {
+        if let Some(denied) = forbidden.find_in_tree(
+            &real_old_path,
+            &[
+                &real_old_path,
+                &resolved_old_path,
+                &real_new_path,
+                &resolved_new_path,
+            ],
+        ) {
+            return Err(CommandError::Plugin(Error::PathForbidden(denied)));
+        }
+    }
     std::fs::rename(&resolved_old_path, &resolved_new_path)
         .map_err(|e| {
             format!(
@@ -1212,7 +1256,11 @@ pub async fn size<R: Runtime>(
     path: SafeFilePath,
     options: Option<BaseOptions>,
 ) -> CommandResult<u64> {
-    let resolved_path = resolve_path(
+    let ResolvedPath {
+        handle: resolved_path,
+        real_path,
+        forbidden,
+    } = resolve_path_checked(
         "size",
         &webview,
         &global_scope,
@@ -1226,12 +1274,13 @@ pub async fn size<R: Runtime>(
     if metadata.is_file() {
         Ok(metadata.len())
     } else {
-        let size = get_dir_size(&resolved_path).map_err(|e| {
-            format!(
-                "failed to get size at path: {} with error: {e}",
-                resolved_path.display()
-            )
-        })?;
+        let size = get_dir_size(&resolved_path, &[&real_path, &resolved_path], &forbidden)
+            .map_err(|e| {
+                format!(
+                    "failed to get size at path: {} with error: {e}",
+                    resolved_path.display()
+                )
+            })?;
 
         Ok(size)
     }
@@ -1361,17 +1410,32 @@ pub fn stop_accessing_security_scoped_resource<R: Runtime>(
     }
 }
 
-fn get_dir_size(path: &PathBuf) -> CommandResult<u64> {
+/// Sums the size of the files below `path`, skipping the entries denied by the scope.
+///
+/// `roots` are the paths `path` is known by, used to match the entries against `forbidden`.
+fn get_dir_size(path: &Path, roots: &[&Path], forbidden: &ForbiddenPatterns) -> CommandResult<u64> {
     let mut size = 0;
 
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
+        let name = entry.file_name();
+        if forbidden.matches_entry(roots, Path::new(&name)) {
+            continue;
+        }
         let metadata = entry.metadata()?;
 
         if metadata.is_file() {
             size += metadata.len();
         } else if metadata.is_dir() {
-            size += get_dir_size(&entry.path())?;
+            let roots = roots
+                .iter()
+                .map(|root| root.join(&name))
+                .collect::<Vec<_>>();
+            size += get_dir_size(
+                &entry.path(),
+                &roots.iter().map(PathBuf::as_path).collect::<Vec<_>>(),
+                forbidden,
+            )?;
         }
     }
 
@@ -1486,7 +1550,39 @@ pub fn resolve_path<R: Runtime>(
     path: SafeFilePath,
     base_dir: Option<BaseDirectory>,
 ) -> CommandResult<PathHandle<R>> {
+    resolve_path_checked(
+        permission,
+        webview,
+        global_scope,
+        command_scope,
+        path,
+        base_dir,
+    )
+    .map(|resolved| resolved.handle)
+}
+
+/// A path resolved and checked by [`resolve_path_checked`].
+pub(crate) struct ResolvedPath<R: Runtime> {
+    /// The path as given, joined with its base directory.
+    pub(crate) handle: PathHandle<R>,
+    /// The path the OS operates on, see [`resolve_real_path`].
+    pub(crate) real_path: PathBuf,
+    /// The deny patterns that apply to this command invocation.
+    pub(crate) forbidden: ForbiddenPatterns,
+}
+
+/// Same as [`resolve_path`], but also returns what recursive commands need to check
+/// the entries below the path against the deny patterns.
+pub(crate) fn resolve_path_checked<R: Runtime>(
+    permission: &str,
+    webview: &Webview<R>,
+    global_scope: &GlobalScope<Entry>,
+    command_scope: &CommandScope<Entry>,
+    path: SafeFilePath,
+    base_dir: Option<BaseDirectory>,
+) -> CommandResult<ResolvedPath<R>> {
     let path_ = path.clone();
+
     // On iOS, start accessing security-scoped resource if the path is a file URL
     // Only if it hasn't been started already via start_accessing_security_scoped_resource
     #[cfg(target_os = "ios")]
@@ -1564,17 +1660,18 @@ pub fn resolve_path<R: Runtime>(
 
     // Deny patterns apply to both the path as given (so a pattern naming a symlink denies it)
     // and to the path it resolves to.
-    let is_forbidden = |scope: &tauri::fs::Scope| {
-        matches_forbidden_pattern(scope, &resolved_path, require_literal_leading_dot)
-            || matches_forbidden_pattern(scope, &real_path, require_literal_leading_dot)
-    };
-    if is_forbidden(&fs_scope.scope) || is_forbidden(&scope) {
+    let forbidden = ForbiddenPatterns::new(&[&fs_scope.scope, &scope], require_literal_leading_dot);
+    if forbidden.matches(&resolved_path) || forbidden.matches(&real_path) {
         return Err(CommandError::Plugin(Error::PathForbidden(resolved_path)));
     }
 
     if fs_scope.scope.is_allowed(&real_path) || scope.is_allowed(&real_path) {
         let app_handle = webview.app_handle().clone();
-        Ok(PathHandle::new(resolved_path, path_, app_handle))
+        Ok(ResolvedPath {
+            handle: PathHandle::new(resolved_path, path_, app_handle),
+            real_path,
+            forbidden,
+        })
     } else {
         #[cfg(not(debug_assertions))]
         return Err(CommandError::Plugin(Error::PathForbidden(resolved_path)));
@@ -1644,25 +1741,76 @@ fn resolve_real_path_inner(path: &Path, symlinks_followed: usize) -> std::io::Re
     }
 }
 
-/// Whether `path` matches one of the forbidden patterns of `scope`, as is (no path resolution).
-fn matches_forbidden_pattern(
-    scope: &tauri::fs::Scope,
-    path: &Path,
+/// The deny patterns that apply to a command invocation: the ones of the plugin's runtime scope
+/// and the ones of the global and command scopes of the capabilities.
+#[derive(Clone)]
+pub(crate) struct ForbiddenPatterns {
+    patterns: Vec<glob::Pattern>,
     require_literal_leading_dot: bool,
-) -> bool {
-    let path: PathBuf = path.components().collect();
-    scope.forbidden_patterns().iter().any(|p| {
-        p.matches_path_with(
-            &path,
-            glob::MatchOptions {
-                // this is needed so `/dir/*` doesn't match files within subdirectories such as `/dir/subdir/file.txt`
-                // see: <https://github.com/tauri-apps/tauri/security/advisories/GHSA-6mv3-wm7j-h4w5>
-                require_literal_separator: true,
-                require_literal_leading_dot,
-                ..Default::default()
-            },
-        )
-    })
+}
+
+impl ForbiddenPatterns {
+    fn new(scopes: &[&tauri::fs::Scope], require_literal_leading_dot: bool) -> Self {
+        Self {
+            patterns: scopes
+                .iter()
+                .flat_map(|scope| scope.forbidden_patterns())
+                .collect(),
+            require_literal_leading_dot,
+        }
+    }
+
+    /// Whether `path` matches one of the patterns, as is (no path resolution).
+    pub(crate) fn matches(&self, path: &Path) -> bool {
+        if self.patterns.is_empty() {
+            return false;
+        }
+        let path: PathBuf = path.components().collect();
+        let options = glob::MatchOptions {
+            // this is needed so `/dir/*` doesn't match files within subdirectories such as `/dir/subdir/file.txt`
+            // see: <https://github.com/tauri-apps/tauri/security/advisories/GHSA-6mv3-wm7j-h4w5>
+            require_literal_separator: true,
+            require_literal_leading_dot: self.require_literal_leading_dot,
+            ..Default::default()
+        };
+        self.patterns
+            .iter()
+            .any(|p| p.matches_path_with(&path, options))
+    }
+
+    /// Whether `name`, an entry of the directory whose paths are `dirs`, matches one of the patterns.
+    fn matches_entry(&self, dirs: &[&Path], name: &Path) -> bool {
+        dirs.iter().any(|dir| self.matches(&dir.join(name)))
+    }
+
+    /// Walks the directory `dir` recursively, without following symlinks, and returns the first
+    /// entry that matches one of the patterns when it is located below any of `roots`
+    /// (the paths `dir` is known by, or will be known by after a rename).
+    fn find_in_tree(&self, dir: &Path, roots: &[&Path]) -> Option<PathBuf> {
+        if self.patterns.is_empty() {
+            return None;
+        }
+
+        let mut pending = vec![PathBuf::new()];
+        while let Some(relative_dir) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(dir.join(&relative_dir)) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let relative = relative_dir.join(entry.file_name());
+                if let Some(root) = roots
+                    .iter()
+                    .find(|root| self.matches(&root.join(&relative)))
+                {
+                    return Some(root.join(relative));
+                }
+                if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    pending.push(relative);
+                }
+            }
+        }
+        None
+    }
 }
 
 struct StdFileResource<R: Runtime>(Mutex<FileHandle<R>>);
@@ -1879,6 +2027,55 @@ mod test {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn forbidden_patterns_find_denied_entries_in_tree() {
+        use super::ForbiddenPatterns;
+
+        let tmp = TempDir::new("forbidden-tree");
+        let root = tmp.0.join("root");
+        std::fs::create_dir_all(root.join("EBWebView/Default")).unwrap();
+        std::fs::write(root.join("EBWebView/Default/Cookies"), "").unwrap();
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::write(root.join("data/file.txt"), "").unwrap();
+
+        let forbidden = ForbiddenPatterns {
+            patterns: vec![glob::Pattern::new(&format!(
+                "{}/EBWebView/**",
+                glob::Pattern::escape(&root.to_string_lossy())
+            ))
+            .unwrap()],
+            require_literal_leading_dot: true,
+        };
+
+        // `dir/**` does not match `dir` itself, only its content
+        assert!(!forbidden.matches(&root.join("EBWebView")));
+        assert!(forbidden.matches(&root.join("EBWebView/Default")));
+
+        // removing the parent directories is denied because of their content
+        assert!(forbidden.find_in_tree(&root, &[&root]).is_some());
+        let webview = root.join("EBWebView");
+        assert!(forbidden.find_in_tree(&webview, &[&webview]).is_some());
+        let data = root.join("data");
+        assert_eq!(forbidden.find_in_tree(&data, &[&data]), None);
+
+        // moving a directory into a denied location
+        assert!(forbidden
+            .find_in_tree(&data, &[&data, &root.join("EBWebView/moved")])
+            .is_some());
+
+        // entries of a directory listing
+        assert!(forbidden.matches_entry(&[&webview], std::path::Path::new("Default")));
+        assert!(!forbidden.matches_entry(&[&root], std::path::Path::new("EBWebView")));
+
+        // no patterns, nothing to walk
+        let none = ForbiddenPatterns {
+            patterns: Vec::new(),
+            require_literal_leading_dot: true,
+        };
+        assert_eq!(none.find_in_tree(&root, &[&root]), None);
     }
 
     #[cfg(unix)]

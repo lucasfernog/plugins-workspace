@@ -94,7 +94,14 @@
     "fs:allow-read",
     "fs:allow-rename",
     "fs:allow-mkdir",
-    "fs:allow-remove",
+    {
+      "identifier": "fs:allow-remove",
+      "deny": [{ "path": "$APPDATA/e2e/fs-protected/**" }]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "deny": [{ "path": "$APPDATA/e2e/fs/listed/secret.txt" }]
+    },
     "fs:allow-write-text-file",
     "fs:allow-write-file",
     "fs:allow-create",

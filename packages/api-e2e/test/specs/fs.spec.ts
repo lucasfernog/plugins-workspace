@@ -299,6 +299,69 @@ describePlugin('fs', () => {
     expect(message).toMatch(/cannot traverse directory|forbidden path/)
   })
 
+  it('recursive remove refuses directories with denied entries', async () => {
+    // The example denies `remove` on `$APPDATA/e2e/fs-protected/**`, which
+    // matches the content of the directory but not the directory itself.
+    const result = await tauri(
+      async (api, protectedDir, dir) => {
+        const baseDir = api.fs.BaseDirectory.AppData
+        const moveOut = async (to: string) => {
+          if (await api.fs.exists(protectedDir, { baseDir })) {
+            // `rename` is not denied there, use it to clean up
+            await api.fs.rename(protectedDir, `${dir}/${to}`, {
+              oldPathBaseDir: baseDir,
+              newPathBaseDir: baseDir
+            })
+          }
+        }
+        await moveOut('protected-stale')
+        await api.fs.mkdir(protectedDir, { baseDir, recursive: true })
+        await api.fs.writeTextFile(`${protectedDir}/keep.txt`, 'keep', {
+          baseDir
+        })
+        const errorOf = async (fn: () => Promise<unknown>) => {
+          try {
+            await fn()
+            return null
+          } catch (error) {
+            return String(error)
+          }
+        }
+        try {
+          return {
+            file: await errorOf(() =>
+              api.fs.remove(`${protectedDir}/keep.txt`, { baseDir })
+            ),
+            recursive: await errorOf(() =>
+              api.fs.remove(protectedDir, { baseDir, recursive: true })
+            ),
+            kept: await api.fs.exists(`${protectedDir}/keep.txt`, { baseDir })
+          }
+        } finally {
+          await moveOut('protected-moved')
+        }
+      },
+      'e2e/fs-protected',
+      dir
+    )
+    expect(result.file).toMatch(/forbidden path/)
+    expect(result.recursive).toMatch(/forbidden path/)
+    expect(result.kept).toBe(true)
+  })
+
+  it('readDir hides entries denied by the scope', async () => {
+    // The example denies `read_dir` on `$APPDATA/e2e/fs/listed/secret.txt`.
+    const names = await tauri(async (api, listed) => {
+      const baseDir = api.fs.BaseDirectory.AppData
+      await api.fs.mkdir(listed, { baseDir, recursive: true })
+      await api.fs.writeTextFile(`${listed}/secret.txt`, 'secret', { baseDir })
+      await api.fs.writeTextFile(`${listed}/public.txt`, 'public', { baseDir })
+      const entries = await api.fs.readDir(listed, { baseDir })
+      return entries.map((e) => e.name).sort()
+    }, `${dir}/listed`)
+    expect(names).toEqual(['public.txt'])
+  })
+
   // The watch specs are desktop-only: `fs:allow-watch` is granted in the
   // example's desktop capability only.
   itDesktop(
