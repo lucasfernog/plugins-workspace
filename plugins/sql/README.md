@@ -106,6 +106,20 @@ const result = await db.execute(
 )
 ```
 
+## Permissions
+
+The `sql:default` permission set allows `load`, `select` and `close`. Statements run with `execute` (`INSERT`, `UPDATE`, `CREATE TABLE`, ...) need the `sql:allow-execute` permission as well:
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": ["sql:default", "sql:allow-execute"]
+}
+```
+
+Leaving out `sql:allow-execute` does not make the database read-only: `select` runs any statement it is given, including ones that modify data. `load` accepts any connection string, so a frontend that can call it can open any SQLite file the app can access, or connect to any MySQL/PostgreSQL server it can reach.
+
 ## Migrations
 
 This plugin supports database migrations, allowing you to manage database schema evolution over time.
