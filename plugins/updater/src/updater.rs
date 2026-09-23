@@ -1405,13 +1405,7 @@ impl Update {
         let mut extracted_files: Vec<PathBuf> = Vec::new();
 
         // Create temp directories for backup and extraction
-        let tmp_backup_dir = tempfile::Builder::new()
-            .prefix("tauri_current_app")
-            .tempdir()?;
-
-        let tmp_extract_dir = tempfile::Builder::new()
-            .prefix("tauri_updated_app")
-            .tempdir()?;
+        let (tmp_backup_dir, tmp_extract_dir) = self.make_temp_dirs()?;
 
         let decoder = GzDecoder::new(cursor);
         let mut archive = tar::Archive::new(decoder);
@@ -1441,7 +1435,13 @@ impl Update {
             tmp_backup_dir.path().join("current_app"),
         );
         let need_authorization = if let Err(err) = move_result {
-            if err.kind() == std::io::ErrorKind::PermissionDenied {
+            // `EXDEV`: the temporary directory is on another volume than the app, which only
+            // happens when no directory could be created next to the app: `mv` below copies
+            // across volumes
+            const EXDEV: i32 = 18;
+            if err.kind() == std::io::ErrorKind::PermissionDenied
+                || err.raw_os_error() == Some(EXDEV)
+            {
                 true
             } else {
                 std::fs::remove_dir_all(tmp_extract_dir.path()).ok();
@@ -1491,6 +1491,51 @@ impl Update {
             .status();
 
         Ok(())
+    }
+
+    /// Creates the temporary directories the current app is backed up to and the update is
+    /// extracted to.
+    ///
+    /// They must be on the same volume as the app, since the app is moved in and out of them with
+    /// `rename`. The system temporary directory is used when it is, and otherwise hidden
+    /// directories next to the app, falling back to the system temporary directory when those
+    /// cannot be created.
+    fn make_temp_dirs(&self) -> Result<(tempfile::TempDir, tempfile::TempDir)> {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp_dir = std::env::temp_dir();
+        let app_dev = self.extract_path.metadata().map(|m| m.dev()).ok();
+        let temp_dir_dev = temp_dir.metadata().map(|m| m.dev()).ok();
+
+        if app_dev.is_some() && app_dev != temp_dir_dev {
+            if let Some(app_dir) = self.extract_path.parent() {
+                let dirs = tempfile::Builder::new()
+                    .prefix(".tauri_current_app")
+                    .tempdir_in(app_dir)
+                    .and_then(|backup| {
+                        tempfile::Builder::new()
+                            .prefix(".tauri_updated_app")
+                            .tempdir_in(app_dir)
+                            .map(|extract| (backup, extract))
+                    });
+                match dirs {
+                    Ok(dirs) => return Ok(dirs),
+                    Err(e) => log::debug!(
+                        "failed to create temporary directories next to the app, using {}: {e}",
+                        temp_dir.display()
+                    ),
+                }
+            }
+        }
+
+        Ok((
+            tempfile::Builder::new()
+                .prefix("tauri_current_app")
+                .tempdir()?,
+            tempfile::Builder::new()
+                .prefix("tauri_updated_app")
+                .tempdir()?,
+        ))
     }
 }
 
