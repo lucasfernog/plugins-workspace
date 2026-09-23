@@ -126,7 +126,8 @@
           "url": "https://*",
           "app": "inAppBrowser"
         }
-      ]
+      ],
+      "deny": [{ "url": "https://denied.e2e.invalid/*" }]
     },
     {
       "identifier": "opener:allow-open-path",

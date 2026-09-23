@@ -6,7 +6,7 @@
  * Webview script injected by the opener plugin on every page load.
  *
  * It installs a `click` listener on `window` that intercepts clicks on `<a>` elements whose
- * `target` is `_blank` (or that are clicked while holding `Ctrl` or `Shift`) and whose `href`
+ * `target` is `_blank` (or that are clicked while holding `Ctrl`, `Shift` or `Cmd`) and whose `href`
  * uses the `http:`, `https:`, `mailto:` or `tel:` protocol, cancels the navigation and opens the
  * link with the system's default browser through the `plugin:opener|open_url` command instead.
  *
@@ -23,9 +23,7 @@ window.addEventListener('click', function (evt) {
     evt.defaultPrevented
     // or not a left click
     || evt.button !== 0
-    // or meta key pressed
-    || evt.metaKey
-    // or al key pressed
+    // or alt key pressed
     || evt.altKey
   )
     return
@@ -49,6 +47,8 @@ window.addEventListener('click', function (evt) {
       || evt.ctrlKey
       // or shift key pressed
       || evt.shiftKey
+      // or meta key pressed (Cmd-click opens links in a new tab on macOS)
+      || evt.metaKey
     )
   )
     return
@@ -65,7 +65,10 @@ window.addEventListener('click', function (evt) {
   evt.preventDefault()
 
   // pass the string: a URL object cannot be structured-cloned by the IPC
-  void invoke('plugin:opener|open_url', {
+  invoke('plugin:opener|open_url', {
     url: url.href
+  }).catch((error: unknown) => {
+    // the navigation was already cancelled, surface why the link did not open
+    console.error(`Failed to open ${url.href}:`, error)
   })
 })
