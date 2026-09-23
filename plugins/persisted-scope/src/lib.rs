@@ -84,9 +84,12 @@ const RESURSIVE_DIRECTORY_SUFFIX: &str = "**";
 const DIRECTORY_SUFFIX: &str = "*";
 
 fn detect_scope_type(scope_state_path: &str) -> TargetType {
-    if scope_state_path.ends_with(RESURSIVE_DIRECTORY_SUFFIX) {
+    // Compare whole path components rather than the string suffix, so that a file whose name
+    // merely ends with `*` (legal on Unix) is restored as a file and not as a directory grant.
+    let path = Path::new(scope_state_path);
+    if path.ends_with(RESURSIVE_DIRECTORY_SUFFIX) {
         TargetType::RecursiveDirectory
-    } else if scope_state_path.ends_with(DIRECTORY_SUFFIX) {
+    } else if path.ends_with(DIRECTORY_SUFFIX) {
         TargetType::Directory
     } else {
         TargetType::File
@@ -264,4 +267,39 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             Ok(())
         })
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_scope_type_by_component() {
+        let sep = std::path::MAIN_SEPARATOR;
+        let ac = AhoCorasick::new(PATTERNS).unwrap();
+        let restore = |pattern: String| detect_scope_type(&fix_pattern(&ac, &pattern));
+
+        assert_eq!(
+            restore(format!("{sep}home{sep}dir{sep}**")),
+            TargetType::RecursiveDirectory
+        );
+        assert_eq!(
+            restore(format!("{sep}home{sep}dir{sep}*")),
+            TargetType::Directory
+        );
+        assert_eq!(restore(format!("{sep}home{sep}file.txt")), TargetType::File);
+        // Legacy files stored escaped wildcards; they are still recognized as directories.
+        assert_eq!(
+            restore(format!("{sep}home{sep}dir{sep}[*][*]")),
+            TargetType::RecursiveDirectory
+        );
+
+        // A file whose name ends with `*` is stored escaped by the scope and must be
+        // restored as a file, not as a directory grant.
+        for name in ["a*", "a**"] {
+            let path = format!("{sep}home{sep}{name}");
+            let stored = tauri::scope::fs::Pattern::escape(&path);
+            assert_eq!(restore(stored), TargetType::File, "{name}");
+        }
+    }
 }
