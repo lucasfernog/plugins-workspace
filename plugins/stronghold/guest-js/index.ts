@@ -48,6 +48,9 @@ export type StoreKey =
 /**
  * The limits applied to the connections of a Stronghold peer-to-peer network.
  * See {@link NetworkConfig} for a note on how these definitions are used.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface ConnectionLimits {
   /** The maximum number of incoming connections that can be pending at the same time. */
@@ -67,6 +70,9 @@ export interface ConnectionLimits {
 /**
  * The addresses on which a remote peer can be reached.
  * See {@link NetworkConfig} for a note on how these definitions are used.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface PeerAddress {
   /** The addresses that are known for the peer, in the multiaddr format. */
@@ -78,6 +84,9 @@ export interface PeerAddress {
 /**
  * The address book of the peer-to-peer network.
  * See {@link NetworkConfig} for a note on how these definitions are used.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface AddressInfo {
   /** The known addresses of each peer, keyed by the peer identifier. */
@@ -89,6 +98,9 @@ export interface AddressInfo {
 /**
  * The operations a remote peer is allowed to perform on a client.
  * See {@link NetworkConfig} for a note on how these definitions are used.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface ClientAccess {
   /** The default permission to use the secrets stored in a vault. */
@@ -112,6 +124,9 @@ export interface ClientAccess {
 /**
  * The access a remote peer is granted on the clients of a snapshot.
  * See {@link NetworkConfig} for a note on how these definitions are used.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface Permissions {
   /** The access granted when no exception matches. */
@@ -126,6 +141,9 @@ export interface Permissions {
  * These definitions mirror the networking options of IOTA Stronghold. The plugin
  * does not currently expose a command that consumes them, so they are only useful
  * as type definitions.
+ *
+ * @deprecated The plugin has no peer-to-peer networking API (IOTA Stronghold 2 removed it),
+ * so nothing consumes this type. It will be removed in the next major version.
  */
 export interface NetworkConfig {
   /** The maximum time to wait for the response to an outbound request. */
