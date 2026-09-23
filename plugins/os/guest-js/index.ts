@@ -37,6 +37,7 @@ type Platform =
   | 'netbsd'
   | 'openbsd'
   | 'solaris'
+  | 'illumos'
   | 'android'
   | 'windows'
 
@@ -53,13 +54,20 @@ type Arch =
   | 'x86_64'
   | 'arm'
   | 'aarch64'
+  | 'm68k'
+  | 'csky'
   | 'mips'
+  | 'mips32r6'
   | 'mips64'
+  | 'mips64r6'
   | 'powerpc'
   | 'powerpc64'
+  | 'riscv32'
   | 'riscv64'
   | 's390x'
+  | 'sparc'
   | 'sparc64'
+  | 'loongarch64'
 
 /**
  * Returns the operating system-specific end-of-line marker.
@@ -81,7 +89,7 @@ function eol(): string {
 
 /**
  * Returns a string describing the specific operating system in use.
- * The value is set at compile time. Possible values are `'linux'`, `'macos'`, `'ios'`, `'freebsd'`, `'dragonfly'`, `'netbsd'`, `'openbsd'`, `'solaris'`, `'android'`, `'windows'`
+ * The value is set at compile time. Possible values are `'linux'`, `'macos'`, `'ios'`, `'freebsd'`, `'dragonfly'`, `'netbsd'`, `'openbsd'`, `'solaris'`, `'illumos'`, `'android'`, `'windows'`
  *
  * @example
  * ```typescript
@@ -149,7 +157,7 @@ function type(): OsType {
 
 /**
  * Returns the current operating system architecture.
- * Possible values are `'x86'`, `'x86_64'`, `'arm'`, `'aarch64'`, `'mips'`, `'mips64'`, `'powerpc'`, `'powerpc64'`, `'riscv64'`, `'s390x'`, `'sparc64'`.
+ * The value is set at compile time. Possible values are `'x86'`, `'x86_64'`, `'arm'`, `'aarch64'`, `'m68k'`, `'csky'`, `'mips'`, `'mips32r6'`, `'mips64'`, `'mips64r6'`, `'powerpc'`, `'powerpc64'`, `'riscv32'`, `'riscv64'`, `'s390x'`, `'sparc'`, `'sparc64'`, `'loongarch64'`.
  * @example
  * ```typescript
  * import { arch } from '@tauri-apps/plugin-os';

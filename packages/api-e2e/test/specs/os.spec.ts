@@ -33,6 +33,7 @@ const nodeArchToTauri: Record<string, string> = {
   arm64: 'aarch64',
   arm: 'arm',
   riscv64: 'riscv64',
+  loong64: 'loongarch64',
   ppc64: 'powerpc64',
   s390x: 's390x'
 }
@@ -43,13 +44,20 @@ const architectures = [
   'x86_64',
   'arm',
   'aarch64',
+  'm68k',
+  'csky',
   'mips',
+  'mips32r6',
   'mips64',
+  'mips64r6',
   'powerpc',
   'powerpc64',
+  'riscv32',
   'riscv64',
   's390x',
-  'sparc64'
+  'sparc',
+  'sparc64',
+  'loongarch64'
 ]
 
 describePlugin('os', () => {
