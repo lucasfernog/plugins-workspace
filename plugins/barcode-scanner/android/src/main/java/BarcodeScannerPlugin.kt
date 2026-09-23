@@ -89,6 +89,10 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
     private var savedInvoke: Invoke? = null
     private var webViewBackground: Drawable? = null
 
+    // incremented (on the UI thread) whenever a camera is set up or dismantled, so a camera
+    // provider future that completes after its scan was cancelled does not start the camera
+    private var cameraSession = 0
+
     override fun load(webView: WebView) {
         super.load(webView)
         this.webView = webView
@@ -133,6 +137,7 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
                 this.graphicOverlay = graphicOverlay
+                val session = ++cameraSession
 
                 val parent = webView.parent as ViewGroup
                 parent.addView(previewView)
@@ -148,6 +153,10 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(activity)
                 cameraProviderFuture.addListener(
                     {
+                        if (session != cameraSession) {
+                            // the scan was cancelled or replaced while the provider was loading
+                            return@addListener
+                        }
                         try {
                             val cameraProvider = cameraProviderFuture.get()
                             bindPreview(
@@ -199,15 +208,16 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
     private fun dismantleCamera() {
         activity
             .runOnUiThread {
-                if (cameraProvider != null) {
-                    cameraProvider?.unbindAll()
-                    val parent = webView.parent as ViewGroup
-                    parent.removeView(previewView)
-                    parent.removeView(graphicOverlay)
-                    camera = null
-                    previewView = null
-                    graphicOverlay = null
-                }
+                cameraSession++
+                cameraProvider?.unbindAll()
+                // the views are added before the camera provider is available,
+                // so remove them even if it never was
+                val parent = webView.parent as ViewGroup
+                previewView?.let { parent.removeView(it) }
+                graphicOverlay?.let { parent.removeView(it) }
+                camera = null
+                previewView = null
+                graphicOverlay = null
             }
     }
 
