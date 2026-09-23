@@ -1,3 +1,21 @@
+## Default Permission
+
+This permission set configures which
+geolocation features are by default exposed.
+
+#### Granted Permissions
+
+It allows checking and requesting the location permissions,
+reading the current position and watching position changes.
+
+#### This default permission set includes the following:
+
+- `allow-check-permissions`
+- `allow-request-permissions`
+- `allow-get-current-position`
+- `allow-watch-position`
+- `allow-clear-watch`
+
 ## Permission Table
 
 <table>
