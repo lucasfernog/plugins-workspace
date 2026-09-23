@@ -29,10 +29,22 @@ type Result<T> = std::result::Result<T, Error>;
 pub enum MacosLauncher {
     /// Auto start by installing a Launch Agent plist under `~/Library/LaunchAgents`,
     /// which macOS starts automatically at login.
+    ///
+    /// The plist is named after [`Builder::app_name`], which is also used as its `Label`, and
+    /// starts the app's executable (`<App>.app/Contents/MacOS/<App>`) with [`Builder::args`].
+    /// macOS 13+ shows a "Background Items Added" notification when it is enabled.
     #[default]
     LaunchAgent,
     /// Auto start by adding a login item through an AppleScript command sent to the
     /// "System Events" application.
+    ///
+    /// - The login item opens the `.app` bundle, and is named after the bundle's file name:
+    ///   [`Builder::app_name`] is ignored.
+    /// - Only the `--hidden` and `--minimized` [`Builder::args`] have an effect: either one
+    ///   makes the login item hidden. Other arguments are ignored.
+    /// - macOS asks the user for the Automation permission to control "System Events" the
+    ///   first time autostart is enabled, disabled or checked. Set
+    ///   `NSAppleEventsUsageDescription` in your app's `Info.plist` to explain why.
     AppleScript,
 }
 
@@ -152,6 +164,11 @@ impl Builder {
 
     /// Adds an argument to pass to your app on startup.
     ///
+    /// A common use is a flag that tells your app it was launched at login, which it can check
+    /// with [`std::env::args`] (or the CLI plugin), for example to start minimized.
+    ///
+    /// With [`MacosLauncher::AppleScript`], only `--hidden` and `--minimized` have an effect.
+    ///
     /// ## Examples
     ///
     /// ```
@@ -165,6 +182,8 @@ impl Builder {
     }
 
     /// Adds multiple arguments to pass to your app on startup.
+    ///
+    /// See [`Builder::arg`].
     ///
     /// ## Examples
     ///
@@ -184,6 +203,18 @@ impl Builder {
 
     /// Sets whether to use launch agent or apple script to be used to enable auto start,
     /// the builder's default is [`MacosLauncher::LaunchAgent`]
+    ///
+    /// This method only exists on macOS, so gate the call with `#[cfg(target_os = "macos")]`.
+    ///
+    /// ## Examples
+    ///
+    /// ```
+    /// let mut builder = tauri_plugin_autostart::Builder::new();
+    /// #[cfg(target_os = "macos")]
+    /// {
+    ///     builder = builder.macos_launcher(tauri_plugin_autostart::MacosLauncher::AppleScript);
+    /// }
+    /// ```
     #[cfg(target_os = "macos")]
     pub fn macos_launcher(mut self, macos_launcher: MacosLauncher) -> Self {
         self.macos_launcher = macos_launcher;
@@ -191,6 +222,16 @@ impl Builder {
     }
 
     /// Sets the app name to be used for the auto start entry.
+    ///
+    /// Defaults to the app's `productName`. It names the Linux desktop entry
+    /// (`~/.config/autostart/<name>.desktop`), the Windows `Run` registry value, and the macOS
+    /// Launch Agent (`~/Library/LaunchAgents/<name>.plist`, also used as its `Label`). It is
+    /// ignored with [`MacosLauncher::AppleScript`], which names the login item after the `.app`
+    /// bundle.
+    ///
+    /// Two apps using the same name overwrite each other's entry, so consider using your
+    /// bundle identifier. Changing the name (or the `productName`) in a later version leaves
+    /// the entry created under the old name behind: disable autostart before renaming.
     ///
     /// ## Examples
     ///
