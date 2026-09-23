@@ -42,8 +42,14 @@ pub struct Response {
 
 impl Response {
     /// Adds a header to the response, replacing any existing header with the same name.
+    ///
+    /// Header names are compared case-insensitively, so `content-type` replaces the built-in
+    /// `Content-Type` header.
     pub fn add_header<H: Into<String>, V: Into<String>>(&mut self, header: H, value: V) {
-        self.headers.insert(header.into(), value.into());
+        let header = header.into();
+        self.headers
+            .retain(|name, _| !name.eq_ignore_ascii_case(&header));
+        self.headers.insert(header, value.into());
     }
 }
 
@@ -144,14 +150,10 @@ impl Builder {
 
                             response.add_header("Content-Type", asset.mime_type);
                             if let Some(csp) = asset.csp_header {
-                                response
-                                    .headers
-                                    .insert("Content-Security-Policy".into(), csp);
+                                response.add_header("Content-Security-Policy", csp);
                             }
 
-                            response
-                                .headers
-                                .insert("Cache-Control".into(), "no-cache".into());
+                            response.add_header("Cache-Control", "no-cache");
 
                             if let Some(on_request) = &on_request {
                                 on_request(&request, &mut response);
@@ -170,5 +172,33 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Response;
+
+    #[test]
+    fn add_header_replaces_case_insensitively() {
+        let mut response = Response {
+            headers: Default::default(),
+        };
+        response.add_header("Content-Type", "text/html");
+        response.add_header("Cache-Control", "no-cache");
+        response.add_header("content-type", "text/plain");
+        response.add_header("CACHE-CONTROL", "max-age=60");
+        response.add_header("X-Custom", "value");
+
+        let mut headers: Vec<_> = response.headers.into_iter().collect();
+        headers.sort();
+        assert_eq!(
+            headers,
+            vec![
+                ("CACHE-CONTROL".to_string(), "max-age=60".to_string()),
+                ("X-Custom".to_string(), "value".to_string()),
+                ("content-type".to_string(), "text/plain".to_string()),
+            ]
+        );
     }
 }
