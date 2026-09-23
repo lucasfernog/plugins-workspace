@@ -122,8 +122,45 @@ impl Default for WindowState {
 }
 
 struct WindowStateCache(Arc<Mutex<HashMap<String, WindowState>>>);
-/// Used to prevent deadlocks from resize and position event listeners setting the cached state on restoring states
-struct RestoringWindowState(Mutex<()>);
+/// Labels of the windows whose state is currently being restored (with a count, as a window
+/// can be restored from several threads at once), so their resize and move event listeners
+/// don't overwrite the cached state with the intermediate values of the restore.
+///
+/// This is tracked per window, and never waited on, so restoring one window neither drops
+/// the events of the others nor blocks the main thread behind a restore running elsewhere.
+#[derive(Default)]
+struct RestoringWindowState(Mutex<HashMap<String, usize>>);
+
+impl RestoringWindowState {
+    fn start(&self, label: &str) -> RestoringWindowGuard<'_> {
+        *self.0.lock().unwrap().entry(label.into()).or_default() += 1;
+        RestoringWindowGuard {
+            state: self,
+            label: label.into(),
+        }
+    }
+
+    fn is_restoring(&self, label: &str) -> bool {
+        self.0.lock().unwrap().contains_key(label)
+    }
+}
+
+struct RestoringWindowGuard<'a> {
+    state: &'a RestoringWindowState,
+    label: String,
+}
+
+impl Drop for RestoringWindowGuard<'_> {
+    fn drop(&mut self) {
+        let mut restoring = self.state.0.lock().unwrap();
+        if let Some(count) = restoring.get_mut(&self.label) {
+            *count -= 1;
+            if *count == 0 {
+                restoring.remove(&self.label);
+            }
+        }
+    }
+}
 
 /// Extension trait for [`AppHandle`] exposing window state APIs.
 pub trait AppHandleExt {
@@ -209,7 +246,7 @@ impl<R: Runtime> WindowExt for Window<R> {
             .unwrap_or_else(|| self.label());
 
         let restoring_window_state = self.state::<RestoringWindowState>();
-        let _restoring_window_lock = restoring_window_state.0.lock().unwrap();
+        let _restoring_window_guard = restoring_window_state.start(self.label());
         let cache = self.state::<WindowStateCache>();
 
         // Copy the saved state out instead of holding the cache lock while calling into the
@@ -499,7 +536,7 @@ impl Builder {
             .setup(move |app, _api| {
                 let cache = load_saved_window_states(app, &filename).unwrap_or_default();
                 app.manage(WindowStateCache(Arc::new(Mutex::new(cache))));
-                app.manage(RestoringWindowState(Mutex::new(())));
+                app.manage(RestoringWindowState::default());
                 app.manage(PluginState {
                     state_flags,
                     filename,
@@ -559,11 +596,9 @@ impl Builder {
 
                     WindowEvent::Moved(position)
                         if state_flags.contains(StateFlags::POSITION)
-                            && window_clone
+                            && !window_clone
                                 .state::<RestoringWindowState>()
-                                .0
-                                .try_lock()
-                                .is_ok()
+                                .is_restoring(window_clone.label())
                             && !window_clone.is_minimized().unwrap_or_default() =>
                     {
                         let mut c = cache.lock().unwrap();
@@ -577,11 +612,9 @@ impl Builder {
                     }
                     WindowEvent::Resized(size)
                         if state_flags.contains(StateFlags::SIZE)
-                            && window_clone
+                            && !window_clone
                                 .state::<RestoringWindowState>()
-                                .0
-                                .try_lock()
-                                .is_ok() =>
+                                .is_restoring(window_clone.label()) =>
                     {
                         // TODO: Remove once https://github.com/tauri-apps/tauri/issues/5812 is resolved.
                         let is_maximized = if cfg!(target_os = "macos")
@@ -650,5 +683,27 @@ impl MonitorExt for Monitor {
         ]
         .into_iter()
         .any(|(x, y)| x >= left && x < right && y >= top && y < bottom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restoring_state_is_tracked_per_window() {
+        let restoring = RestoringWindowState::default();
+        assert!(!restoring.is_restoring("main"));
+
+        let main = restoring.start("main");
+        assert!(restoring.is_restoring("main"));
+        assert!(!restoring.is_restoring("other"));
+
+        // a concurrent restore of the same window keeps it marked until both are done
+        let main_again = restoring.start("main");
+        drop(main);
+        assert!(restoring.is_restoring("main"));
+        drop(main_again);
+        assert!(!restoring.is_restoring("main"));
     }
 }
