@@ -159,8 +159,11 @@ impl Builder {
 
                             let mut resp = HttpResponse::from_data(asset.bytes);
                             for (header, value) in response.headers {
-                                if let Ok(h) = Header::from_bytes(header.as_bytes(), value) {
-                                    resp.add_header(h);
+                                match Header::from_bytes(header.as_bytes(), value.as_bytes()) {
+                                    Ok(h) => resp.add_header(h),
+                                    Err(()) => log::warn!(
+                                        "localhost server skipped invalid response header `{header}: {value}`"
+                                    ),
                                 }
                             }
                             req.respond(resp).expect("unable to setup response");
