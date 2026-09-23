@@ -28,7 +28,6 @@ enum class BiometryResultType {
     SUCCESS, FAILURE, ERROR
 }
 
-private const val MAX_ATTEMPTS = "maxAttemps"
 private const val BIOMETRIC_FAILURE = "authenticationFailed"
 private const val INVALID_CONTEXT_ERROR = "invalidContext"
 
@@ -40,7 +39,9 @@ class AuthOptions {
     var subtitle: String? = null
     var cancelTitle: String? = null
     var confirmationRequired: Boolean? = null
-    var maxAttemps: Int = 3
+    var maxAttempts: Int? = null
+    // misspelled name kept for backwards compatibility
+    var maxAttemps: Int? = null
 }
 
 @TauriPlugin
@@ -58,6 +59,7 @@ class BiometricPlugin(private val activity: Activity): Plugin(activity) {
         const val RESULT_ERROR_MESSAGE = "errorMessage"
         const val DEVICE_CREDENTIAL = "allowDeviceCredential"
         const val CONFIRMATION_REQUIRED = "confirmationRequired"
+        const val MAX_ATTEMPTS = "maxAttempts"
 
         // Maps biometry error numbers to string error codes
         private var biometryErrorCodeMap: MutableMap<Int, String> = HashMap()
@@ -183,9 +185,9 @@ class BiometricPlugin(private val activity: Activity): Plugin(activity) {
             intent.putExtra(CONFIRMATION_REQUIRED, it)
         }
 
-        val maxAttemptsConfig = args.maxAttemps
-        val maxAttempts = max(maxAttemptsConfig, 1)
-        intent.putExtra(MAX_ATTEMPTS, maxAttempts)
+        (args.maxAttempts ?: args.maxAttemps)?.let {
+            intent.putExtra(MAX_ATTEMPTS, max(it, 1))
+        }
         startActivityForResult(invoke, intent, "authenticateResult")
     }
 

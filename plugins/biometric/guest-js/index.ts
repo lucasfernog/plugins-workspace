@@ -70,7 +70,19 @@ export interface AuthOptions {
   subtitle?: string
   /** Whether additional user confirmation is required, such as pressing a button, after successful biometric authentication. **Android only.** */
   confirmationRequired?: boolean
-  /** Maximum number of attempts allowed before the prompt is dismissed. Defaults to `3`. **Android only.** */
+  /**
+   * Maximum number of failed biometric attempts (a biometric that was presented but not recognized)
+   * before the prompt is dismissed and {@linkcode authenticate} rejects with the `authenticationFailed` code.
+   * When not set, the prompt stays open until the user cancels it or the system locks biometry out. **Android only.**
+   *
+   * @since 2.4.0
+   */
+  maxAttempts?: number
+  /**
+   * Maximum number of failed biometric attempts before the prompt is dismissed. **Android only.**
+   *
+   * @deprecated Misspelled; use {@linkcode AuthOptions.maxAttempts} instead, which takes precedence when both are set.
+   */
   maxAttemps?: number
 }
 

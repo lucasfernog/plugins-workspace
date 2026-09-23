@@ -18,6 +18,10 @@ import androidx.biometric.BiometricPrompt
 import java.util.concurrent.Executor
 
 class BiometricActivity : AppCompatActivity() {
+    private lateinit var prompt: BiometricPrompt
+    private var finished = false
+    private var failedAttempts = 0
+
     @SuppressLint("WrongConstant")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,8 +80,10 @@ class BiometricActivity : AppCompatActivity() {
         builder.setConfirmationRequired(
             intent.getBooleanExtra(BiometricPlugin.CONFIRMATION_REQUIRED, true)
         )
+        // 0 means no limit: the prompt stays open until the system locks biometry out
+        val maxAttempts = intent.getIntExtra(BiometricPlugin.MAX_ATTEMPTS, 0)
         val promptInfo = builder.build()
-        val prompt = BiometricPrompt(
+        prompt = BiometricPrompt(
             this,
             executor,
             object : BiometricPrompt.AuthenticationCallback() {
@@ -91,6 +97,21 @@ class BiometricActivity : AppCompatActivity() {
                         errorCode,
                         errorMessage as String
                     )
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    // A biometric was presented but not recognized; the prompt stays open for a retry
+                    failedAttempts++
+                    if (maxAttempts > 0 && failedAttempts >= maxAttempts) {
+                        finishActivity(
+                            BiometryResultType.FAILURE,
+                            0,
+                            "Authentication failed after $failedAttempts attempt(s)"
+                        )
+                        // triggers onAuthenticationError(ERROR_CANCELED), ignored since the activity already finished
+                        prompt.cancelAuthentication()
+                    }
                 }
 
                 override fun onAuthenticationSucceeded(
@@ -110,6 +131,11 @@ class BiometricActivity : AppCompatActivity() {
         errorCode: Int = 0,
         errorMessage: String? = ""
     ) {
+        // only report the first result (e.g. the cancellation after reaching the max attempts is ignored)
+        if (finished) {
+            return
+        }
+        finished = true
         val intent = Intent()
         val prefix = BiometricPlugin.RESULT_EXTRA_PREFIX
         intent
