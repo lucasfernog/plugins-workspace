@@ -70,7 +70,15 @@ Afterwards all the plugin's APIs are available through the JavaScript guest bind
 
 ```javascript
 import { scan, textRecord, write } from '@tauri-apps/plugin-nfc'
-await scan({ type: 'tag', keepSessionAlive: true })
+
+// read the NDEF records of a tag
+const tag = await scan({ type: 'ndef' })
+
+// scan a tag and write a message to it
+await write([textRecord('Tauri is awesome!')], { kind: { type: 'ndef' } })
+
+// or keep the session of a scan alive to write to the tag that was just read
+await scan({ type: 'tag' }, { keepSessionAlive: true })
 await write([textRecord('Tauri is awesome!')])
 ```
 
