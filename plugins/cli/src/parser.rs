@@ -212,6 +212,9 @@ fn get_app(
     }
 
     if let Some(subcommands) = config.subcommands() {
+        // the config stores subcommands in a `HashMap`, sort them so `--help` lists them in a stable order
+        let mut subcommands = subcommands.iter().collect::<Vec<_>>();
+        subcommands.sort_unstable_by_key(|(name, _)| *name);
         for (subcommand_name, subcommand) in subcommands {
             let clap_subcommand = get_app(
                 package_info,
@@ -292,4 +295,61 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    fn help(config: &Config, args: &[&str]) -> String {
+        let matches = parse(config, args).unwrap();
+        arg(&matches, "help").value.as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn subcommands_are_listed_in_order() {
+        let names = ["delta", "alpha", "echo", "charlie", "bravo"];
+        let config = config(serde_json::json!({
+            "subcommands": names
+                .iter()
+                .map(|name| (name.to_string(), serde_json::json!({})))
+                .collect::<serde_json::Map<_, _>>()
+        }));
+
+        let help = help(&config, &["--help"]);
+        let positions = ["alpha", "bravo", "charlie", "delta", "echo"].map(|name| {
+            help.find(name)
+                .unwrap_or_else(|| panic!("{name} missing: {help}"))
+        });
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{help}");
+    }
 }
