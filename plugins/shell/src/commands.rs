@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, string::FromUtf8Error};
+use std::{collections::HashMap, path::PathBuf, string::FromUtf8Error};
 
 use encoding_rs::Encoding;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,11 @@ use crate::{
 };
 
 type ChildId = u32;
+
+/// How long to wait before sending a child process event to the webview again.
+const SEND_EVENT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(15);
+/// How many times sending an event is retried before giving up (about 5 seconds).
+const SEND_EVENT_MAX_RETRIES: u32 = 333;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "event", content = "payload")]
@@ -254,25 +259,31 @@ pub fn spawn<R: Runtime>(
     let children = shell.children.clone();
 
     tauri::async_runtime::spawn(async move {
+        // Sending fails while the webview cannot receive the message yet (see #1298), so
+        // it is retried for a while. If it keeps failing the webview is most likely gone:
+        // stop forwarding, but keep draining the events so the child does not block on
+        // a full stdout/stderr pipe.
+        let mut forwarding = true;
         while let Some(event) = rx.recv().await {
             if matches!(event, crate::process::CommandEvent::Terminated(_)) {
                 children.lock().unwrap().remove(&pid);
             };
+            if !forwarding {
+                continue;
+            }
             let js_event = JSCommandEvent::new(event, encoding);
 
-            if on_event.send(js_event.clone()).is_err() {
-                fn send<'a>(
-                    on_event: &'a Channel<JSCommandEvent>,
-                    js_event: &'a JSCommandEvent,
-                ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-                    Box::pin(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
-                        if on_event.send(js_event.clone()).is_err() {
-                            send(on_event, js_event).await;
-                        }
-                    })
+            let mut retries = 0;
+            while on_event.send(js_event.clone()).is_err() {
+                if retries == SEND_EVENT_MAX_RETRIES {
+                    log::warn!(
+                        "failed to send the events of process {pid} to the webview, giving up"
+                    );
+                    forwarding = false;
+                    break;
                 }
-                send(&on_event, &js_event).await;
+                retries += 1;
+                tokio::time::sleep(SEND_EVENT_RETRY_DELAY).await;
             }
         }
     });
