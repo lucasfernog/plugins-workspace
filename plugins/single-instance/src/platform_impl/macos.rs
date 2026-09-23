@@ -6,8 +6,8 @@ use std::{
     fs::{File, OpenOptions},
     io::{BufWriter, Error, ErrorKind, Write},
     os::unix::{
-        fs::OpenOptionsExt,
-        io::AsRawFd,
+        fs::{MetadataExt, OpenOptionsExt},
+        io::{AsRawFd, RawFd},
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
@@ -33,18 +33,45 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Largest message accepted from another instance (4 times macOS' `ARG_MAX`).
 const MAX_MESSAGE_SIZE: u64 = 4 * 1024 * 1024;
 
+/// Longest path a Unix socket can be bound to on macOS (`sun_path` is 104 bytes, including the
+/// NUL terminator).
+const MAX_SOCKET_PATH_LEN: usize = 103;
+
+/// The directory plugin versions up to 2.4.5 put the socket in. It is shared by all users.
+const LEGACY_SOCKET_DIR: &str = "/tmp";
+
+type SharedCallback<R> = Arc<Mutex<Box<SingleInstanceCallback<R>>>>;
+
 pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
     plugin::Builder::new("single-instance")
         .setup(|app, _api| {
-            let socket = socket_path(app.config(), app.package_info());
+            let name = socket_name(app.config(), app.package_info());
+            let legacy = Path::new(LEGACY_SOCKET_DIR).join(&name);
+            let socket =
+                user_socket_path(&std::env::temp_dir(), &name).unwrap_or_else(|| legacy.clone());
+            let legacy = (socket != legacy).then_some(legacy);
 
-            match claim_or_notify(&socket) {
+            match claim_or_notify(&socket, legacy.as_deref()) {
                 Ok(Claim::Notified) => {
                     std::process::exit(0);
                 }
                 Ok(Claim::Primary { listener, lock }) => {
-                    app.manage(OwnedSocket(Mutex::new(Some((socket, lock)))));
-                    listen_for_other_instances(listener, app.clone(), cb);
+                    let cb: SharedCallback<R> = Arc::new(Mutex::new(cb));
+                    listen_for_other_instances(listener, app.clone(), cb.clone());
+
+                    // Also listen on the legacy path, so instances of this app built with plugin
+                    // versions up to 2.4.5 (which only look there) find this one.
+                    let legacy = legacy.and_then(|legacy| {
+                        let listener = bind_legacy_socket(&legacy)?;
+                        listen_for_other_instances(listener, app.clone(), cb);
+                        Some(legacy)
+                    });
+
+                    app.manage(OwnedSocket(Mutex::new(Some(Owned {
+                        socket,
+                        legacy,
+                        lock,
+                    }))));
                 }
                 Err(e) => {
                     tracing::debug!("single_instance failed to notify - launching normally: {e}");
@@ -60,25 +87,35 @@ pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
         .build()
 }
 
-/// The socket this instance listens on, and the lock that makes it the first instance. Released
+struct Owned {
+    socket: PathBuf,
+    legacy: Option<PathBuf>,
+    lock: File,
+}
+
+/// The sockets this instance listens on, and the lock that makes it the first instance. Released
 /// by [`destroy`].
-struct OwnedSocket(Mutex<Option<(PathBuf, File)>>);
+struct OwnedSocket(Mutex<Option<Owned>>);
 
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
-    // Only remove the socket if this instance created it, and only once: by the time `destroy`
+    // Only remove the sockets if this instance created them, and only once: by the time `destroy`
     // runs a second time, a new instance may have created a socket at the same path.
-    if let Some((socket, lock)) = manager
+    if let Some(owned) = manager
         .try_state::<OwnedSocket>()
         .and_then(|socket| socket.0.lock().unwrap().take())
     {
-        socket_cleanup(&socket);
+        socket_cleanup(&owned.socket);
+        if let Some(legacy) = &owned.legacy {
+            socket_cleanup(legacy);
+        }
         // Remove the socket before releasing the lock, so the next instance doesn't connect to a
         // socket that is going away.
-        drop(lock);
+        drop(owned.lock);
     }
 }
 
-fn socket_path(config: &Config, _package_info: &tauri::PackageInfo) -> PathBuf {
+/// The socket's file name, `<identifier>_si.sock`.
+fn socket_name(config: &Config, _package_info: &tauri::PackageInfo) -> String {
     let identifier = config.identifier.replace(['.', '-'].as_ref(), "_");
 
     #[cfg(feature = "semver")]
@@ -87,11 +124,37 @@ fn socket_path(config: &Config, _package_info: &tauri::PackageInfo) -> PathBuf {
         semver_compat_string(&_package_info.version),
     );
 
-    // Use /tmp as socket path must be shorter than 100 chars.
-    PathBuf::from(format!("/tmp/{}_si.sock", identifier))
+    format!("{identifier}_si.sock")
 }
 
-fn socket_cleanup(socket: &PathBuf) {
+/// The socket path inside `dir`, the per-user temporary directory (`$TMPDIR`, which is inside
+/// the app container for sandboxed apps). Unlike `/tmp`, it is private to the user, so other
+/// users can neither squat the socket nor receive the arguments.
+///
+/// Falls back to a hash of `name` when the path would be too long for a Unix socket. Returns
+/// `None` if `dir` is `/tmp` itself or the path is still too long.
+fn user_socket_path(dir: &Path, name: &str) -> Option<PathBuf> {
+    if dir.as_os_str().is_empty() || dir == Path::new(LEGACY_SOCKET_DIR) {
+        return None;
+    }
+    let fits = |path: &Path| path.as_os_str().len() <= MAX_SOCKET_PATH_LEN;
+    let path = dir.join(name);
+    if fits(&path) {
+        return Some(path);
+    }
+    let path = dir.join(format!("si_{:016x}.sock", fnv1a(name.as_bytes())));
+    fits(&path).then_some(path)
+}
+
+/// 64-bit FNV-1a, a hash that is stable across Rust versions (unlike `DefaultHasher`), since
+/// different builds of the app must agree on the socket name.
+fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+fn socket_cleanup(socket: &Path) {
     let _ = std::fs::remove_file(socket);
 }
 
@@ -108,13 +171,21 @@ enum Claim {
 /// OS releases it if the process dies), so two instances starting at the same time can't both
 /// remove the socket and bind their own: only the one that gets the lock binds, the other one
 /// waits for it to listen and notifies it.
-fn claim_or_notify(socket: &PathBuf) -> Result<Claim, Error> {
+///
+/// `legacy` is the socket path used by plugin versions up to 2.4.5, where a first instance
+/// running such a version listens.
+fn claim_or_notify(socket: &Path, legacy: Option<&Path>) -> Result<Claim, Error> {
     // Fast path, and compatibility with first instances built with older plugin versions, which
     // don't take the lock.
     let connect_error = match notify_singleton(socket) {
         Ok(()) => return Ok(Claim::Notified),
         Err(e) => e,
     };
+    if let Some(legacy) = legacy {
+        if notify_singleton(legacy).is_ok() {
+            return Ok(Claim::Notified);
+        }
+    }
     if !matches!(
         connect_error.kind(),
         ErrorKind::NotFound | ErrorKind::ConnectionRefused
@@ -139,6 +210,21 @@ fn claim_or_notify(socket: &PathBuf) -> Result<Claim, Error> {
             Err(_) => std::thread::sleep(Duration::from_millis(50)),
         }
     }
+}
+
+/// Binds the legacy socket in `/tmp`, unless it belongs to another user. Must only be called
+/// after checking that no instance of the current user listens on it.
+fn bind_legacy_socket(path: &Path) -> Option<UnixListener> {
+    match std::fs::symlink_metadata(path) {
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        // A stale socket of ours: remove it. Another user's file can't be removed from the
+        // sticky `/tmp` anyway, and must not be touched.
+        Ok(metadata) if metadata.uid() == current_uid() => socket_cleanup(path),
+        _ => return None,
+    }
+    UnixListener::bind(path)
+        .inspect_err(|e| tracing::debug!("single_instance: failed to bind the legacy socket: {e}"))
+        .ok()
 }
 
 fn lock_path(socket: &Path) -> PathBuf {
@@ -169,8 +255,26 @@ fn try_lock(path: &Path) -> Result<Option<File>, Error> {
     }
 }
 
-fn notify_singleton(socket: &PathBuf) -> Result<(), Error> {
+fn current_uid() -> u32 {
+    unsafe { libc::geteuid() }
+}
+
+/// Whether the process on the other end of the Unix socket `fd` runs as the current user.
+fn peer_is_current_user(fd: RawFd) -> bool {
+    let mut uid = 0;
+    let mut gid = 0;
+    unsafe { libc::getpeereid(fd, &mut uid, &mut gid) == 0 && uid == current_uid() }
+}
+
+fn notify_singleton(socket: &Path) -> Result<(), Error> {
     let stream = UnixStream::connect(socket)?;
+    // Never hand our arguments to a process of another user (e.g. one squatting the socket).
+    if !peer_is_current_user(stream.as_raw_fd()) {
+        return Err(Error::new(
+            ErrorKind::PermissionDenied,
+            "the socket is owned by another user",
+        ));
+    }
     let mut bf = BufWriter::new(&stream);
     let cwd = std::env::current_dir()
         .unwrap_or_default()
@@ -189,9 +293,8 @@ fn notify_singleton(socket: &PathBuf) -> Result<(), Error> {
 fn listen_for_other_instances<A: Runtime>(
     listener: UnixListener,
     app: AppHandle<A>,
-    cb: Box<SingleInstanceCallback<A>>,
+    cb: SharedCallback<A>,
 ) {
-    let cb = Arc::new(Mutex::new(cb));
     tauri::async_runtime::spawn(async move {
         let listener = listener
             .set_nonblocking(true)
@@ -200,6 +303,13 @@ fn listen_for_other_instances<A: Runtime>(
             Ok(listener) => loop {
                 match listener.accept().await {
                     Ok((stream, _addr)) => {
+                        // Only accept arguments from processes of the current user.
+                        if !peer_is_current_user(stream.as_raw_fd()) {
+                            tracing::debug!(
+                                "single_instance ignored a connection from another user"
+                            );
+                            continue;
+                        }
                         // Read each connection in its own task, so a client that never closes
                         // the connection can't block the notifications of later instances.
                         let app = app.clone();
@@ -268,26 +378,63 @@ mod tests {
         path
     }
 
-    fn cleanup(socket: &PathBuf, lock: File) {
+    fn cleanup(socket: &Path, lock: File) {
         socket_cleanup(socket);
         drop(lock);
         let _ = std::fs::remove_file(lock_path(socket));
     }
 
-    #[test]
-    fn second_claim_notifies_the_first() {
-        let socket = temp_socket("notify");
-        let Claim::Primary { listener, lock } = claim_or_notify(&socket).unwrap() else {
-            panic!("expected to become the first instance");
-        };
-        assert!(matches!(claim_or_notify(&socket), Ok(Claim::Notified)));
-
+    fn read_all(listener: &UnixListener) -> Vec<u8> {
         let (mut stream, _) = listener.accept().unwrap();
         let mut data = Vec::new();
         stream.read_to_end(&mut data).unwrap();
-        assert!(data.windows(2).any(|w| w == b"\0\0"));
+        data
+    }
+
+    #[test]
+    fn second_claim_notifies_the_first() {
+        let socket = temp_socket("notify");
+        let Claim::Primary { listener, lock } = claim_or_notify(&socket, None).unwrap() else {
+            panic!("expected to become the first instance");
+        };
+        assert!(matches!(
+            claim_or_notify(&socket, None),
+            Ok(Claim::Notified)
+        ));
+        assert!(read_all(&listener).windows(2).any(|w| w == b"\0\0"));
 
         cleanup(&socket, lock);
+    }
+
+    #[test]
+    fn notifies_a_first_instance_on_the_legacy_path() {
+        let socket = temp_socket("new");
+        let legacy = temp_socket("legacy");
+        let legacy_listener = UnixListener::bind(&legacy).unwrap();
+
+        assert!(matches!(
+            claim_or_notify(&socket, Some(&legacy)),
+            Ok(Claim::Notified)
+        ));
+        assert!(read_all(&legacy_listener).windows(2).any(|w| w == b"\0\0"));
+        assert!(!socket.exists());
+        socket_cleanup(&legacy);
+    }
+
+    #[test]
+    fn binds_the_legacy_path_unless_taken() {
+        let legacy = temp_socket("bind-legacy");
+        // stale socket of the current user
+        drop(UnixListener::bind(&legacy).unwrap());
+        let listener = bind_legacy_socket(&legacy).expect("stale socket is replaced");
+        let mut client = UnixStream::connect(&legacy).unwrap();
+        client.write_all(b"cwd\0\0arg").unwrap();
+        drop(client);
+        assert_eq!(read_all(&listener), b"cwd\0\0arg");
+        socket_cleanup(&legacy);
+
+        // a regular file (e.g. of another user) is never bound over
+        assert!(bind_legacy_socket(Path::new("/etc/hosts")).is_none());
     }
 
     #[test]
@@ -300,11 +447,13 @@ mod tests {
             std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_millis(300));
                 let listener = UnixListener::bind(&socket).unwrap();
-                let (mut stream, _) = listener.accept().unwrap();
-                stream.read_to_end(&mut Vec::new()).unwrap();
+                read_all(&listener);
             })
         };
-        assert!(matches!(claim_or_notify(&socket), Ok(Claim::Notified)));
+        assert!(matches!(
+            claim_or_notify(&socket, None),
+            Ok(Claim::Notified)
+        ));
         first.join().unwrap();
         cleanup(&socket, lock);
     }
@@ -316,10 +465,37 @@ mod tests {
         drop(UnixListener::bind(&socket).unwrap());
         assert!(socket.exists());
 
-        let Claim::Primary { lock, .. } = claim_or_notify(&socket).unwrap() else {
+        let Claim::Primary { lock, .. } = claim_or_notify(&socket, None).unwrap() else {
             panic!("expected to become the first instance");
         };
         cleanup(&socket, lock);
+    }
+
+    #[test]
+    fn user_socket_paths() {
+        let tmpdir = Path::new("/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/");
+        assert_eq!(
+            user_socket_path(tmpdir, "com_tauri_app_si.sock").unwrap(),
+            tmpdir.join("com_tauri_app_si.sock")
+        );
+
+        let long_name = format!("com_{}_si.sock", "x".repeat(80));
+        let hashed = user_socket_path(tmpdir, &long_name).unwrap();
+        assert!(hashed.as_os_str().len() <= MAX_SOCKET_PATH_LEN);
+        assert_eq!(hashed, user_socket_path(tmpdir, &long_name).unwrap());
+        assert_ne!(
+            hashed,
+            user_socket_path(tmpdir, &format!("{long_name}2")).unwrap()
+        );
+
+        assert!(user_socket_path(Path::new("/tmp"), "a_si.sock").is_none());
+        assert!(user_socket_path(&Path::new("/").join("d".repeat(100)), "a_si.sock").is_none());
+    }
+
+    #[test]
+    fn fnv1a_is_stable() {
+        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
     }
 
     #[test]
@@ -361,6 +537,12 @@ mod tests {
             );
             idle.abort();
         });
+    }
+
+    #[test]
+    fn peer_of_a_socket_pair_is_the_current_user() {
+        let (a, _b) = UnixStream::pair().unwrap();
+        assert!(peer_is_current_user(a.as_raw_fd()));
     }
 
     #[test]
