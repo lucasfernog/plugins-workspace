@@ -278,11 +278,26 @@ impl ShellScope<'_> {
             (None, ExecuteArgs::None) => Ok(vec![]),
             (None, ExecuteArgs::List(list)) => Ok(list),
             (None, ExecuteArgs::Single(string)) => Ok(vec![string]),
-            (Some(list), ExecuteArgs::List(args)) => list
-                .iter()
+            (Some(list), ExecuteArgs::List(args)) => {
+                // TODO(v3): reject these calls instead of running something else than asked
+                if args.len() > list.len() {
+                    log::warn!(
+                        "shell scope command `{command_name}` allows {} argument(s) but was called with {}; the extra arguments are ignored",
+                        list.len(),
+                        args.len()
+                    );
+                }
+                list.iter()
                 .enumerate()
                 .map(|(i, arg)| match arg {
-                    ScopeAllowedArg::Fixed(fixed) => Ok(fixed.to_string()),
+                    ScopeAllowedArg::Fixed(fixed) => {
+                        if let Some(value) = args.get(i).filter(|value| *value != fixed) {
+                            log::warn!(
+                                "shell scope command `{command_name}` was called with `{value}` at position {i}, where the scope has the fixed argument `{fixed}`; `{fixed}` is used"
+                            );
+                        }
+                        Ok(fixed.to_string())
+                    }
                     ScopeAllowedArg::Var { validator } => {
                         let value = args
                             .get(i)
@@ -298,7 +313,8 @@ impl ShellScope<'_> {
                         }
                     }
                 })
-                .collect(),
+                .collect()
+            }
             (Some(list), arg) if arg.is_empty() && list.iter().all(ScopeAllowedArg::is_fixed) => {
                 list.iter()
                     .map(|arg| match arg {
@@ -307,7 +323,6 @@ impl ShellScope<'_> {
                     })
                     .collect()
             }
-            (Some(list), _) if list.is_empty() => Err(Error::InvalidInput(command_name.into())),
             (Some(_), _) => Err(Error::InvalidInput(command_name.into())),
         }?;
 
@@ -349,6 +364,48 @@ mod tests {
             args,
             sidecar: false,
         })
+    }
+
+    fn prepared_args(scope: &ShellScope<'_>, name: &str, args: &[&str]) -> Vec<String> {
+        let command: std::process::Command = scope
+            .prepare(
+                name,
+                ExecuteArgs::List(args.iter().map(|a| a.to_string()).collect()),
+            )
+            .unwrap()
+            .into();
+        command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    // TODO(v3): these calls should be rejected; for now they only log a warning.
+    #[test]
+    fn extra_and_mismatched_fixed_args_are_ignored() {
+        let no_args = entry("no-args", "echo", Some(vec![]));
+        let fixed = entry(
+            "fixed",
+            "echo",
+            Some(vec![
+                ScopeAllowedArg::Fixed("-n".into()),
+                ScopeAllowedArg::Var {
+                    validator: regex::Regex::new(r"^\w+$").unwrap(),
+                },
+            ]),
+        );
+        let scope = ShellScope {
+            scopes: vec![&no_args, &fixed],
+            denied: vec![],
+        };
+        assert_eq!(
+            prepared_args(&scope, "no-args", &["a", "b"]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            prepared_args(&scope, "fixed", &["-e", "word", "extra"]),
+            vec!["-n", "word"]
+        );
     }
 
     #[test]
