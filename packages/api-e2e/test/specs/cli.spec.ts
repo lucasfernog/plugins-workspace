@@ -55,6 +55,23 @@ describePlugin('cli', { desktopOnly: true }, () => {
     })
   })
 
+  it('getMatchesFrom returns the help and version text', async () => {
+    const help = await tauri(
+      async (api, args) => (await api.cli.getMatchesFrom(args)).args.help,
+      ['api', '--help']
+    )
+    expect(help.occurrences).toBe(1)
+    expect(help.value).toContain('Tauri API example')
+    expect(help.value).toContain('update')
+
+    const version = await tauri(
+      async (api, args) => (await api.cli.getMatchesFrom(args)).args.version,
+      ['api', '--version']
+    )
+    expect(version.occurrences).toBe(1)
+    expect(version.value).toContain('2.0.0')
+  })
+
   it('getMatchesFrom rejects arguments the definition does not accept', async () => {
     expect(
       await tauriError(
