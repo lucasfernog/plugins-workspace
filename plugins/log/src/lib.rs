@@ -369,6 +369,9 @@ pub enum TargetKind {
         /// Path of the directory to write the log file to.
         path: PathBuf,
         /// Name of the log file, without extension. Defaults to the app's package name when `None`.
+        ///
+        /// The `log` extension replaces anything after the last `.` of the name: `app.webview` and `app.rust`
+        /// would both write to `app.log`, so avoid dots in the name.
         file_name: Option<String>,
     },
     /// Write logs to the OS specific logs directory.
@@ -384,6 +387,9 @@ pub enum TargetKind {
     /// | Android   | `{ConfigDir}/logs`, in the app's internal storage                                         | `/data/data/com.tauri.dev/files/logs`                       |
     LogDir {
         /// Name of the log file, without extension. Defaults to the app's package name when `None`.
+        ///
+        /// The `log` extension replaces anything after the last `.` of the name: `app.webview` and `app.rust`
+        /// would both write to `app.log`, so avoid dots in the name.
         file_name: Option<String>,
     },
     /// Forward logs to the webview (via the `log://log` event).
@@ -490,7 +496,11 @@ impl Builder {
     /// Creates a new [`Builder`] with the default configuration: targets [`TargetKind::Stdout`] and
     /// [`TargetKind::LogDir`] (using the app's package name as the file name), [`RotationStrategy::KeepOne`],
     /// [`TimezoneStrategy::UseUtc`], [`FileOpenStrategy::Append`], a maximum log file size of `40_000` bytes
-    /// (see [`Self::max_file_size`]) and the default `fern` formatter.
+    /// (see [`Self::max_file_size`]) and the default format.
+    ///
+    /// The default format is `[date][time][target][level] message` on desktop, with the time in UTC, and
+    /// `[target] message` on Android and iOS. The mobile format applies to every target, including log files, so use
+    /// [`Target::format`] to add a timestamp and level to mobile log files.
     pub fn new() -> Self {
         Default::default()
     }
@@ -504,7 +514,10 @@ impl Builder {
     }
 
     /// Sets the [`TimezoneStrategy`].
-    /// Calling this method overrides the format set in [`Self::format`].
+    ///
+    /// Calling this method replaces the format with `[date][time][level][target] message` on every platform, which
+    /// swaps the level and target of the default desktop format. It overrides any format set earlier with
+    /// [`Self::format`], [`Self::clear_format`] or `with_colors` (`colored` feature), so call it before these methods.
     ///
     /// Default is [`TimezoneStrategy::UseUtc`]
     pub fn timezone_strategy(mut self, timezone_strategy: TimezoneStrategy) -> Self {
