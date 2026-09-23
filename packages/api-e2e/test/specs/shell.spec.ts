@@ -21,6 +21,10 @@ const shell =
 // every platform: `prepare_cmd` rejects before anything is executed.
 const itSpawns = platform === 'ios' ? it.skip : it
 
+// Specs whose script needs a Unix shell (`sh -c`), which `cmd` has no
+// equivalent of.
+const itSpawnsUnix = platform === 'ios' || platform === 'win32' ? it.skip : it
+
 /**
  * Puts a directory in the form the two sides of the working directory
  * assertion can be compared in: the shell may print it with a different path
@@ -210,6 +214,46 @@ describePlugin('shell', () => {
       expect(result.signal).toBe(9)
     }
   })
+
+  // `exec` makes the shell replace itself with `sleep`, so `kill` reaches the
+  // process that holds the stdin pipe.
+  itSpawnsUnix(
+    'a write the child does not read does not block kill',
+    async () => {
+      const result = await tauri(
+        async (api, program, flag) => {
+          const child = await api.shell.Command.create(program, [
+            flag,
+            'exec sleep 30'
+          ]).spawn()
+          let writeSettled = false
+          // far more than a pipe buffer holds, so the write blocks
+          const write = child
+            .write('x'.repeat(4 * 1024 * 1024))
+            .then(
+              () => 'ok',
+              (error: unknown) => String(error)
+            )
+            .finally(() => {
+              writeSettled = true
+            })
+          await new Promise((r) => setTimeout(r, 500))
+          const blocked = !writeSettled
+          const start = Date.now()
+          await child.kill()
+          const killMs = Date.now() - start
+          const writeResult = await write
+          return { blocked, killMs, writeResult }
+        },
+        shell.program,
+        shell.flag
+      )
+      expect(result.blocked).toBe(true)
+      expect(result.killMs).toBeLessThan(5000)
+      // the child died with the write pending, so the pipe is broken
+      expect(result.writeResult).not.toBe('ok')
+    }
+  )
 
   it('rejects programs that are not in the scope', async () => {
     const message = await tauriError((api) =>

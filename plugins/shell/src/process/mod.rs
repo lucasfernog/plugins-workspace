@@ -7,7 +7,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command as StdCommand, Stdio},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     thread::spawn,
 };
 
@@ -64,14 +64,19 @@ pub struct Command {
 #[derive(Debug)]
 pub struct CommandChild {
     inner: Arc<SharedChild>,
-    stdin_writer: PipeWriter,
+    stdin_writer: Arc<Mutex<PipeWriter>>,
 }
 
 impl CommandChild {
     /// Writes to process stdin.
     pub fn write(&mut self, buf: &[u8]) -> crate::Result<()> {
-        self.stdin_writer.write_all(buf)?;
+        self.stdin_writer.lock().unwrap().write_all(buf)?;
         Ok(())
+    }
+
+    /// A handle to the stdin pipe, so it can be written to without holding on to the child.
+    pub(crate) fn stdin_writer(&self) -> Arc<Mutex<PipeWriter>> {
+        self.stdin_writer.clone()
     }
 
     /// Sends a kill signal to the child.
@@ -360,7 +365,7 @@ impl Command {
             rx,
             CommandChild {
                 inner: child,
-                stdin_writer,
+                stdin_writer: Arc::new(Mutex::new(stdin_writer)),
             },
         ))
     }

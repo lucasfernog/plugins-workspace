@@ -438,6 +438,9 @@ class Child {
   /** The child process `pid`. */
   pid: number
 
+  /** @ignore The previous write, so writes reach the process in the order they were made. */
+  private lastWrite: Promise<unknown> = Promise.resolve()
+
   /**
    * Creates a handle to the child process with the given process id.
    *
@@ -475,10 +478,16 @@ class Child {
    * @since 2.0.0
    */
   async write(data: IOPayload | number[]): Promise<void> {
-    await invoke('plugin:shell|stdin_write', {
-      pid: this.pid,
-      buffer: data
-    })
+    // The write runs off the main thread, so two writes that are not awaited could
+    // otherwise run concurrently; chain them to keep their order.
+    const write = this.lastWrite.then(() =>
+      invoke('plugin:shell|stdin_write', {
+        pid: this.pid,
+        buffer: data
+      })
+    )
+    this.lastWrite = write.catch(() => undefined)
+    await write
   }
 
   /**

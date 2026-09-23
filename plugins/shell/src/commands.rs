@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, string::FromUtf8Error};
+use std::{
+    collections::HashMap, future::Future, io::Write, path::PathBuf, pin::Pin, string::FromUtf8Error,
+};
 
 use encoding_rs::Encoding;
 use serde::{Deserialize, Serialize};
@@ -281,17 +283,28 @@ pub fn spawn<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn stdin_write<R: Runtime>(
+pub async fn stdin_write<R: Runtime>(
     _window: Window<R>,
     shell: State<'_, Shell<R>>,
     pid: ChildId,
     buffer: Buffer,
 ) -> crate::Result<()> {
-    if let Some(child) = shell.children.lock().unwrap().get_mut(&pid) {
-        match buffer {
-            Buffer::Text(t) => child.write(t.as_bytes())?,
-            Buffer::Raw(r) => child.write(&r)?,
-        }
+    // Only hold the children lock to look the child up: the write blocks while the
+    // child does not read its stdin, and must not block `kill` or the exit cleanup.
+    let writer = shell
+        .children
+        .lock()
+        .unwrap()
+        .get(&pid)
+        .map(|child| child.stdin_writer());
+    if let Some(writer) = writer {
+        let bytes = match buffer {
+            Buffer::Text(t) => t.into_bytes(),
+            Buffer::Raw(r) => r,
+        };
+        tauri::async_runtime::spawn_blocking(move || writer.lock().unwrap().write_all(&bytes))
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))??;
     }
     Ok(())
 }
