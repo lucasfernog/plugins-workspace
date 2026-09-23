@@ -327,14 +327,19 @@ pub async fn fetch<R: Runtime>(
 
             // POST and PUT requests should always have a 0 length content-length,
             // if there is no body. https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+            // (with the `unsafe-headers` feature, a value set by the frontend is kept as is)
             if data.is_none() && matches!(method, Method::POST | Method::PUT) {
-                headers.append(header::CONTENT_LENGTH, HeaderValue::from_str("0")?);
+                headers
+                    .entry(header::CONTENT_LENGTH)
+                    .or_insert(HeaderValue::from_static("0"));
             }
 
             if headers.contains_key(header::RANGE) {
                 // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch step 18
                 // If httpRequest's header list contains `Range`, then append (`Accept-Encoding`, `identity`)
-                headers.append(header::ACCEPT_ENCODING, HeaderValue::from_str("identity")?);
+                headers
+                    .entry(header::ACCEPT_ENCODING)
+                    .or_insert(HeaderValue::from_static("identity"));
             }
 
             if !headers.contains_key(header::USER_AGENT) {
