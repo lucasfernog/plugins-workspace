@@ -218,6 +218,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
     private lateinit var webView: WebView
 
     private var nfcAdapter: NfcAdapter? = null
+    @Volatile
     private var session: Session? = null
 
     override fun load(webView: WebView) {
@@ -238,34 +239,28 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         }
 
         extraTag?.let { tag ->
-            session?.let {
-                if (it.keepAlive) {
-                    it.tag = tag
-                }
+            // read the session once: it is also mutated from the command threads
+            val current = session ?: return
+            if (current.keepAlive) {
+                current.tag = tag
+            } else {
+                // end the session right away so a second tag tapped while this one is
+                // processed does not get read or written again
+                endSession(current)
             }
 
-            when (session?.action) {
-                is NfcAction.Read -> readTag(tag, intent)
+            when (val action = current.action) {
+                is NfcAction.Read -> readTag(current, tag, intent)
                 is NfcAction.Write -> thread {
-                    if (session?.action is NfcAction.Write) {
-                        try {
-                            writeTag(tag, (session?.action as NfcAction.Write).message)
-                            session?.invoke?.resolve()
-                        } catch (e: Exception) {
-                            session?.invoke?.reject(e.toString())
-                        } finally {
-                            if (this.session?.keepAlive != true) {
-                                this.session = null
-                                disableNFCInForegroundIfIdle()
-                            }
-                        }
+                    try {
+                        writeTag(tag, action.message)
+                        current.invoke.resolve()
+                    } catch (e: Exception) {
+                        current.invoke.reject(e.toString())
                     }
                 }
-
-                else -> {}
             }
         }
-
     }
 
     override fun onPause() {
@@ -348,9 +343,8 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 } catch (e: Exception) {
                     invoke.reject(e.toString())
                 } finally {
-                    if (this.session?.keepAlive != true) {
-                        this.session = null
-                        disableNFCInForegroundIfIdle()
+                    if (!session.keepAlive) {
+                        endSession(session)
                     }
                 }
             } ?: run {
@@ -370,7 +364,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun readTag(tag: Tag, intent: Intent) {
+    private fun readTag(current: Session, tag: Tag, intent: Intent) {
         try {
             val rawMessages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, Parcelable::class.java)
@@ -383,31 +377,26 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 NfcAdapter.ACTION_NDEF_DISCOVERED -> {
                     // For some reason this one never triggers.
                     Logger.info("NFC", "new NDEF intent")
-                    readTagInner(tag, rawMessages)
+                    readTagInner(current, tag, rawMessages)
                 }
                 NfcAdapter.ACTION_TECH_DISCOVERED -> {
                     // For some reason this always triggers instead of NDEF_DISCOVERED even though we set ndef filters right now
                     Logger.info("NFC", "new TECH intent")
                     // TODO: handle different techs. Don't assume ndef.
-                    readTagInner(tag, rawMessages)
+                    readTagInner(current, tag, rawMessages)
                 }
                 NfcAdapter.ACTION_TAG_DISCOVERED -> {
                     // This should never trigger when an app handles NDEF and TECH
                     // TODO: Don't assume ndef.
-                    readTagInner(tag, rawMessages)
+                    readTagInner(current, tag, rawMessages)
                 }
             }
         } catch (e: Exception) {
-            session?.invoke?.reject("failed to read tag", e)
-        } finally {
-            if (this.session?.keepAlive != true) {
-                this.session = null
-            }
-            disableNFCInForegroundIfIdle()
+            current.invoke.reject("failed to read tag", e)
         }
     }
 
-    private fun readTagInner(tag: Tag?, rawMessages: Array<Parcelable>?) {
+    private fun readTagInner(current: Session, tag: Tag?, rawMessages: Array<Parcelable>?) {
         val ndefMessage = rawMessages?.get(0) as NdefMessage?
 
         val records = ndefMessage?.records ?: arrayOf()
@@ -422,7 +411,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         }
         ret.put("records", JSArray.from(jsonRecords))
 
-        session?.invoke?.resolve(ret)
+        current.invoke.resolve(ret)
     }
 
     private fun writeTag(tag: Tag, message: NdefMessage) {
@@ -501,6 +490,15 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
     private fun disableNFCInForeground() {
         activity.runOnUiThread {
             nfcAdapter?.disableForegroundDispatch(activity)
+        }
+    }
+
+    // Clears the given session if it is still the current one and disables the foreground dispatch.
+    @Synchronized
+    private fun endSession(ended: Session) {
+        if (session === ended) {
+            session = null
+            disableNFCInForegroundIfIdle()
         }
     }
 
