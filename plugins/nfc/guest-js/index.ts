@@ -327,7 +327,7 @@ const protocols = [
   'urn:nfc:'
 ]
 
-function encodeURI(uri: string): number[] {
+function encodeNdefUri(uri: string): number[] {
   let prefix = ''
 
   protocols.slice(1).forEach(function (protocol) {
@@ -374,7 +374,7 @@ export function uriRecord(uri: string, id?: string | number[]): NFCRecord {
     NFCTypeNameFormat.NfcWellKnown,
     RTD_URI,
     id ?? [],
-    encodeURI(uri)
+    encodeNdefUri(uri)
   )
 }
 
