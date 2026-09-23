@@ -36,8 +36,7 @@ export type RecordPath =
   | ArrayLike<number>
   | ArrayBuffer
 /**
- * The key of a record in a client store. Note that the store commands read the
- * key as a string on the Rust side, so string keys are the safe choice.
+ * The key of a record in a client store, either as a UTF-8 string or as its raw byte representation.
  */
 export type StoreKey =
   | string
@@ -56,6 +55,33 @@ function toBytes(
     return Array.from(new Uint8Array(value))
   }
   return Array.from(value as ArrayLike<number>)
+}
+
+/**
+ * Converts a client, vault or record path or a store key to a value the Rust side
+ * can deserialize. The IPC serializer only turns arrays, `Uint8Array` and
+ * `ArrayBuffer` into byte arrays, so other iterables and array-likes (a `Set`, a
+ * `Uint16Array`, ...) are converted here.
+ */
+function toDto(
+  value: string | Iterable<number> | ArrayLike<number> | ArrayBuffer
+): string | number[] {
+  return typeof value === 'string' ? value : toBytes(value)
+}
+
+/** Converts the paths of a location with {@link toDto}. */
+function locationDto(location: Location): {
+  type: string
+  payload: Record<string, unknown>
+} {
+  const payload = { ...location.payload }
+  if (payload.vault != null) {
+    payload.vault = toDto(payload.vault as VaultPath)
+  }
+  if (payload.record != null) {
+    payload.record = toDto(payload.record as RecordPath)
+  }
+  return { type: location.type, payload }
 }
 
 function sameBytes(a: VaultPath, b: VaultPath): boolean {
@@ -256,6 +282,23 @@ class ProcedureExecutor {
     this.procedureArgs = procedureArgs
   }
 
+  private async executeProcedure(
+    type: string,
+    payload: Record<string, unknown>
+  ): Promise<Uint8Array> {
+    const args = { ...this.procedureArgs }
+    if (args.client != null) {
+      args.client = toDto(args.client as ClientPath)
+    }
+    if (args.vault != null) {
+      args.vault = toDto(args.vault as VaultPath)
+    }
+    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
+      ...args,
+      procedure: { type, payload }
+    }).then((n) => Uint8Array.from(n))
+  }
+
   /**
    * Generate a SLIP10 seed for the given location.
    * @param outputLocation Location of the record where the seed will be stored.
@@ -266,16 +309,10 @@ class ProcedureExecutor {
     outputLocation: Location,
     sizeBytes?: number
   ): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'SLIP10Generate',
-        payload: {
-          output: outputLocation,
-          sizeBytes
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('SLIP10Generate', {
+      output: locationDto(outputLocation),
+      sizeBytes
+    })
   }
 
   /**
@@ -293,20 +330,14 @@ class ProcedureExecutor {
     sourceLocation: Location,
     outputLocation: Location
   ): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'SLIP10Derive',
-        payload: {
-          chain,
-          input: {
-            type: source,
-            payload: sourceLocation
-          },
-          output: outputLocation
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('SLIP10Derive', {
+      chain,
+      input: {
+        type: source,
+        payload: locationDto(sourceLocation)
+      },
+      output: locationDto(outputLocation)
+    })
   }
 
   /**
@@ -321,17 +352,11 @@ class ProcedureExecutor {
     outputLocation: Location,
     passphrase?: string
   ): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'BIP39Recover',
-        payload: {
-          mnemonic,
-          passphrase,
-          output: outputLocation
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('BIP39Recover', {
+      mnemonic,
+      passphrase,
+      output: locationDto(outputLocation)
+    })
   }
 
   /**
@@ -344,16 +369,10 @@ class ProcedureExecutor {
     outputLocation: Location,
     passphrase?: string
   ): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'BIP39Generate',
-        payload: {
-          output: outputLocation,
-          passphrase
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('BIP39Generate', {
+      output: locationDto(outputLocation),
+      passphrase
+    })
   }
 
   /**
@@ -364,16 +383,10 @@ class ProcedureExecutor {
    * @since 2.0.0
    */
   async getEd25519PublicKey(privateKeyLocation: Location): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'PublicKey',
-        payload: {
-          type: 'Ed25519',
-          privateKey: privateKeyLocation
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('PublicKey', {
+      type: 'Ed25519',
+      privateKey: locationDto(privateKeyLocation)
+    })
   }
 
   /**
@@ -388,16 +401,10 @@ class ProcedureExecutor {
     privateKeyLocation: Location,
     msg: string
   ): Promise<Uint8Array> {
-    return await invoke<number[]>('plugin:stronghold|execute_procedure', {
-      ...this.procedureArgs,
-      procedure: {
-        type: 'Ed25519Sign',
-        payload: {
-          privateKey: privateKeyLocation,
-          msg
-        }
-      }
-    }).then((n) => Uint8Array.from(n))
+    return await this.executeProcedure('Ed25519Sign', {
+      privateKey: locationDto(privateKeyLocation),
+      msg
+    })
   }
 }
 
@@ -516,8 +523,8 @@ export class Store {
   async get(key: StoreKey): Promise<Uint8Array | null> {
     return await invoke<number[] | null>('plugin:stronghold|get_store_record', {
       snapshotPath: this.path,
-      client: this.client,
-      key
+      client: toDto(this.client),
+      key: toDto(key)
     }).then((v) => v && Uint8Array.from(v))
   }
 
@@ -546,8 +553,8 @@ export class Store {
   ): Promise<void> {
     await invoke('plugin:stronghold|save_store_record', {
       snapshotPath: this.path,
-      client: this.client,
-      key,
+      client: toDto(this.client),
+      key: toDto(key),
       value,
       lifetime
     })
@@ -572,8 +579,8 @@ export class Store {
       'plugin:stronghold|remove_store_record',
       {
         snapshotPath: this.path,
-        client: this.client,
-        key
+        client: toDto(this.client),
+        key: toDto(key)
       }
     ).then((v) => v && Uint8Array.from(v))
   }
@@ -639,9 +646,9 @@ export class Vault extends ProcedureExecutor {
   async insert(recordPath: RecordPath, secret: number[]): Promise<void> {
     await invoke('plugin:stronghold|save_secret', {
       snapshotPath: this.path,
-      client: this.client,
-      vault: this.name,
-      recordPath,
+      client: toDto(this.client),
+      vault: toDto(this.name),
+      recordPath: toDto(recordPath),
       secret
     })
   }
@@ -675,9 +682,9 @@ export class Vault extends ProcedureExecutor {
     }
     await invoke('plugin:stronghold|remove_secret', {
       snapshotPath: this.path,
-      client: this.client,
-      vault: this.name,
-      recordPath: location.payload.record
+      client: toDto(this.client),
+      vault: toDto(this.name),
+      recordPath: toDto(location.payload.record as RecordPath)
     })
   }
 }
@@ -753,7 +760,7 @@ export class Stronghold {
   async loadClient(client: ClientPath): Promise<Client> {
     return await invoke('plugin:stronghold|load_client', {
       snapshotPath: this.path,
-      client
+      client: toDto(client)
     }).then(() => new Client(this.path, client))
   }
 
@@ -778,7 +785,7 @@ export class Stronghold {
   async createClient(client: ClientPath): Promise<Client> {
     return await invoke('plugin:stronghold|create_client', {
       snapshotPath: this.path,
-      client
+      client: toDto(client)
     }).then(() => new Client(this.path, client))
   }
 

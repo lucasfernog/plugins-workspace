@@ -315,7 +315,7 @@ async fn get_store_record(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
     client: BytesDto,
-    key: String,
+    key: BytesDto,
 ) -> Result<Option<Vec<u8>>> {
     let client = get_client(collection, snapshot_path, client)?;
     client.store().get(key.as_ref()).map_err(Into::into)
@@ -326,14 +326,14 @@ async fn save_store_record(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
     client: BytesDto,
-    key: String,
+    key: BytesDto,
     value: Vec<u8>,
     lifetime: Option<Duration>,
 ) -> Result<Option<Vec<u8>>> {
     let client = get_client(collection, snapshot_path, client)?;
     client
         .store()
-        .insert(key.as_bytes().to_vec(), value, lifetime)
+        .insert(key.into(), value, lifetime)
         .map_err(Into::into)
 }
 
@@ -342,7 +342,7 @@ async fn remove_store_record(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
     client: BytesDto,
-    key: String,
+    key: BytesDto,
 ) -> Result<Option<Vec<u8>>> {
     let client = get_client(collection, snapshot_path, client)?;
     client.store().delete(key.as_ref()).map_err(Into::into)
@@ -529,5 +529,19 @@ impl Builder {
                 execute_procedure,
             ])
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytes_dto_reads_strings_and_byte_arrays() {
+        let text: BytesDto = serde_json::from_str("\"key\"").unwrap();
+        let raw: BytesDto = serde_json::from_str("[107, 101, 121]").unwrap();
+        assert_eq!(text.as_ref(), b"key");
+        assert_eq!(raw.as_ref(), b"key");
+        assert_eq!(Vec::<u8>::from(text), b"key".to_vec());
     }
 }

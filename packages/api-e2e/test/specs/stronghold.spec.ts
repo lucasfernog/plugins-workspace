@@ -107,6 +107,47 @@ describePlugin('stronghold', () => {
     expect(result).toEqual({ removed: [1, 2, 3], after: null })
   })
 
+  it('byte paths and store keys match their string forms', async () => {
+    const result = await tauri(
+      async (api, dir, password) => {
+        const { Location } = api.stronghold
+        const path = await api.path.join(
+          await api.path.appDataDir(),
+          dir,
+          'bytes.stronghold'
+        )
+        const stronghold = await api.stronghold.Stronghold.load(path, password)
+        // 'ab' as a Set, which the IPC serializer alone would send as `{}`
+        const client = await stronghold.createClient(new Set([97, 98]))
+        const store = client.getStore()
+        await store.insert(new Uint8Array([107]), [1, 2])
+        const byString = await store.get('k')
+        const byBuffer = await store.get(new Uint8Array([107]).buffer)
+        const removed = await store.remove(new Uint16Array([107]))
+
+        // the same client, addressed by its string name
+        const vault = new api.stronghold.Client(path, 'ab').getVault(
+          new Uint16Array([118])
+        )
+        await vault.insert(new Set([114]), [3])
+        await vault.remove(Location.generic('v', 'r'))
+        await stronghold.unload()
+        return {
+          byString: byString && Array.from(byString),
+          byBuffer: byBuffer && Array.from(byBuffer),
+          removed: removed && Array.from(removed)
+        }
+      },
+      dir,
+      password
+    )
+    expect(result).toEqual({
+      byString: [1, 2],
+      byBuffer: [1, 2],
+      removed: [1, 2]
+    })
+  })
+
   it('vault.remove rejects counter locations and other vaults', async () => {
     const result = await tauri(
       async (api, dir, password, clientName) => {
