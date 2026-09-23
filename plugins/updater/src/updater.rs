@@ -392,7 +392,7 @@ impl UpdaterBuilder {
     /// Note: this only removes the additional arguments added through
     /// [`Self::installer_arg`], [`crate::Builder::installer_arg`]
     /// and the `plugins > updater > windows > installerArgs` config,
-    /// not the ones managed by us (e.g. `/UPDATER` flag passed to the NSIS installer)
+    /// not the ones managed by us (e.g. `/UPDATE` flag passed to the NSIS installer)
     #[cfg_attr(not(windows), allow(unused))]
     pub fn clear_installer_args(mut self) -> Self {
         #[cfg(windows)]
