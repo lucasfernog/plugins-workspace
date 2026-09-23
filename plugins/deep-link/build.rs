@@ -110,79 +110,35 @@ fn main() {
         )
         .expect("failed to rewrite AndroidManifest.xml");
 
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        #[cfg(target_os = "macos")]
         {
+            // Only the entries this plugin owns are replaced: the `applinks:` associated domains
+            // and the URL types it generates, keeping the ones added by the user or other SDKs.
+
             // we need to ensure that the entitlements are only
             // generated for explicit app links and not
             // other deep links because then they
             // are just going to complain and not be built or signed
-            let has_app_links = config.mobile.iter().any(|d| d.is_app_link());
+            let app_link_hosts = config
+                .mobile
+                .iter()
+                .filter(|d| d.is_app_link())
+                .filter_map(|d| d.host.as_deref())
+                .collect::<Vec<_>>();
+            tauri_plugin::mobile::update_entitlements(|entitlements| {
+                build_support::apple::merge_associated_domains(entitlements, &app_link_hosts);
+            })
+            .expect("failed to update entitlements");
 
-            if !has_app_links {
-                tauri_plugin::mobile::update_entitlements(|entitlements| {
-                    entitlements.remove("com.apple.developer.associated-domains");
-                })
-                .expect("failed to update entitlements");
-            } else {
-                tauri_plugin::mobile::update_entitlements(|entitlements| {
-                    entitlements.insert(
-                        "com.apple.developer.associated-domains".into(),
-                        config
-                            .mobile
-                            .iter()
-                            .filter(|d| d.is_app_link())
-                            .filter_map(|d| d.host.as_ref())
-                            .map(|host| format!("applinks:{}", host).into())
-                            .collect::<Vec<_>>()
-                            .into(),
-                    );
-                })
-                .expect("failed to update entitlements");
-            }
-
-            // domains that only use http(s) have no custom scheme to register
             let deep_link_domains = config
                 .mobile
                 .iter()
                 .filter(|domain| !domain.is_app_link())
-                .filter(|domain| !build_support::custom_schemes(domain).is_empty())
                 .collect::<Vec<_>>();
-
-            if deep_link_domains.is_empty() {
-                tauri_plugin::mobile::update_info_plist(|info_plist| {
-                    info_plist.remove("CFBundleURLTypes");
-                })
-                .expect("failed to update Info.plist");
-            } else {
-                tauri_plugin::mobile::update_info_plist(|info_plist| {
-                    info_plist.insert(
-                        "CFBundleURLTypes".into(),
-                        deep_link_domains
-                            .iter()
-                            .map(|domain| {
-                                let schemes = build_support::custom_schemes(domain);
-
-                                let mut dict = plist::Dictionary::new();
-                                dict.insert(
-                                    "CFBundleURLSchemes".into(),
-                                    schemes
-                                        .iter()
-                                        .map(|s| s.to_string().into())
-                                        .collect::<Vec<_>>()
-                                        .into(),
-                                );
-                                dict.insert(
-                                    "CFBundleURLName".into(),
-                                    schemes[0].to_string().into(),
-                                );
-                                plist::Value::Dictionary(dict)
-                            })
-                            .collect::<Vec<_>>()
-                            .into(),
-                    );
-                })
-                .expect("failed to update Info.plist");
-            }
+            tauri_plugin::mobile::update_info_plist(|info_plist| {
+                build_support::apple::merge_url_types(info_plist, &deep_link_domains);
+            })
+            .expect("failed to update Info.plist");
         }
     }
 }

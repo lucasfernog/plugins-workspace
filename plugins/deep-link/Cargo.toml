@@ -36,6 +36,9 @@ tauri-plugin = { workspace = true, features = ["build"] }
 [target."cfg(target_os = \"macos\")".build-dependencies]
 plist = "1"
 
+[target."cfg(target_os = \"macos\")".dev-dependencies]
+plist = "1"
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
