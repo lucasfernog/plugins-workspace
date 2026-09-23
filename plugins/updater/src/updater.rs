@@ -5,15 +5,41 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    io::Cursor,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
     time::Duration,
 };
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(
+    windows,
+    all(
+        feature = "zip",
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    )
+))]
 use std::ffi::OsStr;
+#[cfg(any(
+    target_os = "macos",
+    all(
+        feature = "zip",
+        any(
+            windows,
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )
+    )
+))]
+use std::io::Cursor;
 
 use base64::Engine;
 use futures_util::StreamExt;
@@ -1161,6 +1187,19 @@ impl Update {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let extract_path_metadata = self.extract_path.metadata()?;
 
+        // check the payload before touching the current AppImage
+        let is_gz = infer::archive::is_gz(bytes);
+        #[cfg(not(feature = "zip"))]
+        if is_gz {
+            log::error!("the update is a compressed AppImage, which can only be installed when the updater's `zip` feature is enabled");
+            return Err(Error::InvalidUpdaterFormat);
+        }
+        // AppImages are ELF executables
+        if !is_gz && !infer::app::is_elf(bytes) {
+            log::error!("the update is neither an AppImage nor a compressed AppImage");
+            return Err(Error::InvalidUpdaterFormat);
+        }
+
         let tmp_dir_locations = vec![
             Box::new(|| Some(std::env::temp_dir())) as Box<dyn FnOnce() -> Option<PathBuf>>,
             Box::new(dirs::cache_dir),
@@ -1187,7 +1226,7 @@ impl Update {
                     std::fs::rename(&self.extract_path, tmp_app_image)?;
 
                     #[cfg(feature = "zip")]
-                    if infer::archive::is_gz(bytes) {
+                    if is_gz {
                         log::debug!("extracting AppImage");
                         // extract the buffer to the tmp_dir
                         // we extract our signed archive into our final directory without any temp file
