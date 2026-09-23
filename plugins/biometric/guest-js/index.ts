@@ -21,7 +21,13 @@ export enum BiometryType {
   /** Apple FaceID or Android face authentication. */
   FaceID = 2,
   /** Android iris authentication. */
-  Iris = 3
+  Iris = 3,
+  /**
+   * Apple Optic ID, reported by LocalAuthentication on devices that support it.
+   *
+   * @since 2.4.0
+   */
+  OpticID = 4
 }
 
 /**

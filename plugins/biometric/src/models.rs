@@ -23,7 +23,11 @@ pub struct AuthOptions {
 }
 
 /// The kind of biometry hardware detected on the device.
-#[derive(Debug, Clone, serde_repr::Deserialize_repr)]
+///
+/// Kinds this enum has no variant for (Android iris authentication, reported as `3`, and Apple
+/// Optic ID, reported as `4`) are deserialized as [`BiometryType::None`], so that
+/// [`Biometric::status`](crate::Biometric::status) still succeeds on those devices.
+#[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum BiometryType {
     /// No biometry hardware is available, or it is not enrolled with the operating system.
@@ -32,6 +36,27 @@ pub enum BiometryType {
     TouchID = 1,
     /// Face authentication (Apple Face ID or Android face authentication).
     FaceID = 2,
+}
+
+impl BiometryType {
+    /// Maps the raw value reported by the mobile plugins, falling back to
+    /// [`BiometryType::None`] for kinds without a variant (see the type docs).
+    fn from_raw(value: i64) -> Self {
+        match value {
+            1 => Self::TouchID,
+            2 => Self::FaceID,
+            _ => Self::None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BiometryType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        i64::deserialize(deserializer).map(Self::from_raw)
+    }
 }
 
 /// The result of [`Biometric::status`](crate::Biometric::status), describing whether biometric
@@ -49,4 +74,30 @@ pub struct Status {
     /// A platform-specific error code describing why biometric authentication is unavailable.
     /// Only set when [`Self::is_available`] is `false`.
     pub error_code: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn biometry_type_known_values() {
+        assert!(matches!(BiometryType::from_raw(0), BiometryType::None));
+        assert!(matches!(BiometryType::from_raw(1), BiometryType::TouchID));
+        assert!(matches!(BiometryType::from_raw(2), BiometryType::FaceID));
+    }
+
+    #[test]
+    fn status_with_unknown_biometry_type_deserializes() {
+        // Android iris (3) and Apple Optic ID (4) used to make `status()` fail.
+        for raw in [3, 4, 42] {
+            let status: Status = serde_json::from_value(serde_json::json!({
+                "isAvailable": true,
+                "biometryType": raw,
+            }))
+            .unwrap();
+            assert!(status.is_available);
+            assert!(matches!(status.biometry_type, BiometryType::None));
+        }
+    }
 }
