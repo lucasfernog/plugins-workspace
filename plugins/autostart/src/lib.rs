@@ -138,8 +138,9 @@ impl AutoLaunchManager {
             home_dir()?;
         }
         #[cfg(target_os = "linux")]
-        home_dir()?;
+        return linux::is_enabled(self.inner.get_app_name());
 
+        #[cfg(not(target_os = "linux"))]
         self.inner
             .is_enabled()
             .map_err(|e| e.to_string())
