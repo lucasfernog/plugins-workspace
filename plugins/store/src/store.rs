@@ -230,10 +230,20 @@ impl<R: Runtime> StoreBuilder<R> {
         );
 
         if !self.create_new {
-            if self.override_defaults {
-                let _ = store_inner.load_ignore_defaults();
+            let result = if self.override_defaults {
+                store_inner.load_ignore_defaults()
             } else {
-                let _ = store_inner.load();
+                store_inner.load()
+            };
+            match result {
+                Err(crate::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
+                // TODO(v3): return the error, the store currently starts from its defaults
+                // and its next save replaces the file
+                Err(error) => tracing::error!(
+                    "failed to load store {:?}, starting from its default values instead: {error}",
+                    self.path
+                ),
+                Ok(()) => {}
             }
         }
 
