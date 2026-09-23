@@ -15,7 +15,8 @@ use crate::{
     Error, Result,
 };
 
-/// The checks `auto_launch` runs on the registered path before enabling auto start.
+/// The checks `auto_launch` runs on the registered path before enabling auto start, plus a
+/// check that the path is not a temporary App Translocation path.
 fn check_app_path(app_path: &str) -> Result<()> {
     let path = Path::new(app_path);
     if !path.exists() {
@@ -26,7 +27,18 @@ fn check_app_path(app_path: &str) -> Result<()> {
             "app path is not absolute: {app_path}"
         )));
     }
+    if is_translocated(app_path) {
+        return Err(Error::Anyhow(format!(
+            "the app is running from a temporary App Translocation path ({app_path}) that won't exist after a restart; move the app to another folder, such as /Applications, and launch it from there before enabling autostart"
+        )));
+    }
     Ok(())
+}
+
+/// Whether `path` points inside the randomized read-only location macOS runs a quarantined app
+/// from (App Translocation), for example when it is launched straight from `~/Downloads`.
+fn is_translocated(path: &str) -> bool {
+    path.contains("/AppTranslocation/")
 }
 
 /// `~/Library/LaunchAgents`, the directory `auto_launch` stores Launch Agents in.
@@ -96,4 +108,19 @@ pub(crate) fn delete_login_item(name: &str) -> Result<()> {
     run_system_events_script(&format!(
         "if exists login item {name} then delete login item {name}"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_translocated;
+
+    #[test]
+    fn detects_app_translocation() {
+        assert!(is_translocated(
+            "/private/var/folders/xy/abc/T/AppTranslocation/0A1B2C/d/My App.app/Contents/MacOS/My App"
+        ));
+        assert!(!is_translocated(
+            "/Applications/My App.app/Contents/MacOS/My App"
+        ));
+    }
 }
