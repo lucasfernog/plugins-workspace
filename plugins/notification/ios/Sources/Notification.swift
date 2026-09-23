@@ -128,9 +128,12 @@ func makeAttachments(_ attachments: [NotificationAttachment]) throws -> [UNNotif
 
   for attachment in attachments {
 
-    guard let urlObject = makeAttachmentUrl(attachment.url) else {
+    guard let originalUrl = makeAttachmentUrl(attachment.url) else {
       throw NotificationError.attachmentFileNotFound(path: attachment.url)
     }
+    // the system moves attachment files into its own store: attach a copy, so the
+    // notification cannot move (effectively delete) the app's files
+    let urlObject = try copyAttachmentFile(originalUrl)
 
     let options = attachment.options != nil ? makeAttachmentOptions(attachment.options!) : nil
 
@@ -148,6 +151,29 @@ func makeAttachments(_ attachments: [NotificationAttachment]) throws -> [UNNotif
 
 func makeAttachmentUrl(_ path: String) -> URL? {
   return URL(string: path)
+}
+
+/// Copies a local attachment file to a new temporary directory and returns the copy's URL.
+func copyAttachmentFile(_ url: URL) throws -> URL {
+  guard url.isFileURL else {
+    return url
+  }
+  let fileManager = FileManager.default
+  guard fileManager.fileExists(atPath: url.path) else {
+    throw NotificationError.attachmentFileNotFound(path: url.path)
+  }
+  do {
+    let directory = fileManager.temporaryDirectory
+      .appendingPathComponent("tauri-notification-attachments", isDirectory: true)
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+    // keep the file name: the system infers the attachment type from its extension
+    let copy = directory.appendingPathComponent(url.lastPathComponent)
+    try fileManager.copyItem(at: url, to: copy)
+    return copy
+  } catch {
+    throw NotificationError.attachmentUnableToCreate(error.localizedDescription)
+  }
 }
 
 func makeAttachmentOptions(_ options: NotificationAttachmentOptions) -> [AnyHashable: Any] {
