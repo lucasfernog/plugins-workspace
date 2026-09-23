@@ -277,8 +277,13 @@ impl Builder {
                 if let Some(pubkey) = pubkey {
                     config.pubkey = pubkey;
                 }
-                if let Some(windows) = &mut config.windows {
-                    windows.installer_args.extend(installer_args);
+                if !installer_args.is_empty() {
+                    // without a `windows` block the defaults apply, which the block's defaults match
+                    config
+                        .windows
+                        .get_or_insert_with(Default::default)
+                        .installer_args
+                        .extend(installer_args);
                 }
                 app.manage(UpdaterState {
                     target,
