@@ -330,6 +330,8 @@ impl<R: Runtime> MessageDialogBuilder<R> {
     ///
     /// Depending on the system it can result in type specific icon to show up,
     /// the will inform user it message is a error, warning or just information.
+    ///
+    /// Ignored on Android and iOS.
     pub fn kind(mut self, kind: MessageDialogKind) -> Self {
         self.kind = kind;
         self

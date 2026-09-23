@@ -238,7 +238,7 @@ export type MessageDialogButtons =
 interface MessageDialogOptions {
   /** The title of the dialog. Defaults to the app name. */
   title?: string
-  /** The kind of the dialog. Defaults to `info`. */
+  /** The kind of the dialog. Defaults to `info`. Ignored on Android and iOS. */
   kind?: 'info' | 'warning' | 'error'
   /**
    * The label of the Ok button.
@@ -302,7 +302,7 @@ function buttonsToRust(buttons: MessageDialogButtons | undefined) {
 interface ConfirmDialogOptions {
   /** The title of the dialog. Defaults to the app name. */
   title?: string
-  /** The kind of the dialog. Defaults to `info`. */
+  /** The kind of the dialog. Defaults to `info`. Ignored on Android and iOS. */
   kind?: 'info' | 'warning' | 'error'
   /** The label of the confirm button. */
   okLabel?: string
@@ -445,18 +445,24 @@ async function messageCommand(
 }
 
 /**
- * Shows a message dialog with an `Ok` button.
+ * Shows a message dialog, with an `Ok` button by default.
+ * Use {@linkcode MessageDialogOptions.buttons} to show other buttons.
  * @example
  * ```typescript
  * import { message } from '@tauri-apps/plugin-dialog';
  * await message('Tauri is awesome', 'Tauri');
  * await message('File not found', { title: 'Tauri', kind: 'error' });
+ * const result = await message('Save changes?', { buttons: 'YesNoCancel' });
+ * if (result === 'Yes') {
+ *   // save
+ * }
  * ```
  *
  * @param message The message to show.
  * @param options The dialog's options. If a string, it represents the dialog title.
  *
- * @returns A promise indicating the success or failure of the operation.
+ * @returns A promise resolving to the button the user pressed: `'Ok'`, `'Cancel'`, `'Yes'`, `'No'`,
+ * or the label of a custom button. Closing the dialog without pressing a button resolves to `'Cancel'`.
  *
  * @since 2.0.0
  *
