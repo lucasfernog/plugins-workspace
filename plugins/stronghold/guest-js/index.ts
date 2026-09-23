@@ -236,7 +236,7 @@ class ProcedureExecutor {
    * Generate a SLIP10 seed for the given location.
    * @param outputLocation Location of the record where the seed will be stored.
    * @param sizeBytes The size in bytes of the SLIP10 seed.
-   * @returns A promise resolving to the bytes returned by the procedure.
+   * @returns A promise resolving to an empty array. The seed is only stored in the vault.
    */
   async generateSLIP10Seed(
     outputLocation: Location,
@@ -261,7 +261,7 @@ class ProcedureExecutor {
    * @param source The source type, either 'Seed' or 'Key'.
    * @param sourceLocation The source location, must be the `outputLocation` of a previous call to `generateSLIP10Seed` or `deriveSLIP10`.
    * @param outputLocation Location of the record where the private key will be stored.
-   * @returns A promise resolving to the bytes returned by the procedure.
+   * @returns A promise resolving to the 32 bytes chain code of the derived key. The key itself is only stored in the vault.
    */
   async deriveSLIP10(
     chain: number[],
@@ -286,11 +286,13 @@ class ProcedureExecutor {
   }
 
   /**
-   * Store a BIP39 mnemonic.
+   * Derives the seed of a BIP39 mnemonic and stores it in the vault.
+   * The mnemonic is not validated against the BIP39 word list or checksum, so a
+   * typo silently derives a different seed.
    * @param mnemonic The mnemonic string.
-   * @param outputLocation The location of the record where the BIP39 mnemonic will be stored.
+   * @param outputLocation The location of the record where the seed will be stored.
    * @param passphrase The optional mnemonic passphrase.
-   * @returns A promise resolving to the bytes returned by the procedure.
+   * @returns A promise resolving to an empty array. The seed is only stored in the vault.
    */
   async recoverBIP39(
     mnemonic: string,
@@ -311,10 +313,12 @@ class ProcedureExecutor {
   }
 
   /**
-   * Generate a BIP39 seed. The mnemonic is generated in English.
+   * Generates a BIP39 mnemonic (in English) and stores the seed derived from it in the vault.
    * @param outputLocation The location of the record where the BIP39 seed will be stored.
    * @param passphrase The optional mnemonic passphrase.
-   * @returns A promise resolving to the bytes returned by the procedure.
+   * @returns A promise resolving to the generated mnemonic, as UTF-8 bytes
+   * (decode it with `new TextDecoder().decode(bytes)`). This is the plaintext secret
+   * the seed is derived from: only show it to the user for backup and do not persist it.
    */
   async generateBIP39(
     outputLocation: Location,
@@ -335,7 +339,7 @@ class ProcedureExecutor {
   /**
    * Gets the Ed25519 public key of a SLIP10 private key.
    * @param privateKeyLocation The location of the private key. Must be the `outputLocation` of a previous call to `deriveSLIP10`.
-   * @returns A promise resolving to the public key hex string.
+   * @returns A promise resolving to the 32 bytes public key.
    *
    * @since 2.0.0
    */
@@ -355,8 +359,8 @@ class ProcedureExecutor {
   /**
    * Creates a Ed25519 signature from a private key.
    * @param privateKeyLocation The location of the record where the private key is stored. Must be the `outputLocation` of a previous call to `deriveSLIP10`.
-   * @param msg The message to sign.
-   * @returns A promise resolving to the signature hex string.
+   * @param msg The message to sign, which is signed as its UTF-8 bytes.
+   * @returns A promise resolving to the 64 bytes signature.
    *
    * @since 2.0.0
    */
