@@ -139,8 +139,8 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             return
           }
 
-          guard let current = self.session else {
-            // the session was closed in the meantime (e.g. timeout)
+          guard let current = self.session, current.nfcSession === session else {
+            // the session was closed or replaced in the meantime (e.g. timeout)
             session.invalidate()
             return
           }
@@ -154,8 +154,11 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
 
   func tagReaderSession(_ session: NFCTagReaderSession, didInvalidateWithError error: Error) {
     Logger.error("Tag reader session error \(error)")
-    self.session?.invoke.reject("session invalidated with error: \(error)")
-    self.session = nil
+    // ignore the invalidation of a session that has been replaced by a new one
+    if let current = self.session, current.nfcSession === session {
+      current.invoke.reject("session invalidated with error: \(error)")
+      self.session = nil
+    }
   }
 
   func readerSession(_ session: NFCNDEFReaderSession, didDetectNDEFs messages: [NFCNDEFMessage]) {
@@ -189,8 +192,8 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             metadata["id"] = byteArrayFromData(t.identifier)
           }
 
-          guard let current = self.session else {
-            // the session was closed in the meantime (e.g. timeout)
+          guard let current = self.session, current.nfcSession === session else {
+            // the session was closed or replaced in the meantime (e.g. timeout)
             session.invalidate()
             return
           }
@@ -211,8 +214,11 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
       Logger.debug("readerSessionInvalidationErrorFirstNDEFTagRead")
     } else {
       Logger.error("NDEF reader session error \(error)")
-      self.session?.invoke.reject("session invalidated with error: \(error)")
-      self.session = nil
+      // ignore the invalidation of a session that has been replaced by a new one
+      if let current = self.session, current.nfcSession === session {
+        current.invoke.reject("session invalidated with error: \(error)")
+        self.session = nil
+      }
     }
   }
 
@@ -247,15 +253,19 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
 
   private func closeSession(_ session: NFCReaderSession) {
     session.invalidate()
-    self.session = nil
+    if self.session?.nfcSession === session {
+      self.session = nil
+    }
   }
 
   private func closeSession(_ session: NFCReaderSession, error: String) {
     // reject the pending call now: the didInvalidateWithError delegate runs after
     // self.session is cleared, so it cannot reject it anymore
-    self.session?.invoke.reject(error)
+    if let current = self.session, current.nfcSession === session {
+      current.invoke.reject(error)
+      self.session = nil
+    }
     session.invalidate(errorMessage: error)
-    self.session = nil
   }
 
   private func processTag<T: NFCNDEFTag>(
@@ -501,6 +511,14 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
     successfulReadMessage: String?,
     successfulWriteAlertMessage: String?
   ) {
+    if let previous = self.session {
+      // settle the pending call of the previous session and stop it,
+      // only one reader session can be active at a time
+      previous.invoke.reject("NFC session replaced by a new scan or write call")
+      self.session = nil
+      previous.nfcSession?.invalidate()
+    }
+
     let nfcSession: NFCReaderSession?
 
     switch kind {

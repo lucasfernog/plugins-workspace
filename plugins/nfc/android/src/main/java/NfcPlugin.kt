@@ -318,7 +318,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         val techLists = args.kind.techLists()
         enableNFCInForeground(filters, techLists)
 
-        session = Session(NfcAction.Read, invoke, args.keepSessionAlive, null, filters, techLists)
+        replaceSession(Session(NfcAction.Read, invoke, args.keepSessionAlive, null, filters, techLists))
     }
 
     @Command
@@ -359,7 +359,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 val filters = kind.filters()
                 val techLists = kind.techLists()
                 enableNFCInForeground(filters, techLists)
-                session = Session(NfcAction.Write(message), invoke, true, null, filters, techLists)
+                replaceSession(Session(NfcAction.Write(message), invoke, true, null, filters, techLists))
                 Logger.warn("NFC", "Write Mode Enabled")
             } ?: run {
                 invoke.reject("Missing `kind` for write")
@@ -498,6 +498,13 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         activity.runOnUiThread {
             nfcAdapter?.disableForegroundDispatch(activity)
         }
+    }
+
+    // Starts a new session, rejecting the pending call of the previous one (a no-op if it was already settled).
+    @Synchronized
+    private fun replaceSession(new: Session) {
+        session?.invoke?.reject("NFC session replaced by a new scan or write call")
+        session = new
     }
 }
 
