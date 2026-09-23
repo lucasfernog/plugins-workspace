@@ -120,8 +120,11 @@ impl<R: Runtime, T: Manager<R>> ShellExt<R> for T {
 
 /// Initializes the shell plugin.
 ///
-/// The plugin state can be accessed with [`ShellExt::shell`],
-/// and all spawned child processes are killed when the application exits.
+/// The plugin state can be accessed with [`ShellExt::shell`].
+///
+/// The child processes spawned from JavaScript with `Command.spawn()` are killed when the
+/// application exits. Processes spawned from Rust with [`process::Command::spawn`], or run with
+/// `Command.execute()`, are not, and neither are the processes a child started itself.
 ///
 /// # Examples
 ///
