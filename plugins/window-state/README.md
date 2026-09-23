@@ -124,7 +124,15 @@ tauri_plugin_window_state::Builder::new()
 
 To avoid a window flashing at its default size and position before its state is restored, create it hidden (`"visible": false` in `tauri.conf.json`, or `.visible(false)` on the window builder). With `StateFlags::VISIBLE` (included in the default flags) the plugin shows and focuses every window it restores, unless it was saved as hidden, including one that has no saved state yet. Windows you want to keep hidden should therefore be excluded, or use flags without `VISIBLE`.
 
-### Permissions
+### How and when state is saved
+
+- Register the plugin on the `tauri::Builder`, as above. It only tracks and restores windows created after it is registered, so registering it later, for example with `app.handle().plugin(...)` in `setup`, misses the windows from `tauri.conf.json`, which are created before `setup` runs.
+- The state of every tracked window is written to `$APPCONFIG/.window-state.json` (or the `with_filename` name) when the app exits normally (`RunEvent::Exit`). A crash, a killed process or `std::process::exit` skips this, so call `save_window_state` yourself at points where losing the state matters.
+- Restoring uses the state loaded from the file at startup and updated while the app runs; the file is not read again.
+- Sizes and positions are stored in physical pixels, without the monitor's scale factor.
+- A saved position is only applied if it is still on one of the available monitors; otherwise the OS places the window.
+- Wayland does not let apps read or set a window's position, so only the size and the other flags are restored there.
+- `StateFlags::VISIBLE` only ever shows a window: a window saved as hidden is not hidden on restore, just not shown.
 
 The JavaScript API needs the plugin's permissions in one of your [capabilities](https://v2.tauri.app/security/capabilities/). `window-state:default` allows all of its commands (`save_window_state`, `restore_state` and `filename`):
 
