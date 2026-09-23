@@ -991,7 +991,9 @@ impl Update {
 
     fn updater_parameters(&self, updater_type: &WindowsUpdaterType) -> OsString {
         let install_mode = self.context.config.install_mode();
-        let current_args = &self.context.current_exe_args[1..];
+        // skip the executable path, the list is empty when the updater was not created through
+        // `UpdaterExt`, or when the OS passed no arguments at all
+        let current_args = self.context.current_exe_args.get(1..).unwrap_or_default();
 
         match updater_type {
             WindowsUpdaterType::Nsis { .. } => {
