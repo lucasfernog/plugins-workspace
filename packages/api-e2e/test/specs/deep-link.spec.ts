@@ -71,6 +71,38 @@ describePlugin('deep-link', () => {
   )
 
   itOn(
+    ['linux', 'win32'],
+    'register and unregister reject invalid scheme names',
+    async () => {
+      for (const command of ['register', 'unregister'] as const) {
+        for (const invalid of ['.txt', '*', 'bad\nExec=true', 'a\\b', '']) {
+          const error = await tauriError(
+            // eslint-disable-next-line security/detect-object-injection
+            (api, command, invalid) => api.deepLink[command](invalid),
+            command,
+            invalid
+          )
+          expect(error).toMatch(/invalid protocol scheme/)
+        }
+      }
+      expect(
+        await tauri((api) => api.deepLink.isRegistered('bad\nscheme'))
+      ).toBe(false)
+    }
+  )
+
+  itOn(
+    ['win32'],
+    'register refuses to take over a registry class that is not a URL protocol',
+    async () => {
+      // `txtfile` is the ProgID of `.txt` files on every Windows install
+      expect(
+        await tauriError((api) => api.deepLink.register('txtfile'))
+      ).toMatch(/non URL protocol/)
+    }
+  )
+
+  itOn(
     ['darwin', 'android', 'ios'],
     'runtime registration is unsupported',
     async () => {
