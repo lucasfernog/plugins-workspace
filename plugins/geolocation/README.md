@@ -49,7 +49,22 @@ yarn add @tauri-apps/plugin-geolocation
 
 Apple requires privacy descriptions to be specified in `Info.plist` for location information:
 
-- `NSLocationWhenInUseDescription`
+- `NSLocationWhenInUseUsageDescription`
+
+The plugin only requests "When In Use" authorization, so this is the only key it needs. Background ("Always") location is not supported.
+
+For instance, in `src-tauri/Info.ios.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Your location is used to show where you are on the map.</string>
+  </dict>
+</plist>
+```
 
 ### Android
 
