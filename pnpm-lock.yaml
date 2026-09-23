@@ -597,8 +597,8 @@ importers:
 
   plugins/websocket/examples/tauri-app:
     dependencies:
-      tauri-plugin-websocket-api:
-        specifier: link:..\..
+      '@tauri-apps/plugin-websocket':
+        specifier: workspace:*
         version: link:../..
     devDependencies:
       '@tauri-apps/cli':

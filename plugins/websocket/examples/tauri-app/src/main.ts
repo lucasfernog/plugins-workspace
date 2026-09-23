@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-import WebSocket from 'tauri-plugin-websocket-api'
+import WebSocket from '@tauri-apps/plugin-websocket'
 import './style.css'
 
-let ws: WebSocket
+let ws: WebSocket | undefined
 
 document.addEventListener('DOMContentLoaded', async () => {
   document.querySelector('#send')?.addEventListener('click', send)
@@ -22,18 +22,20 @@ function _updateResponse(returnValue: unknown) {
 
 async function connect() {
   try {
-    ws = await WebSocket.connect('ws://127.0.0.1:8080').then((r) => {
-      _updateResponse('Connected')
-      return r
-    })
+    ws = await WebSocket.connect('ws://127.0.0.1:8080')
+    _updateResponse('Connected')
+    ws.addListener(_updateResponse)
   } catch (e) {
     _updateResponse(e)
   }
-  ws.addListener(_updateResponse)
 }
 
 function send() {
-  ws.send(document.querySelector('#msg-input')?.textContent || '')
+  if (!ws) {
+    _updateResponse('Not connected')
+    return
+  }
+  ws.send(document.querySelector<HTMLInputElement>('#msg-input')?.value ?? '')
     .then(() => {
       _updateResponse('Message sent')
     })
@@ -41,6 +43,10 @@ function send() {
 }
 
 function disconnect() {
+  if (!ws) {
+    _updateResponse('Not connected')
+    return
+  }
   ws.disconnect()
     .then(() => {
       _updateResponse('Disconnected')
@@ -50,7 +56,7 @@ function disconnect() {
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div>
-    <input type="text" />
+    <input id="msg-input" type="text" />
     <button id="send">send</button>
     <button id="disconnect">disconnect</button>
     <div id="response-container"></div>
