@@ -4,7 +4,7 @@
 
 use serde::{de::DeserializeOwned, Deserialize};
 use tauri::{
-    plugin::{PluginApi, PluginHandle},
+    plugin::{mobile::PluginInvokeError, PluginApi, PluginHandle},
     AppHandle, Runtime,
 };
 
@@ -44,14 +44,32 @@ impl<R: Runtime> Dialog<R> {
     }
 }
 
+// iOS resolves a cancelled picker with `null`, and Android can resolve without a file,
+// so both fields are optional instead of failing to deserialize.
 #[derive(Debug, Deserialize)]
 struct FilePickerResponse {
-    files: Vec<FilePath>,
+    #[serde(default)]
+    files: Option<Vec<FilePath>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SaveFileResponse {
-    file: FilePath,
+    #[serde(default)]
+    file: Option<FilePath>,
+}
+
+/// The rejection message of the Android file pickers when the user cancels them.
+const ANDROID_PICKER_CANCELLED: &str = "File picker cancelled";
+
+/// The dialog APIs report a failure the same way as a cancelled dialog, so log the error to
+/// keep it observable.
+fn log_error(command: &str, error: &PluginInvokeError) {
+    if let PluginInvokeError::InvokeRejected(response) = error {
+        if response.message.as_deref() == Some(ANDROID_PICKER_CANCELLED) {
+            return;
+        }
+    }
+    log::error!("dialog `{command}` failed, treating it as cancelled: {error}");
 }
 
 pub fn pick_file<R: Runtime, F: FnOnce(Option<FilePath>) + Send + 'static>(
@@ -63,11 +81,13 @@ pub fn pick_file<R: Runtime, F: FnOnce(Option<FilePath>) + Send + 'static>(
             .dialog
             .0
             .run_mobile_plugin::<FilePickerResponse>("showFilePicker", dialog.payload(false));
-        if let Ok(response) = res {
+        match res {
             // the native side can resolve with an empty list
-            f(response.files.into_iter().next())
-        } else {
-            f(None)
+            Ok(response) => f(response.files.and_then(|files| files.into_iter().next())),
+            Err(e) => {
+                log_error("showFilePicker", &e);
+                f(None)
+            }
         }
     });
 }
@@ -81,10 +101,12 @@ pub fn pick_files<R: Runtime, F: FnOnce(Option<Vec<FilePath>>) + Send + 'static>
             .dialog
             .0
             .run_mobile_plugin::<FilePickerResponse>("showFilePicker", dialog.payload(true));
-        if let Ok(response) = res {
-            f(Some(response.files))
-        } else {
-            f(None)
+        match res {
+            Ok(response) => f(response.files),
+            Err(e) => {
+                log_error("showFilePicker", &e);
+                f(None)
+            }
         }
     });
 }
@@ -98,10 +120,12 @@ pub fn save_file<R: Runtime, F: FnOnce(Option<FilePath>) + Send + 'static>(
             .dialog
             .0
             .run_mobile_plugin::<SaveFileResponse>("saveFileDialog", dialog.payload(false));
-        if let Ok(response) = res {
-            f(Some(response.file))
-        } else {
-            f(None)
+        match res {
+            Ok(response) => f(response.file),
+            Err(e) => {
+                log_error("saveFileDialog", &e);
+                f(None)
+            }
         }
     });
 }
@@ -122,7 +146,12 @@ pub fn show_message_dialog<R: Runtime, F: FnOnce(MessageDialogResult) + Send + '
             .0
             .run_mobile_plugin::<ShowMessageDialogResponse>("showMessageDialog", dialog.payload());
 
-        let res = res.map(|res| res.value.into());
-        f(res.unwrap_or_default())
+        match res {
+            Ok(res) => f(res.value.into()),
+            Err(e) => {
+                log_error("showMessageDialog", &e);
+                f(MessageDialogResult::default())
+            }
+        }
     });
 }
