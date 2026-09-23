@@ -15,11 +15,24 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import { invoke, Resource } from '@tauri-apps/api/core'
 
-interface ChangePayload<T> {
+/**
+ * Payload of the `store://change` event, emitted for every key a store modification changes.
+ *
+ * {@linkcode Store.onChange} and {@linkcode Store.onKeyChange} listen to this event already,
+ * it is only needed to listen to it directly, e.g. for changes to every store.
+ *
+ * @since 2.5.0
+ */
+export interface ChangePayload<T> {
+  /** Absolute path of the store file. */
   path: string
+  /** Resource id of the store that changed. */
   resourceId?: number
+  /** The key that changed. */
   key: string
+  /** The new value of the key, `null` when it was removed. */
   value: T
+  /** Whether the key exists after the change, `false` when it was removed. */
   exists: boolean
 }
 
