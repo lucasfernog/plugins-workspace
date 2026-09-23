@@ -25,7 +25,8 @@ pub use error::Error;
 
 /// The type of the current operating system, as returned by [`type_`].
 pub enum OsType {
-    /// Linux and Linux-based systems such as FreeBSD, DragonFly BSD, NetBSD and OpenBSD.
+    /// Linux, and every other operating system that is not listed here, such as
+    /// FreeBSD, DragonFly BSD, NetBSD, OpenBSD, illumos and Solaris.
     Linux,
     /// Windows.
     Windows,
@@ -61,13 +62,13 @@ pub fn version() -> Version {
 
 /// Returns the current operating system type.
 pub fn type_() -> OsType {
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
+    // Linux, the BSDs and every other target (illumos, Solaris, ...) are reported as `Linux`.
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    )))]
     return OsType::Linux;
     #[cfg(target_os = "windows")]
     return OsType::Windows;
@@ -147,4 +148,19 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::hostname
         ])
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn type_matches_platform() {
+        let expected = match super::platform() {
+            "windows" => "windows",
+            "macos" => "macos",
+            "ios" => "ios",
+            "android" => "android",
+            _ => "linux",
+        };
+        assert_eq!(super::type_().to_string(), expected);
+    }
 }
