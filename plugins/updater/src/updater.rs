@@ -1300,14 +1300,26 @@ impl Update {
             .arg(pkg_path)
             .status()
         {
-            if status.success() {
-                log::debug!("installed {pkg_path:?} with pkexec");
-                return Ok(());
+            match pkexec_outcome(status.code()) {
+                PkexecOutcome::Installed => {
+                    log::debug!("installed {pkg_path:?} with pkexec");
+                    return Ok(());
+                }
+                // don't ask the user again through another prompt
+                PkexecOutcome::Dismissed => return Err(Error::AuthenticationFailed),
+                // the package manager itself failed, which the other methods would repeat
+                PkexecOutcome::InstallFailed => {
+                    log::error!("{install_cmd} failed to install {pkg_path:?}: {status}");
+                    return Err(Error::PackageInstallFailed);
+                }
+                PkexecOutcome::Unavailable => {
+                    log::debug!("pkexec could not authorize the install: {status}");
+                }
             }
         }
 
         // 2. Try zenity or kdialog for a graphical sudo experience
-        if let Ok(password) = self.get_password_graphically() {
+        if let Some(password) = self.get_password_graphically()? {
             if self.install_with_sudo(pkg_path, &password, install_cmd, install_arg)? {
                 log::debug!("installed {pkg_path:?} with GUI sudo");
                 return Ok(());
@@ -1329,34 +1341,44 @@ impl Update {
         }
     }
 
-    fn get_password_graphically(&self) -> Result<String> {
-        // Try zenity first
-        let zenity_result = std::process::Command::new("zenity")
-            .args([
-                "--password",
-                "--title=Authentication Required",
-                "--text=Enter your password to install the update:",
-            ])
-            .output();
+    /// Asks for the user's password with zenity or kdialog.
+    ///
+    /// Returns `None` when neither could show the prompt, and
+    /// [`Error::AuthenticationFailed`] when the user cancelled it.
+    fn get_password_graphically(&self) -> Result<Option<String>> {
+        let prompts: [(&str, &[&str]); 2] = [
+            (
+                "zenity",
+                &[
+                    "--password",
+                    "--title=Authentication Required",
+                    "--text=Enter your password to install the update:",
+                ],
+            ),
+            (
+                "kdialog",
+                &["--password", "Enter your password to install the update:"],
+            ),
+        ];
 
-        if let Ok(output) = zenity_result {
+        for (program, args) in prompts {
+            let Ok(output) = std::process::Command::new(program).args(args).output() else {
+                // not installed, try the next one
+                continue;
+            };
             if output.status.success() {
-                return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+                return Ok(Some(
+                    String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                ));
+            }
+            // both exit with 1 when the user cancels the prompt, other failures (e.g. no
+            // display to show it on) move on to the next one
+            if output.status.code() == Some(1) {
+                return Err(Error::AuthenticationFailed);
             }
         }
 
-        // Fall back to kdialog if zenity fails or isn't available
-        let kdialog_result = std::process::Command::new("kdialog")
-            .args(["--password", "Enter your password to install the update:"])
-            .output();
-
-        if let Ok(output) = kdialog_result {
-            if output.status.success() {
-                return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
-            }
-        }
-
-        Err(Error::AuthenticationFailed)
+        Ok(None)
     }
 
     fn install_with_sudo(
@@ -1384,8 +1406,53 @@ impl Update {
             writeln!(stdin, "{password}")?;
         }
 
-        let status = child.wait()?;
-        Ok(status.success())
+        // reads stdout and stderr while waiting, the package manager would block forever once it
+        // filled a pipe nobody reads from
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            log::error!(
+                "sudo {install_cmd} failed ({}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(output.status.success())
+    }
+}
+
+/// What the exit code of `pkexec <package manager> ...` means for the install.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+#[derive(Debug, PartialEq, Eq)]
+enum PkexecOutcome {
+    Installed,
+    /// The user dismissed the authentication dialog.
+    Dismissed,
+    /// pkexec could not authorize the command (e.g. no polkit agent is running), or was killed.
+    Unavailable,
+    /// The package manager ran and failed.
+    InstallFailed,
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+fn pkexec_outcome(code: Option<i32>) -> PkexecOutcome {
+    // see the RETURN VALUE section of pkexec(1)
+    match code {
+        Some(0) => PkexecOutcome::Installed,
+        Some(126) => PkexecOutcome::Dismissed,
+        Some(127) | None => PkexecOutcome::Unavailable,
+        Some(_) => PkexecOutcome::InstallFailed,
     }
 }
 
@@ -1873,6 +1940,21 @@ mod tests {
         let comment = "timestamp:1700000000\tfile:app.zip\tversion:2024-01-01";
         assert!(verify_signed_version(comment, "2024-01-01", true).is_ok());
         assert!(verify_signed_version(comment, "2024-01-02", true).is_err());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn interprets_pkexec_exit_codes() {
+        use super::{pkexec_outcome, PkexecOutcome};
+
+        assert_eq!(pkexec_outcome(Some(0)), PkexecOutcome::Installed);
+        assert_eq!(pkexec_outcome(Some(126)), PkexecOutcome::Dismissed);
+        assert_eq!(pkexec_outcome(Some(127)), PkexecOutcome::Unavailable);
+        // killed by a signal
+        assert_eq!(pkexec_outcome(None), PkexecOutcome::Unavailable);
+        // dpkg / rpm exit codes
+        assert_eq!(pkexec_outcome(Some(1)), PkexecOutcome::InstallFailed);
+        assert_eq!(pkexec_outcome(Some(2)), PkexecOutcome::InstallFailed);
     }
 
     #[test]
