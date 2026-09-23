@@ -233,7 +233,22 @@ describePlugin('shell', () => {
         api.shell.Command.create(program, ['--version']).execute(),
       shell.program
     )
-    expect(message).toMatch(/not allowed|validator|scope/i)
+    // the program is in the scope, so the error says which argument is wrong
+    expect(message).toMatch(
+      /argument at position 1 must match regex validation/
+    )
+  })
+
+  it('reports an argument that fails its validator', async () => {
+    const message = await tauriError(
+      (api, program, flag) =>
+        api.shell.Command.create(program, [flag, '']).execute(),
+      shell.program,
+      shell.flag
+    )
+    expect(message).toMatch(
+      /argument at position 1 was found, but failed regex validation/
+    )
   })
 
   it('open rejects URLs outside the default scope', async () => {

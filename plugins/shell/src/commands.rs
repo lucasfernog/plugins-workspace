@@ -144,11 +144,11 @@ fn prepare_cmd<R: Runtime>(
     } else {
         match scope.prepare(&program, args) {
             Ok(cmd) => cmd,
-            Err(e) => {
-                #[cfg(debug_assertions)]
-                eprintln!("{e}");
+            Err(crate::scope::Error::NotFound(_) | crate::scope::Error::Denied(_)) => {
                 return Err(crate::Error::ProgramNotAllowed(PathBuf::from(program)));
             }
+            // the program is in the scope, so report why the call does not match it
+            Err(e) => return Err(e.into()),
         }
     };
     if let Some(cwd) = options.cwd {
