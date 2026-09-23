@@ -65,9 +65,11 @@ struct RegisteredShortcut<R: Runtime> {
 
 struct GlobalHotKeyManager(global_hotkey::GlobalHotKeyManager);
 
-/// SAFETY: we ensure it is run on main thread only
+// SAFETY: every register/unregister call goes through `run_main_thread!`, so the manager is
+// only used on the main thread. It is dropped wherever the last reference goes away, which is
+// normally the app state being torn down on exit.
 unsafe impl Send for GlobalHotKeyManager {}
-/// SAFETY: we ensure it is run on main thread only
+// SAFETY: see `Send` above.
 unsafe impl Sync for GlobalHotKeyManager {}
 
 /// The global shortcut APIs, accessible through [`GlobalShortcutExt::global_shortcut`].
@@ -76,7 +78,6 @@ unsafe impl Sync for GlobalHotKeyManager {}
 /// `global_hotkey` call to the app's main thread and block until it finishes, since macOS
 /// requires the hotkey manager to run on the main thread.
 pub struct GlobalShortcut<R: Runtime> {
-    #[allow(dead_code)]
     app: AppHandle<R>,
     manager: Arc<GlobalHotKeyManager>,
     shortcuts: Arc<Mutex<HashMap<HotKeyId, RegisteredShortcut<R>>>>,
@@ -315,12 +316,8 @@ fn register<R: Runtime>(
     handler: Channel<ShortcutJsEvent>,
 ) -> Result<()> {
     let mut hotkeys = Vec::new();
-
-    let mut shortcut_map = HashMap::new();
     for shortcut in shortcuts {
-        let hotkey = parse_shortcut(&shortcut)?;
-        shortcut_map.insert(hotkey.id(), shortcut);
-        hotkeys.push(hotkey);
+        hotkeys.push(parse_shortcut(&shortcut)?);
     }
 
     global_shortcut.register_multiple_internal(
@@ -340,6 +337,7 @@ fn register<R: Runtime>(
 
 #[tauri::command]
 fn unregister<R: Runtime>(
+    // unused, but `generate_handler!` needs it to infer `R`
     _app: AppHandle<R>,
     global_shortcut: State<'_, GlobalShortcut<R>>,
     shortcuts: Vec<String>,
@@ -353,6 +351,7 @@ fn unregister<R: Runtime>(
 
 #[tauri::command]
 fn unregister_all<R: Runtime>(
+    // unused, but `generate_handler!` needs it to infer `R`
     _app: AppHandle<R>,
     global_shortcut: State<'_, GlobalShortcut<R>>,
 ) -> Result<()> {
@@ -361,6 +360,7 @@ fn unregister_all<R: Runtime>(
 
 #[tauri::command]
 fn is_registered<R: Runtime>(
+    // unused, but `generate_handler!` needs it to infer `R`
     _app: AppHandle<R>,
     global_shortcut: State<'_, GlobalShortcut<R>>,
     shortcut: String,
