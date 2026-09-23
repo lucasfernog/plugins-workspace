@@ -77,14 +77,15 @@ struct SaveState {
 /// async/concurrent contexts.
 #[derive(Debug)]
 pub struct CookieStoreMutex {
-    pub path: PathBuf,
+    /// Where the jar is persisted, or `None` for an in-memory jar.
+    pub path: Option<PathBuf>,
     store: Mutex<CookieStore>,
     save_state: Arc<SaveState>,
 }
 
 impl CookieStoreMutex {
     /// Create a new [`CookieStoreMutex`] from an existing [`cookie_store::CookieStore`].
-    pub fn new(path: PathBuf, cookie_store: CookieStore) -> CookieStoreMutex {
+    pub fn new(path: Option<PathBuf>, cookie_store: CookieStore) -> CookieStoreMutex {
         CookieStoreMutex {
             path,
             store: Mutex::new(cookie_store),
@@ -93,7 +94,7 @@ impl CookieStoreMutex {
     }
 
     pub fn load<R: std::io::BufRead>(
-        path: PathBuf,
+        path: Option<PathBuf>,
         reader: R,
     ) -> cookie_store::Result<CookieStoreMutex> {
         cookie_store::serde::load(reader, |c| serde_json::from_str(c))
@@ -106,15 +107,19 @@ impl CookieStoreMutex {
     /// the file always ends up with the latest snapshot. The returned receiver gets a message
     /// once the file holds this snapshot or a newer one.
     pub fn request_save(&self) -> cookie_store::Result<Receiver<()>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let Some(path) = self.path.clone() else {
+            let _ = tx.send(());
+            return Ok(rx);
+        };
+
         let (generation, cookie_str) = {
             let store = self.store.lock().expect("poisoned cookie jar mutex");
             // taken under the store lock, so generations follow the order of the snapshots
             let generation = self.save_state.requested.fetch_add(1, Ordering::SeqCst) + 1;
             (generation, cookies_to_str(&store)?)
         };
-        let path = self.path.clone();
         let save_state = self.save_state.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
         tauri::async_runtime::spawn_blocking(move || {
             let mut written = save_state.written.lock().unwrap_or_else(|e| e.into_inner());
             if *written < generation {
@@ -165,7 +170,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(".cookies");
 
-        let jar = CookieStoreMutex::new(path.clone(), Default::default());
+        let jar = CookieStoreMutex::new(Some(path.clone()), Default::default());
         let url = url::Url::parse("https://tauri.app").unwrap();
         // every response setting a cookie requests a save in the background
         for i in 0..20 {
@@ -175,7 +180,7 @@ mod tests {
         jar.request_save().unwrap().recv().unwrap();
 
         let loaded = CookieStoreMutex::load(
-            path.clone(),
+            Some(path.clone()),
             std::io::BufReader::new(std::fs::File::open(&path).unwrap()),
         )
         .unwrap();

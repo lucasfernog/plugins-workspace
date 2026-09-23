@@ -84,6 +84,35 @@ pub(crate) struct Http {
     cookies_jar: std::sync::Arc<crate::reqwest_cookie_store::CookieStoreMutex>,
 }
 
+/// Loads the cookie jar persisted in the application cache directory, or an empty jar persisted
+/// there when the file cannot be parsed.
+#[cfg(feature = "cookies")]
+fn load_cookies_jar<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<crate::reqwest_cookie_store::CookieStoreMutex> {
+    use crate::reqwest_cookie_store::CookieStoreMutex;
+    use std::{fs::File, io::BufReader};
+
+    let cache_dir = app.path().app_cache_dir()?;
+    std::fs::create_dir_all(&cache_dir)?;
+
+    let path = cache_dir.join(COOKIES_FILENAME);
+    let file = File::options()
+        .create(true)
+        .append(true)
+        .read(true)
+        .open(&path)?;
+
+    let reader = BufReader::new(file);
+    Ok(
+        CookieStoreMutex::load(Some(path.clone()), reader).unwrap_or_else(|_e| {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("failed to load cookie store: {_e}, falling back to empty store");
+            CookieStoreMutex::new(Some(path), Default::default())
+        }),
+    )
+}
+
 /// Initializes the plugin.
 ///
 /// The plugin reads its [`Config`] from the `plugins > http` object of the `tauri.conf.json` file;
@@ -91,37 +120,22 @@ pub(crate) struct Http {
 ///
 /// With the `cookies` Cargo feature (enabled by default), a cookie jar is loaded from a `.cookies`
 /// file in the application cache directory on setup and written back to it when the application
-/// exits. A jar that cannot be read is replaced by an empty one.
+/// exits. A jar that cannot be read is replaced by an empty one, and when the cache directory or
+/// the file cannot be opened, cookies are only kept in memory.
 ///
 /// Register it on the Tauri builder with `.plugin(tauri_plugin_http::init())`.
 pub fn init<R: Runtime>() -> TauriPlugin<R, Option<Config>> {
     Builder::<R, Option<Config>>::new("http")
         .setup(|app, api| {
             #[cfg(feature = "cookies")]
-            let cookies_jar = {
-                use crate::reqwest_cookie_store::*;
-                use std::fs::File;
-                use std::io::BufReader;
-
-                let cache_dir = app.path().app_cache_dir()?;
-                std::fs::create_dir_all(&cache_dir)?;
-
-                let path = cache_dir.join(COOKIES_FILENAME);
-                let file = File::options()
-                    .create(true)
-                    .append(true)
-                    .read(true)
-                    .open(&path)?;
-
-                let reader = BufReader::new(file);
-                CookieStoreMutex::load(path.clone(), reader).unwrap_or_else(|_e| {
-                    #[cfg(feature = "tracing")]
-                    tracing::warn!(
-                        "failed to load cookie store: {_e}, falling back to empty store"
-                    );
-                    CookieStoreMutex::new(path, Default::default())
-                })
-            };
+            let cookies_jar = load_cookies_jar(app).unwrap_or_else(|_e| {
+                // a missing or read-only cache directory must not prevent the app from starting
+                #[cfg(feature = "tracing")]
+                tracing::warn!(
+                    "failed to open the cookie store file: {_e}, falling back to an in-memory store"
+                );
+                crate::reqwest_cookie_store::CookieStoreMutex::new(None, Default::default())
+            });
 
             let state = Http {
                 config: api.config().clone().unwrap_or_default(),
