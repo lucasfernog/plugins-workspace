@@ -73,13 +73,7 @@ pub fn init<R: Runtime>(
                             dbus_path.as_str(),
                             Some("org.SingleInstance.DBus"),
                             "ExecuteCallback",
-                            &(
-                                std::env::args().collect::<Vec<String>>(),
-                                std::env::current_dir()
-                                    .unwrap_or_default()
-                                    .to_str()
-                                    .unwrap_or_default(),
-                            ),
+                            &(crate::current_args(), crate::current_cwd()),
                         );
                     }
                     app.cleanup_before_exit();

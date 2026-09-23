@@ -33,6 +33,24 @@ mod semver_compat;
 pub(crate) type SingleInstanceCallback<R> =
     dyn FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static;
 
+/// The command line arguments of the current process.
+///
+/// Unlike [`std::env::args`], this does not panic when an argument is not valid Unicode (common
+/// for file paths on Linux); such arguments are converted lossily.
+pub(crate) fn current_args() -> Vec<String> {
+    std::env::args_os()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// The current working directory of the process, converted lossily if it is not valid Unicode,
+/// or an empty string if it can't be read.
+pub(crate) fn current_cwd() -> String {
+    std::env::current_dir()
+        .map(|cwd| cwd.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /// Initializes the plugin, calling `f` whenever a second instance of the app is started.
 ///
 /// This is a shortcut for [`Builder::new`] with [`Builder::callback`] set to `f`, then

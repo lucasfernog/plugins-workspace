@@ -78,14 +78,10 @@ fn socket_cleanup(socket: &PathBuf) {
 fn notify_singleton(socket: &PathBuf) -> Result<(), Error> {
     let stream = UnixStream::connect(socket)?;
     let mut bf = BufWriter::new(&stream);
-    let cwd = std::env::current_dir()
-        .unwrap_or_default()
-        .to_str()
-        .unwrap_or_default()
-        .to_string();
+    let cwd = crate::current_cwd();
     bf.write_all(cwd.as_bytes())?;
     bf.write_all(b"\0\0")?;
-    let args_joined = std::env::args().collect::<Vec<String>>().join("\0");
+    let args_joined = crate::current_args().join("\0");
     bf.write_all(args_joined.as_bytes())?;
     bf.flush()?;
     drop(bf);

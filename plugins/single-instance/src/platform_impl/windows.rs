@@ -85,10 +85,9 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                             AllowSetForegroundWindow(pid);
                         }
 
-                        let cwd = std::env::current_dir().unwrap_or_default();
-                        let cwd = cwd.to_str().unwrap_or_default();
+                        let cwd = crate::current_cwd();
 
-                        let args = std::env::args().collect::<Vec<String>>().join("|");
+                        let args = crate::current_args().join("|");
 
                         let data = format!("{cwd}|{args}\0",);
 
