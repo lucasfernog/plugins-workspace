@@ -103,6 +103,9 @@ export type Position = {
 
 /**
  * Options used to configure a {@link getCurrentPosition} or {@link watchPosition} request.
+ *
+ * All fields are required when an options object is passed. {@link getCurrentPosition} called without
+ * options uses `enableHighAccuracy: false`, `timeout: 0` and `maximumAge: 0`.
  */
 export type PositionOptions = {
   /**
@@ -111,15 +114,17 @@ export type PositionOptions = {
    */
   enableHighAccuracy: boolean
   /**
-   * The maximum wait time in milliseconds for location updates.
-   * On Android the timeout gets ignored for getCurrentPosition.
-   * Ignored on iOS
+   * Despite its name, this is not a timeout: nothing rejects when it elapses.
+   *
+   * On Android, {@link watchPosition} uses it as the interval in milliseconds between location
+   * updates (`0` delivers them as fast as possible), and {@link getCurrentPosition} ignores it.
+   * Ignored on iOS.
    */
   timeout: number
   /**
    * The maximum age in milliseconds of a possible cached position that is acceptable to return.
-   * Default: 0
-   * Ignored on iOS
+   * Only used by {@link getCurrentPosition} on Android.
+   * Ignored on iOS.
    */
   maximumAge: number
 }

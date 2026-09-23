@@ -34,16 +34,22 @@ pub struct PositionOptions {
     /// High accuracy mode (such as GPS, if available)
     /// Will be ignored on Android 12+ if users didn't grant the ACCESS_FINE_LOCATION permission.
     pub enable_high_accuracy: bool,
-    /// The maximum wait time in milliseconds for location updates.
-    /// Default: 10000
-    /// On Android the timeout gets ignored for getCurrentPosition.
+    /// Despite its name, this is not a timeout: nothing fails when it elapses.
+    ///
+    /// On Android, [`watch_position`](crate::Geolocation::watch_position) uses it as the interval in
+    /// milliseconds between location updates (`0` delivers them as fast as possible), and
+    /// [`get_current_position`](crate::Geolocation::get_current_position) ignores it.
     /// Ignored on iOS.
+    ///
+    /// [`PositionOptions::default`] sets it to `0`.
     // TODO: Handle Infinity and default to it.
     // TODO: Should be u64+ but specta doesn't like that?
     pub timeout: u32,
     /// The maximum age in milliseconds of a possible cached position that is acceptable to return.
-    /// Default: 0
+    /// Only used by [`get_current_position`](crate::Geolocation::get_current_position) on Android.
     /// Ignored on iOS.
+    ///
+    /// [`PositionOptions::default`] sets it to `0`.
     // TODO: Handle Infinity.
     // TODO: Should be u64+ but specta doesn't like that?
     pub maximum_age: u32,
