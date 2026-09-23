@@ -68,7 +68,7 @@ describePlugin('notification', () => {
   )
 
   itOn(
-    'android',
+    ['android', 'ios'],
     'scheduling a notification in the past is rejected',
     async () => {
       // through the command, since sendNotification does not report errors

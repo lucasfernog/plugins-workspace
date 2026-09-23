@@ -15,9 +15,9 @@ enum ShowNotificationError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .make(let error):
-      return "Unable to make notification: \(error)"
+      return "Unable to make notification: \(error.localizedDescription)"
     case .create(let error):
-      return "Unable to create notification: \(error)"
+      return "Unable to create notification: \(error.localizedDescription)"
     }
   }
 }
@@ -84,7 +84,7 @@ struct RemoveActiveArgs: Decodable {
   let notifications: [RemoveActiveNotification]
 }
 
-func showNotification(invoke: Invoke, notification: Notification)
+func makeNotificationRequest(_ notification: Notification)
   throws -> UNNotificationRequest
 {
   var content: UNNotificationContent
@@ -104,19 +104,9 @@ func showNotification(invoke: Invoke, notification: Notification)
     throw ShowNotificationError.create(error)
   }
 
-  // Schedule the request.
-  let request = UNNotificationRequest(
+  return UNNotificationRequest(
     identifier: "\(notification.id)", content: content, trigger: trigger
   )
-
-  let center = UNUserNotificationCenter.current()
-  center.add(request) { (error: Error?) in
-    if let theError = error {
-      invoke.reject(theError.localizedDescription)
-    }
-  }
-
-  return request
 }
 
 struct CancelArgs: Decodable {
@@ -167,22 +157,52 @@ class NotificationPlugin: Plugin {
   @objc public func show(_ invoke: Invoke) throws {
     let notification = try invoke.parseArgs(Notification.self)
 
-    let request = try showNotification(invoke: invoke, notification: notification)
+    let request = try makeNotificationRequest(notification)
+    // saved before adding the request, `willPresent` can run as soon as it is added
     notificationHandler.saveNotification(request.identifier, notification)
-    invoke.resolve(Int(request.identifier) ?? -1)
+    UNUserNotificationCenter.current().add(request) { error in
+      if let error = error {
+        invoke.reject(error.localizedDescription)
+      } else {
+        invoke.resolve(Int(request.identifier) ?? -1)
+      }
+    }
   }
 
   @objc public func batch(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(BatchArgs.self)
-    var ids = [Int]()
 
+    // build every request first so an invalid notification does not leave the batch half added
+    var requests = [UNNotificationRequest]()
     for notification in args.notifications {
-      let request = try showNotification(invoke: invoke, notification: notification)
+      let request = try makeNotificationRequest(notification)
+      requests.append(request)
       notificationHandler.saveNotification(request.identifier, notification)
-      ids.append(Int(request.identifier) ?? -1)
     }
 
-    invoke.resolve(ids)
+    let center = UNUserNotificationCenter.current()
+    let group = DispatchGroup()
+    let lock = NSLock()
+    var errors = [String]()
+    for request in requests {
+      group.enter()
+      center.add(request) { error in
+        if let error = error {
+          lock.lock()
+          errors.append(error.localizedDescription)
+          lock.unlock()
+        }
+        group.leave()
+      }
+    }
+
+    group.notify(queue: .global()) {
+      if let error = errors.first {
+        invoke.reject(error)
+      } else {
+        invoke.resolve(requests.map { Int($0.identifier) ?? -1 })
+      }
+    }
   }
 
   @objc public override func requestPermissions(_ invoke: Invoke) {
