@@ -781,7 +781,9 @@ impl Builder {
                 #[cfg(target_os = "ios")]
                 TargetKind::Stdout | TargetKind::Stderr => fern::Output::call(move |record| {
                     let message = format!("{}", record.args());
-                    unsafe {
+                    // Logs usually come from Rust threads that have no autorelease pool, where the autoreleased
+                    // string would only be released when the thread exits, so drain a pool for every record.
+                    objc2::rc::autoreleasepool(|_| unsafe {
                         ios::tauri_log(
                             match record.level() {
                                 log::Level::Trace | log::Level::Debug => 1,
@@ -795,7 +797,7 @@ impl Builder {
                                 objc2_foundation::NSString::from_str(message.as_str()),
                             ) as _,
                         );
-                    }
+                    });
                 }),
                 #[cfg(desktop)]
                 TargetKind::Stdout => std::io::stdout().into(),
