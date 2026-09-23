@@ -29,7 +29,16 @@
  *   - `true` means that any argument list is allowed.
  *   - `false` means that no arguments are allowed.
  *   - otherwise an array can be configured. Each item is either a string representing the fixed argument value
- *     or a `{ validator: string }` that defines a regex validating the argument value.
+ *     or a `{ validator: string, raw?: boolean }` that defines a regex validating the argument value.
+ *     The regex must match the whole value (it is wrapped in `^...$`) unless `raw` is `true`.
+ *
+ *     The array describes the arguments by position: the value passed at a fixed argument's position is
+ *     replaced with the fixed value, and arguments beyond the end of the array (or any argument, with
+ *     `args: false`) are ignored rather than rejected.
+ *
+ * The scope does not restrict the `env` and `cwd` {@link SpawnOptions | spawn options}: the webview can set
+ * them for any command it is allowed to run. Variables such as `PATH` or `LD_PRELOAD` change which program
+ * runs or what code it loads, so only allow commands to content you trust.
  *
  * #### Example scope configuration
  *
