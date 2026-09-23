@@ -20,7 +20,7 @@ exclude = [
 windows = { level = "full", notes = "Apps installed via MSI or NSIS in `perMachine` and `both` mode require admin permissions for write access in `$RESOURCES` folder" }
 linux = { level = "full", notes = "No write access to `$RESOURCES` folder" }
 macos = { level = "full", notes = "No write access to `$RESOURCES` folder" }
-android = { level = "partial", notes = "Access is restricted to Application folder by default" }
+android = { level = "partial", notes = "Access is restricted to Application folder by default. `content://` URIs are not checked against the scope" }
 ios = { level = "partial", notes = "Access is restricted to Application folder by default" }
 
 [build-dependencies]
