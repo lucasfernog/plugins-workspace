@@ -106,6 +106,27 @@ describePlugin('notification', () => {
     })
   })
 
+  // A deleted channel is restored with its old settings when an app re-creates its id,
+  // so this uses an id the older suite (which could not set the light color) never created.
+  itOn('android', 'channels keep their light color', async () => {
+    const result = await tauri(async (api) => {
+      await api.notification.createChannel({
+        id: 'e2e-light-channel',
+        name: 'e2e light channel',
+        lights: true,
+        lightColor: '#FF0000'
+      })
+      const created = (await api.notification.channels()).find(
+        (channel) => channel.id === 'e2e-light-channel'
+      )
+      await api.notification.removeChannel('e2e-light-channel')
+      return (
+        created && { lights: created.lights, lightColor: created.lightColor }
+      )
+    })
+    expect(result).toEqual({ lights: true, lightColor: '#FF0000' })
+  })
+
   itOn('ios', 'channels are not implemented', async () => {
     for (const call of ['create', 'remove', 'list'] as const) {
       const error = await tauriError(

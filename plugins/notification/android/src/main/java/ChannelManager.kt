@@ -38,7 +38,7 @@ class Channel {
   var description: String? = null
   var sound: String? = null
   var lights: Boolean? = null
-  var lightsColor: String? = null
+  var lightColor: String? = null
   var vibration: Boolean? = null
   var importance: Importance? = null
   var visibility: Visibility? = null
@@ -78,7 +78,7 @@ class ChannelManager(private var context: Context) {
       notificationChannel.lockscreenVisibility = (channel.visibility ?: Visibility.Private).value
       notificationChannel.enableVibration(channel.vibration ?: false)
       notificationChannel.enableLights(channel.lights ?: false)
-      val lightColor = channel.lightsColor ?: ""
+      val lightColor = channel.lightColor ?: ""
       if (lightColor.isNotEmpty()) {
         try {
           notificationChannel.lightColor = Color.parseColor(lightColor)
@@ -107,6 +107,13 @@ class ChannelManager(private var context: Context) {
     }
   }
 
+  // maps the system importance to the supported values:
+  // IMPORTANCE_MAX (5) reads as High and IMPORTANCE_UNSPECIFIED (-1000) as Default
+  private fun importanceFromSystem(importance: Int): Importance {
+    return Importance.values().firstOrNull { it.value == importance }
+      ?: if (importance > Importance.High.value) Importance.High else Importance.Default
+  }
+
   fun deleteChannel(invoke: Invoke) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val args = invoke.parseArgs(DeleteChannelArgs::class.java)
@@ -129,14 +136,17 @@ class ChannelManager(private var context: Context) {
         channel.id = notificationChannel.id
         channel.name = notificationChannel.name.toString()
         channel.description = notificationChannel.description
-        channel.sound = notificationChannel.sound.toString()
+        channel.sound = notificationChannel.sound?.toString()
         channel.lights = notificationChannel.shouldShowLights()
-        String.format(
-          "#%06X",
-          0xFFFFFF and notificationChannel.lightColor
-        )
+        // 0 means no color was set
+        if (notificationChannel.lightColor != 0) {
+          channel.lightColor = String.format(
+            "#%06X",
+            0xFFFFFF and notificationChannel.lightColor
+          )
+        }
         channel.vibration = notificationChannel.shouldVibrate()
-        channel.importance = Importance.values().firstOrNull { it.value == notificationChannel.importance }
+        channel.importance = importanceFromSystem(notificationChannel.importance)
         channel.visibility = Visibility.values().firstOrNull { it.value == notificationChannel.lockscreenVisibility }
 
         channels.add(channel)
