@@ -184,10 +184,11 @@ impl<R: Runtime> NotificationBuilder<R> {
     }
 
     /// Adds an extra payload to store in the notification.
+    ///
+    /// Values that cannot be represented as JSON (e.g. maps with non-string keys) are skipped
+    /// and an error is logged.
     pub fn extra(mut self, key: impl Into<String>, value: impl Serialize) -> Self {
-        self.data
-            .extra
-            .insert(key.into(), serde_json::to_value(value).unwrap());
+        insert_extra(&mut self.data, key, value);
         self
     }
 
@@ -211,6 +212,18 @@ impl<R: Runtime> NotificationBuilder<R> {
     pub fn silent(mut self) -> Self {
         self.data.silent = true;
         self
+    }
+}
+
+fn insert_extra(data: &mut NotificationData, key: impl Into<String>, value: impl Serialize) {
+    let key = key.into();
+    match serde_json::to_value(value) {
+        Ok(value) => {
+            data.extra.insert(key, value);
+        }
+        Err(error) => {
+            log::error!("failed to serialize the notification extra `{key}`: {error}");
+        }
     }
 }
 

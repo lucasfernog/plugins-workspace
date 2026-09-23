@@ -912,3 +912,19 @@ mod android {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extra_skips_values_that_are_not_json() {
+        let mut data = NotificationData::default();
+        let mut map = HashMap::new();
+        map.insert((1, 2), "non-string key");
+        crate::insert_extra(&mut data, "invalid", map);
+        crate::insert_extra(&mut data, "valid", 1);
+        assert_eq!(data.extra.len(), 1);
+        assert_eq!(data.extra["valid"], 1);
+    }
+}
