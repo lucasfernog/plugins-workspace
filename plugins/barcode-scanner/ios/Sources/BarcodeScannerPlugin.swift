@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 import AVFoundation
+import AudioToolbox
 import Tauri
 import UIKit
 import WebKit
@@ -334,6 +335,11 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
       )
       self.runScanner(invoke, args: args)
     }
+  }
+
+  @objc func vibrate(_ invoke: Invoke) {
+    AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+    invoke.resolve()
   }
 
   @objc private func cancel(_ invoke: Invoke) {
