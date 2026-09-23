@@ -33,6 +33,15 @@ tauri-plugin-positioner = "2.0.0"
 tauri-plugin-positioner = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
 ```
 
+The positions relative to the tray icon (`TrayLeft`, `TrayCenter`, …) need the `tray-icon` Cargo feature:
+
+```toml
+[dependencies]
+tauri-plugin-positioner = { version = "2.0.0", features = ["tray-icon"] }
+```
+
+Without it, only the screen positions are available: using a `Tray*` position fails, and `moveWindowConstrained` and `handleIconState` are not available.
+
 You can install the JavaScript Guest bindings using your preferred JavaScript package manager:
 
 ```sh
@@ -112,6 +121,26 @@ import { moveWindow, Position } from '@tauri-apps/plugin-positioner'
 
 await moveWindow(Position.TopRight)
 ```
+
+### Tray positions
+
+The `Tray*` positions are computed from the tray icon's last reported position, which is recorded by `on_tray_event` (Rust) or `handleIconState` (JavaScript) on click, enter, leave and move events. Until one of those events was forwarded, moving a window to a tray position fails with `Tray position not set`.
+
+- On Windows and macOS, `TrayLeft`, `TrayRight` and `TrayCenter` put the window above the icon, and move it below the icon when there is no room above (on Windows the window starts right below the icon, on macOS it starts at the icon's top edge).
+- On Linux, Tauri does not emit tray icon events, so the tray positions can't be used.
+- `moveWindowConstrained` (Rust: `move_window_constrained`) additionally keeps tray-positioned windows inside the tray icon's monitor.
+
+### Permissions
+
+The `positioner:default` permission set allows `moveWindow`, `moveWindowConstrained` and `handleIconState`. Add it to your capability, for example `src-tauri/capabilities/default.json`:
+
+```json
+{
+  "permissions": ["positioner:default"]
+}
+```
+
+### Rust only
 
 If you only move windows from Rust code, you can use the `WindowExt` trait extension, which is implemented for `WebviewWindow` and `Window`:
 
