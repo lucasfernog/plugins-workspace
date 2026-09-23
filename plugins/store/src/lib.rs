@@ -481,3 +481,93 @@ impl Builder {
             .build()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::channel;
+    use tauri::{test::MockRuntime, Listener};
+
+    fn mock_app() -> tauri::App<MockRuntime> {
+        tauri::test::mock_builder()
+            .plugin(Builder::new().build())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+    }
+
+    /// An absolute path in a fresh temporary directory, so the tests never touch the real
+    /// app data directory.
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-store-lib-test-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Runs `f` on another thread and fails if it does not finish in time (i.e. it deadlocked).
+    fn run_with_timeout(f: impl FnOnce() + Send + 'static) {
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            f();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("the operation deadlocked");
+    }
+
+    #[test]
+    fn change_listener_can_access_stores() {
+        let app = mock_app();
+        let dir = temp_dir("change-listener");
+        let path = dir.join("listened.json");
+        let other_path = dir.join("other.json");
+
+        let store = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .build()
+            .unwrap();
+
+        let (events_tx, events_rx) = channel();
+        let handle = app.handle().clone();
+        let listened_path = path.clone();
+        app.listen("store://change", move |_event| {
+            // re-locks the store that emitted the event
+            let store = handle.get_store(&listened_path).unwrap();
+            let value = store.get("key");
+            // takes the write lock of the stores registry
+            let other = handle
+                .store_builder(&other_path)
+                .disable_auto_save()
+                .build()
+                .unwrap();
+            let _ = other.keys();
+            let _ = events_tx.send(value);
+        });
+
+        let store_ = store.clone();
+        run_with_timeout(move || {
+            store_.set("key", 1);
+            store_.reset();
+            store_.set("key", 2);
+            store_.delete("key");
+        });
+
+        let events: Vec<_> = events_rx.try_iter().collect();
+        assert_eq!(
+            events,
+            vec![
+                Some(JsonValue::from(1)),
+                None,
+                Some(JsonValue::from(2)),
+                None
+            ]
+        );
+
+        drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
