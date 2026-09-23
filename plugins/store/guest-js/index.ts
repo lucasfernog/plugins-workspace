@@ -28,11 +28,19 @@ interface ChangePayload<T> {
  */
 export type StoreOptions = {
   /**
-   * Default value of the store
+   * Default value of the store.
+   *
+   * The store starts with these values, the on-disk state is merged on top of them
+   * (unless {@linkcode StoreOptions.overrideDefaults} is set), and {@linkcode Store.reset} restores them.
    */
   defaults?: { [key: string]: unknown }
   /**
-   * Auto save on modification with debounce duration in milliseconds, it's 100ms by default, pass in `false` to disable it
+   * Auto save on modification with debounce duration in milliseconds, it's 100ms by default, pass in `false` to disable it.
+   *
+   * `true` uses the default of 100ms, and `0` saves synchronously on every modification.
+   * The number must be a non-negative integer.
+   *
+   * Note that every loaded store is also saved when the app exits, even if auto save is disabled.
    */
   autoSave?: boolean | number
   /**
@@ -45,10 +53,15 @@ export type StoreOptions = {
   deserializeFnName?: string
   /**
    * Force create a new store with default values even if it already exists.
+   *
+   * The on-disk state is ignored and gets overwritten on the next save. If a store with the same
+   * path is already loaded, it is replaced and its existing handles become invalid.
    */
   createNew?: boolean
   /**
-   * When creating the store, override the store with the on-disk state if it exists, ignoring defaults
+   * When creating the store, use the on-disk state as is if it exists, instead of merging it into the defaults.
+   *
+   * The defaults are then only used when the store file does not exist, and by {@linkcode Store.reset}.
    */
   overrideDefaults?: boolean
 }
@@ -58,6 +71,14 @@ export type StoreOptions = {
  *
  * If the file at the given path does not exist yet, the store is created in memory with the
  * configured defaults and the file is only written on the first save.
+ *
+ * The path is resolved relative to the app data directory (`BaseDirectory.AppData`).
+ * Note that an absolute path replaces that directory, and `..` components are not rejected.
+ *
+ * A store is shared by every caller that loads the same path, from JavaScript or Rust:
+ * if it is already loaded, that instance is returned and `options` are ignored.
+ * If the file exists but cannot be read or deserialized, the store silently starts from its defaults
+ * and the file is overwritten on the next save.
  *
  * @example
  * ```typescript
@@ -444,6 +465,11 @@ export class LazyStore implements IStore {
  * and automatically after every modification unless auto save is disabled with
  * {@linkcode StoreOptions.autoSave}.
  *
+ * Stores are shared by the whole app: every window, and the Rust side, that loads the same path
+ * gets the same store, and closing it with {@linkcode Store.close | close()} closes it for all of them.
+ * `close()` is provided by {@linkcode Resource} and needs the `core:resource:allow-close` permission,
+ * which `core:default` includes.
+ *
  * @since 2.0.0
  */
 export class Store extends Resource implements IStore {
@@ -456,6 +482,14 @@ export class Store extends Resource implements IStore {
    *
    * If the file at the given path does not exist yet, the store is created in memory with the
    * configured defaults and the file is only written on the first save.
+   *
+   * The path is resolved relative to the app data directory (`BaseDirectory.AppData`).
+   * Note that an absolute path replaces that directory, and `..` components are not rejected.
+   *
+   * A store is shared by every caller that loads the same path, from JavaScript or Rust:
+   * if it is already loaded, that instance is returned and `options` are ignored.
+   * If the file exists but cannot be read or deserialized, the store silently starts from its defaults
+   * and the file is overwritten on the next save.
    *
    * @example
    * ```typescript
