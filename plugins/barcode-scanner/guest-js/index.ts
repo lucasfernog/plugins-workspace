@@ -27,7 +27,7 @@ export enum Format {
   /**
    * UPC-A, a 12-digit numeric barcode commonly used on retail products in North America.
    *
-   * Not supported on iOS.
+   * Not supported on iOS, where passing it in {@link ScanOptions.formats} makes {@link scan} reject.
    */
   UPC_A = 'UPC_A',
   /**
@@ -57,7 +57,7 @@ export enum Format {
   /**
    * Codabar, a numeric barcode commonly used by libraries and blood banks.
    *
-   * Not supported on iOS.
+   * Not supported on iOS, where passing it in {@link ScanOptions.formats} makes {@link scan} reject.
    */
   Codabar = 'CODABAR',
   /**
@@ -79,19 +79,19 @@ export enum Format {
   /**
    * GS1 DataBar, a compact barcode used to mark variable-measure items such as fresh food.
    *
-   * Not supported on Android. Requires iOS 15.4+
+   * Not supported on Android, where it is ignored. Requires iOS 15.4+, {@link scan} rejects on older versions.
    */
   GS1DataBar = 'GS1_DATA_BAR',
   /**
    * The limited variant of {@link Format.GS1DataBar}, encoding fewer digits in a smaller symbol.
    *
-   * Not supported on Android. Requires iOS 15.4+
+   * Not supported on Android, where it is ignored. Requires iOS 15.4+, {@link scan} rejects on older versions.
    */
   GS1DataBarLimited = 'GS1_DATA_BAR_LIMITED',
   /**
    * The expanded variant of {@link Format.GS1DataBar}, capable of encoding additional data such as weight.
    *
-   * Not supported on Android. Requires iOS 15.4+
+   * Not supported on Android, where it is ignored. Requires iOS 15.4+, {@link scan} rejects on older versions.
    */
   GS1DataBarExpanded = 'GS1_DATA_BAR_EXPANDED'
 }
@@ -106,6 +106,9 @@ export interface ScanOptions {
   cameraDirection?: 'back' | 'front'
   /**
    * The barcode formats to scan for. Defaults to all supported formats.
+   *
+   * Formats the platform does not support are ignored on Android; if none of the given formats
+   * is supported, all formats are scanned. On iOS they make {@link scan} reject.
    */
   formats?: Format[]
   /**
@@ -132,6 +135,9 @@ export interface Scanned {
   format: Format
   /**
    * The bounding box of the scanned barcode within the camera frame, when reported by the platform.
+   *
+   * Only reported on Android, as a `"left top right bottom"` string of pixel coordinates.
+   * Not set on iOS.
    */
   bounds: unknown
 }
@@ -139,6 +145,13 @@ export interface Scanned {
 /**
  * Start scanning, opening the device's camera. The returned promise resolves once a barcode
  * matching the given options has been scanned, or rejects if the scan is cancelled.
+ *
+ * Only one scan can run at a time; wait for the previous one to settle, or {@link cancel} it,
+ * before starting another.
+ *
+ * Rejects if the camera permission has not been granted (see {@link checkPermissions} and
+ * {@link requestPermissions}). On iOS it also rejects if the app's `Info.plist` has no
+ * `NSCameraUsageDescription` entry, or if the device has no camera (e.g. the iOS Simulator).
  *
  * @example
  * ```typescript
