@@ -30,6 +30,10 @@ mod platform_impl;
 #[cfg(feature = "semver")]
 mod semver_compat;
 
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod dbus_names;
+
 pub(crate) type SingleInstanceCallback<R> =
     dyn FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static;
 

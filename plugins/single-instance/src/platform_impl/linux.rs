@@ -5,7 +5,7 @@
 #[cfg(feature = "semver")]
 use crate::semver_compat::semver_compat_string;
 
-use crate::SingleInstanceCallback;
+use crate::{dbus_names, SingleInstanceCallback};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, RunEvent, Runtime,
@@ -43,32 +43,33 @@ pub fn init<R: Runtime>(
                 dbus_name.push_str(semver_compat_string(&app.package_info().version).as_str());
             }
 
-            let mut dbus_path = dbus_name.replace('.', "/").replace('-', "_");
-            if !dbus_path.starts_with('/') {
-                dbus_path = format!("/{dbus_path}");
-            }
+            // Invalid names (e.g. a `+` from semver build metadata) used to panic; valid ones are
+            // left unchanged.
+            let dbus_name = dbus_names::bus_name(&dbus_name);
+            let dbus_path = dbus_names::object_path(&dbus_name);
 
             let single_instance_dbus = SingleInstanceDBus {
                 callback,
                 app_handle: app.clone(),
             };
 
-            match zbus::blocking::connection::Builder::session()
-                .unwrap()
-                .name(dbus_name.as_str())
-                .unwrap()
-                .replace_existing_names(false)
-                .allow_name_replacements(false)
-                .serve_at(dbus_path.as_str(), single_instance_dbus)
-                .unwrap()
-                .build()
-            {
+            let connection = zbus::blocking::connection::Builder::session()
+                .and_then(|builder| builder.name(dbus_name.as_str()))
+                .and_then(|builder| {
+                    builder
+                        .replace_existing_names(false)
+                        .allow_name_replacements(false)
+                        .serve_at(dbus_path.as_str(), single_instance_dbus)
+                })
+                .and_then(|builder| builder.build());
+
+            match connection {
                 Ok(connection) => {
                     app.manage(ConnectionHandle(connection));
                 }
                 Err(zbus::Error::NameTaken) => {
-                    if let Ok(connection) = Connection::session() {
-                        let _ = connection.call_method(
+                    let result = Connection::session().and_then(|connection| {
+                        connection.call_method(
                             Some(dbus_name.as_str()),
                             dbus_path.as_str(),
                             Some("org.SingleInstance.DBus"),
@@ -80,12 +81,24 @@ pub fn init<R: Runtime>(
                                     .to_str()
                                     .unwrap_or_default(),
                             ),
+                        )
+                    });
+                    if let Err(e) = result {
+                        tracing::error!(
+                            "single_instance: failed to notify the running instance over D-Bus: {e}"
                         );
                     }
                     app.cleanup_before_exit();
                     std::process::exit(0);
                 }
-                _ => {}
+                Err(e) => {
+                    // No session bus (headless sessions, some containers and sandboxes) or an
+                    // unusable name: run without single-instance protection rather than crash.
+                    tracing::error!(
+                        "single_instance: failed to register the D-Bus name {dbus_name}, launching normally: {e}"
+                    );
+                    return Ok(());
+                }
             }
 
             app.manage(DBusName(dbus_name));
