@@ -80,7 +80,19 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 ## Usage with Flatpak/Snap
 
-If you use Flatpak/Snap to publish your package and your Tauri identifier doesn't match the package id, set the `DBUS_ID` variable using the builder for the plugin, look at example.
+On Linux the plugin owns the D-Bus name `<identifier>.SingleInstance` on the session bus, where `<identifier>` is the `identifier` from `tauri.conf.json` (with the `semver` feature a version suffix such as `_1_x_x` is appended). Flatpak and Snap only let the app own names under its app ID, so if your Tauri identifier doesn't match the package ID, pick the base name with `Builder::dbus_id`:
+
+```rust
+builder = builder.plugin(
+    tauri_plugin_single_instance::Builder::new()
+        .callback(|app, argv, cwd| { /* ... */ })
+        // registers `com.mycompany.myapp.SingleInstance`
+        .dbus_id("com.mycompany.myapp")
+        .build(),
+);
+```
+
+Plugin versions before 2.4.0 used `org.<identifier with . and - replaced by _>.SingleInstance`; update the name in your Flatpak/Snap manifests accordingly.
 
 ## Contributing
 
