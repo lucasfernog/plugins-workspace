@@ -6722,10 +6722,7 @@ version = "2.3.2"
 dependencies = [
  "http",
  "log",
- "serde",
- "serde_json",
  "tauri",
- "thiserror 2.0.12",
  "tiny_http",
 ]
 
