@@ -356,17 +356,19 @@ mod imp {
                     )?;
                 }
 
-                Command::new("update-desktop-database")
+                let status = Command::new("update-desktop-database")
                     .arg(target)
                     .status()
                     .inspect_err(crate::error::inspect_command_error(
                         "update-desktop-database",
                     ))?;
+                crate::error::warn_on_failure("update-desktop-database", status);
 
-                Command::new("xdg-mime")
+                let status = Command::new("xdg-mime")
                     .args(["default", &file_name, mime_type.as_str()])
                     .status()
                     .inspect_err(crate::error::inspect_command_error("xdg-mime"))?;
+                crate::error::warn_on_failure("xdg-mime", status);
 
                 Ok(())
             }
@@ -448,13 +450,16 @@ mod imp {
                     // Without the refreshed index `xdg-mime` may keep reporting the app as the
                     // handler, but the scheme is unregistered as far as the app can tell, so a
                     // missing command is not an error.
-                    if let Err(e) = Command::new("update-desktop-database")
+                    match Command::new("update-desktop-database")
                         .arg(&applications)
                         .status()
                     {
-                        tracing::warn!(
+                        Ok(status) => {
+                            crate::error::warn_on_failure("update-desktop-database", status)
+                        }
+                        Err(e) => tracing::warn!(
                             "Failed to run OS command `update-desktop-database`, the desktop database may still list the app as the `{mime_type}` handler: {e}"
-                        );
+                        ),
                     }
                 }
 

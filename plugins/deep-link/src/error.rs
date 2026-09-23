@@ -41,13 +41,23 @@ pub enum Error {
     PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
 }
 
-// TODO(v3): change this into an error in v3,
-// see <https://github.com/tauri-apps/plugins-workspace/pull/2970#issuecomment-3244660138>.
+/// Logs a failure to spawn an OS command; callers still propagate the error.
 #[inline]
 #[cfg(target_os = "linux")]
 pub(crate) fn inspect_command_error<'a>(command: &'a str) -> impl Fn(&std::io::Error) + 'a {
     move |e| {
         tracing::error!("Failed to run OS command `{command}`: {e}");
+    }
+}
+
+// TODO(v3): return an error instead, a command that ran but failed currently leaves the
+// operation reported as successful.
+/// Logs an OS command that ran but exited with a failure status.
+#[inline]
+#[cfg(target_os = "linux")]
+pub(crate) fn warn_on_failure(command: &str, status: std::process::ExitStatus) {
+    if !status.success() {
+        tracing::warn!("OS command `{command}` failed: {status}");
     }
 }
 
