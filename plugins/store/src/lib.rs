@@ -589,6 +589,57 @@ mod tests {
     }
 
     #[test]
+    fn stale_store_handles_do_not_affect_their_replacement() {
+        let app = mock_app();
+        let dir = temp_dir("stale-handles");
+        let path = dir.join("store.json");
+
+        // replaced with `create_new`
+        let (old, old_rid) = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .build_inner()
+            .unwrap();
+        let (new, new_rid) = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .create_new()
+            .build_inner()
+            .unwrap();
+        assert_ne!(old_rid, new_rid);
+
+        let (events_tx, events_rx) = channel();
+        app.listen("store://change", move |event| {
+            let payload: JsonValue = serde_json::from_str(event.payload()).unwrap();
+            let _ = events_tx.send(payload["resourceId"].as_u64());
+        });
+        old.set("key", "stale");
+        new.set("key", "fresh");
+        assert_eq!(
+            events_rx.try_iter().collect::<Vec<_>>(),
+            vec![Some(old_rid as u64), Some(new_rid as u64)]
+        );
+
+        old.close_resource();
+        let current = app.get_store(&path).expect("the new store was closed");
+        assert!(Arc::ptr_eq(&current, &new));
+
+        // closed, then loaded again
+        new.close_resource();
+        assert!(app.get_store(&path).is_none());
+        let reloaded = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .build()
+            .unwrap();
+        new.close_resource();
+        let current = app.get_store(&path).expect("the reloaded store was closed");
+        assert!(Arc::ptr_eq(&current, &reloaded));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn concurrent_close_and_load_do_not_deadlock() {
         let app = mock_app();
         let dir = temp_dir("close-and-load");

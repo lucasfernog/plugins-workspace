@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager, Resource, ResourceId, Runtime};
@@ -248,6 +248,7 @@ impl<R: Runtime> StoreBuilder<R> {
         let store = Store {
             app: self.app.clone(),
             path: self.path.clone(),
+            rid: OnceLock::new(),
             auto_save: self.auto_save,
             auto_save_debounce_sender: Arc::new(Mutex::new(None)),
             store: Arc::new(Mutex::new(store_inner)),
@@ -255,6 +256,7 @@ impl<R: Runtime> StoreBuilder<R> {
 
         let store = Arc::new(store);
         let rid = self.app.resources_table().add_arc(store.clone());
+        let _ = store.rid.set(rid);
         state.stores.write().unwrap().insert(self.path, rid);
 
         Ok((store, rid))
@@ -439,6 +441,8 @@ impl std::fmt::Debug for StoreInner {
 pub struct Store<R: Runtime> {
     app: AppHandle<R>,
     path: PathBuf,
+    /// The id of this store in the resources table, set once it is added to it.
+    rid: OnceLock<ResourceId>,
     auto_save: Option<Duration>,
     auto_save_debounce_sender: Arc<Mutex<Option<UnboundedSender<AutoSaveMessage>>>>,
     store: Arc<Mutex<StoreInner>>,
@@ -448,7 +452,15 @@ impl<R: Runtime> Resource for Store<R> {
     fn close(self: Arc<Self>) {
         let state = self.app.state::<StoreState>();
         let mut stores = state.stores.write().unwrap();
-        stores.remove(&self.path);
+        // only unregister the path if it still points to this store, and not to one that
+        // replaced it (e.g. with `create_new`)
+        if self
+            .rid
+            .get()
+            .is_some_and(|rid| stores.get(&self.path) == Some(rid))
+        {
+            stores.remove(&self.path);
+        }
     }
 }
 
@@ -511,14 +523,7 @@ impl<R: Runtime> Store<R> {
     /// Must be called without holding any of the store's locks: Rust event listeners run
     /// synchronously on this thread, and may access this or any other store.
     fn emit_changes(&self, changes: impl IntoIterator<Item = Change>) {
-        let resource_id = self
-            .app
-            .state::<StoreState>()
-            .stores
-            .read()
-            .unwrap()
-            .get(&self.path)
-            .copied();
+        let resource_id = self.rid.get().copied();
         for (key, value) in changes {
             let _ = self.app.emit(
                 "store://change",
@@ -591,11 +596,19 @@ impl<R: Runtime> Store<R> {
     }
 
     /// Removes the store from the resource table
+    ///
+    /// This does nothing if the store was already closed, even if another store has been loaded
+    /// from the same path since then.
     pub fn close_resource(&self) {
-        let state = self.app.state::<StoreState>();
-        let rid = state.stores.read().unwrap().get(&self.path).copied();
-        if let Some(rid) = rid {
-            let _ = self.app.resources_table().close(rid);
+        let Some(rid) = self.rid.get().copied() else {
+            return;
+        };
+        let mut resources_table = self.app.resources_table();
+        let is_self = resources_table
+            .get::<Store<R>>(rid)
+            .is_ok_and(|store| std::ptr::eq(Arc::as_ptr(&store), self));
+        if is_self {
+            let _ = resources_table.close(rid);
         }
     }
 
