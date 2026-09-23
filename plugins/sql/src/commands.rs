@@ -58,17 +58,22 @@ pub(crate) async fn close(
     db_instances: State<'_, DbInstances>,
     db: Option<String>,
 ) -> Result<bool, crate::Error> {
-    let instances = db_instances.0.read().await;
-
-    let pools = if let Some(db) = db {
-        vec![db]
-    } else {
-        instances.keys().cloned().collect()
+    // clone the pools so the lock is not held while waiting for in-flight
+    // queries to finish, which would block `load` in the meantime
+    let pools: Vec<DbPool> = {
+        let instances = db_instances.0.read().await;
+        if let Some(db) = db {
+            vec![instances
+                .get(&db)
+                .cloned()
+                .ok_or(Error::DatabaseNotLoaded(db))?]
+        } else {
+            instances.values().cloned().collect()
+        }
     };
 
     for pool in pools {
-        let db = instances.get(&pool).ok_or(Error::DatabaseNotLoaded(pool))?;
-        db.close().await;
+        pool.close().await;
     }
 
     Ok(true)
