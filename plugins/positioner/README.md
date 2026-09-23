@@ -112,14 +112,17 @@ import { moveWindow, Position } from '@tauri-apps/plugin-positioner'
 moveWindow(Position.TopRight)
 ```
 
-If you only intend on moving the window from rust code, you can import the Window trait extension instead of registering the plugin:
+If you only move windows from Rust code, you can use the `WindowExt` trait extension, which is implemented for `WebviewWindow` and `Window`:
 
 ```rust
-use tauri_plugin_positioner::{WindowExt, Position};
+use tauri::Manager;
+use tauri_plugin_positioner::{Position, WindowExt};
 
-let mut win = app.get_window("main").unwrap();
-let _ = win.move_window(Position::TopRight);
+let win = app.get_webview_window("main").unwrap();
+win.move_window(Position::TopRight)?;
 ```
+
+Registering the plugin is not needed for this **unless** the `tray-icon` feature is enabled: the plugin stores the tray icon's position, and with the feature enabled, moving a window without the plugin registered panics, even for screen positions.
 
 ## Contributing
 
