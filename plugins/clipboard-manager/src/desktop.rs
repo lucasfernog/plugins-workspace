@@ -125,12 +125,12 @@ impl<R: Runtime> Clipboard<R> {
     }
 
     /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.
-    pub fn read_image(&self) -> crate::Result<Image<'_>> {
+    pub fn read_image(&self) -> crate::Result<Image<'static>> {
         match &self.clipboard {
             Ok(clipboard) => {
                 let image = clipboard.lock().unwrap().as_mut().unwrap().get_image()?;
                 let image = Image::new_owned(
-                    image.bytes.to_vec(),
+                    image.bytes.into_owned(),
                     image.width as u32,
                     image.height as u32,
                 );

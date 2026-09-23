@@ -101,7 +101,7 @@ impl<R: Runtime> Clipboard<R> {
     /// # Errors
     ///
     /// Always returns [`crate::Error::Clipboard`].
-    pub fn read_image(&self) -> crate::Result<Image<'_>> {
+    pub fn read_image(&self) -> crate::Result<Image<'static>> {
         Err(crate::Error::Clipboard(
             "Unsupported on this platform".to_string(),
         ))

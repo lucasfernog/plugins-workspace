@@ -55,7 +55,7 @@ pub(crate) async fn read_image<R: Runtime>(
     webview: Webview<R>,
     clipboard: State<'_, Clipboard<R>>,
 ) -> Result<ResourceId> {
-    let image = clipboard.read_image()?.to_owned();
+    let image = clipboard.read_image()?;
     let mut resources_table = webview.resources_table();
     let rid = resources_table.add(image);
     Ok(rid)
