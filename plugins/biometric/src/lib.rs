@@ -4,7 +4,11 @@
 
 //! Prompt the user for biometric authentication.
 //!
-//! - Supported platforms: Android and iOS.
+//! - Supported platforms: Android and iOS. The crate is empty on desktop targets, so register the
+//!   plugin behind `#[cfg(mobile)]`.
+//!
+//! The authentication result is not bound to a cryptographic key, and Android accepts Class 2
+//! ("weak") biometrics: treat it as a user-presence check, not as the only protection for secrets.
 
 #![cfg(mobile)]
 
@@ -48,6 +52,9 @@ impl<R: Runtime> Biometric<R> {
     /// `BiometricPrompt` or iOS `LocalAuthentication`), showing `reason` as the purpose of the
     /// request. Resolves once the user is authenticated and errors if authentication fails, is
     /// canceled, or the underlying mobile plugin invocation fails.
+    ///
+    /// The error is a [`Error::PluginInvoke`] carrying one of the codes listed in the JavaScript
+    /// API docs (e.g. `userCancel`, `biometryNotEnrolled`, `biometryLockout`, `userFallback`).
     pub fn authenticate(&self, reason: String, options: AuthOptions) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("authenticate", AuthenticatePayload { reason, options })

@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core'
  * The kind of biometry hardware detected on the device.
  */
 export enum BiometryType {
-  /** No biometry hardware is available, or it is not enrolled with the operating system. */
+  /** No supported biometry hardware was detected. */
   None = 0,
   /** Apple TouchID or Android fingerprint. */
   TouchID = 1,
@@ -31,7 +31,12 @@ export enum BiometryType {
 export interface Status {
   /** Whether the device can currently authenticate using biometrics. */
   isAvailable: boolean
-  /** The kind of biometry hardware detected on the device, even when {@linkcode isAvailable} is `false`. */
+  /**
+   * The kind of biometry hardware detected on the device, even when {@linkcode isAvailable} is `false`.
+   *
+   * On Android this reflects the device's hardware features, not what the user enrolled: it is reported
+   * even when nothing is enrolled, and when several kinds are present the first of fingerprint, face and iris is reported.
+   */
   biometryType: BiometryType
   /** A human-readable reason why biometric authentication is unavailable. Only set when {@linkcode isAvailable} is `false`. */
   error?: string
@@ -54,13 +59,28 @@ export interface Status {
  * Options for the {@linkcode authenticate} biometric prompt.
  */
 export interface AuthOptions {
-  /** Enables authentication using the device's password or PIN. Available on both Android and iOS. */
+  /**
+   * Enables authentication using the device's passcode, PIN or pattern, as a fallback for or instead of biometrics.
+   * Available on both Android and iOS.
+   *
+   * On iOS this also lets the user authenticate with the passcode when biometry is unavailable.
+   */
   allowDeviceCredential?: boolean
-  /** Label for the cancel button. Available on both Android and iOS. */
+  /**
+   * Label for the cancel button. Available on both Android and iOS.
+   *
+   * On Android it is ignored when {@linkcode AuthOptions.allowDeviceCredential} is `true`,
+   * because the system shows its own button to switch to the device credential instead.
+   */
   cancelTitle?: string
 
   // iOS options
-  /** Text displayed on the fallback button if biometric authentication fails. **iOS only.** */
+  /**
+   * Text displayed on the fallback button shown after a failed biometric attempt. **iOS only.**
+   *
+   * When {@linkcode AuthOptions.allowDeviceCredential} is `false`, the button makes {@linkcode authenticate}
+   * reject with the `userFallback` code; pass an empty string to hide it.
+   */
   fallbackTitle?: string
 
   // android options
@@ -93,8 +113,20 @@ export async function checkStatus(): Promise<Status> {
 }
 
 /**
- * Prompts the user for authentication using the system interface (touchID, faceID or Android Iris).
- * Rejects if the authentication fails.
+ * Prompts the user for authentication using the system interface (Touch ID or Face ID on iOS,
+ * `BiometricPrompt` on Android), falling back to the device credential when
+ * {@linkcode AuthOptions.allowDeviceCredential} is set.
+ *
+ * Rejects if the authentication fails, is canceled or cannot be performed. The rejection carries one of
+ * these codes:
+ * - both platforms: `userCancel`, `systemCancel`, `biometryNotAvailable`, `biometryNotEnrolled`,
+ *   `biometryLockout`, `invalidContext`
+ * - iOS: `authenticationFailed`, `appCancel`, `notInteractive`, `passcodeNotSet`, `userFallback`
+ *   (the user pressed the fallback button while {@linkcode AuthOptions.allowDeviceCredential} is `false`)
+ * - Android: `noDeviceCredential`
+ *
+ * The result is not bound to a cryptographic key and Android accepts Class 2 ("weak") biometrics:
+ * treat it as a user-presence check, not as the only protection for secrets.
  *
  * @example
  * ```typescript
