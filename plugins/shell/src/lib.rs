@@ -152,7 +152,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
             app.manage(Shell {
                 app: app.clone(),
                 children: Default::default(),
-                open_scope: open_scope(&config.open),
+                open_scope: open_scope(&config.open)?,
 
                 #[cfg(mobile)]
                 mobile_plugin_handle: handle,
@@ -174,7 +174,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
         .build()
 }
 
-fn open_scope(open: &config::ShellAllowlistOpen) -> scope::OpenScope {
+fn open_scope(open: &config::ShellAllowlistOpen) -> Result<scope::OpenScope> {
     let shell_scope_open = match open {
         config::ShellAllowlistOpen::Flag(false) => None,
         // we want to add a basic regex validation even if the config is not set
@@ -183,12 +183,12 @@ fn open_scope(open: &config::ShellAllowlistOpen) -> scope::OpenScope {
         }
         config::ShellAllowlistOpen::Validate(validator) => {
             let regex = scope::validator_regex(validator, false)
-                .unwrap_or_else(|e| panic!("invalid regex {validator}: {e}"));
+                .map_err(|e| scope::invalid_regex_error(validator, e))?;
             Some(regex)
         }
     };
 
-    scope::OpenScope {
+    Ok(scope::OpenScope {
         open: shell_scope_open,
-    }
+    })
 }

@@ -71,6 +71,13 @@ pub(crate) fn validator_regex(validator: &str, raw: bool) -> Result<Regex, regex
     }
 }
 
+/// The error returned when a validator in the shell scope or the plugin config is not a valid regex.
+pub(crate) fn invalid_regex_error(validator: &str, error: regex::Error) -> crate::Error {
+    crate::Error::Json(<serde_json::Error as serde::de::Error>::custom(format!(
+        "invalid shell validator regex `{validator}`: {error}"
+    )))
+}
+
 /// A configured scoped shell command.
 #[derive(Debug, Clone)]
 pub struct ScopeAllowedCommand {
@@ -101,15 +108,15 @@ impl ScopeObject for ScopeAllowedCommand {
             crate::scope_entry::ShellAllowedArgs::List(list) => {
                 let list = list.into_iter().map(|arg| match arg {
                     crate::scope_entry::ShellAllowedArg::Fixed(fixed) => {
-                        crate::scope::ScopeAllowedArg::Fixed(fixed)
+                        Ok(crate::scope::ScopeAllowedArg::Fixed(fixed))
                     }
                     crate::scope_entry::ShellAllowedArg::Var { validator, raw } => {
-                        let validator = validator_regex(&validator, raw)
-                            .unwrap_or_else(|e| panic!("invalid regex {validator}: {e}"));
-                        crate::scope::ScopeAllowedArg::Var { validator }
+                        validator_regex(&validator, raw)
+                            .map(|validator| crate::scope::ScopeAllowedArg::Var { validator })
+                            .map_err(|e| invalid_regex_error(&validator, e))
                     }
                 });
-                Some(list.collect())
+                Some(list.collect::<Result<_, _>>()?)
             }
         };
 
@@ -352,6 +359,13 @@ mod tests {
         let open = validator_regex("https://.*|mailto:.*", false).unwrap();
         assert!(open.is_match("https://tauri.app"));
         assert!(!open.is_match("file:///etc/passwd#mailto:x"));
+    }
+
+    #[test]
+    fn invalid_validator_is_an_error() {
+        let error = validator_regex("(unclosed", false).unwrap_err();
+        let message = super::invalid_regex_error("(unclosed", error).to_string();
+        assert!(message.contains("invalid shell validator regex `(unclosed`"));
     }
 
     #[test]
