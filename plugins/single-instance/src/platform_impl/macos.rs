@@ -11,7 +11,7 @@ use std::{
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex, PoisonError},
     time::{Duration, Instant},
 };
 
@@ -26,6 +26,12 @@ use tokio::io::AsyncReadExt;
 
 /// How long a starting instance waits for the instance holding the lock to start listening.
 const FIND_FIRST_INSTANCE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long the first instance waits for another instance to send its whole message.
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Largest message accepted from another instance (4 times macOS' `ARG_MAX`).
+const MAX_MESSAGE_SIZE: u64 = 4 * 1024 * 1024;
 
 pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
     plugin::Builder::new("single-instance")
@@ -183,8 +189,9 @@ fn notify_singleton(socket: &PathBuf) -> Result<(), Error> {
 fn listen_for_other_instances<A: Runtime>(
     listener: UnixListener,
     app: AppHandle<A>,
-    mut cb: Box<SingleInstanceCallback<A>>,
+    cb: Box<SingleInstanceCallback<A>>,
 ) {
+    let cb = Arc::new(Mutex::new(cb));
     tauri::async_runtime::spawn(async move {
         let listener = listener
             .set_nonblocking(true)
@@ -192,19 +199,22 @@ fn listen_for_other_instances<A: Runtime>(
         match listener {
             Ok(listener) => loop {
                 match listener.accept().await {
-                    Ok((mut stream, _addr)) => {
-                        let mut s = String::new();
-                        match stream.read_to_string(&mut s).await {
-                            Ok(_) => {
-                                let (cwd, args) = s.split_once("\0\0").unwrap_or_default();
-                                let args: Vec<String> =
-                                    args.split('\0').map(String::from).collect();
-                                cb(app.app_handle(), args, cwd.to_string());
+                    Ok((stream, _addr)) => {
+                        // Read each connection in its own task, so a client that never closes
+                        // the connection can't block the notifications of later instances.
+                        let app = app.clone();
+                        let cb = cb.clone();
+                        tauri::async_runtime::spawn(async move {
+                            match read_message(stream).await {
+                                Ok((cwd, args)) => {
+                                    let mut cb = cb.lock().unwrap_or_else(PoisonError::into_inner);
+                                    cb(&app, args, cwd);
+                                }
+                                Err(e) => {
+                                    tracing::debug!("single_instance failed to be notified: {e}")
+                                }
                             }
-                            Err(e) => {
-                                tracing::debug!("single_instance failed to be notified: {e}")
-                            }
-                        }
+                        });
                     }
                     Err(err) => {
                         tracing::debug!("single_instance failed to be notified: {}", err);
@@ -220,6 +230,31 @@ fn listen_for_other_instances<A: Runtime>(
             }
         }
     });
+}
+
+/// Reads the `cwd\0\0arg0\0arg1…` message another instance sends, with a time and size limit.
+async fn read_message(stream: tokio::net::UnixStream) -> Result<(String, Vec<String>), Error> {
+    let mut data = Vec::new();
+    tokio::time::timeout(
+        READ_TIMEOUT,
+        stream.take(MAX_MESSAGE_SIZE + 1).read_to_end(&mut data),
+    )
+    .await
+    .map_err(|_| Error::new(ErrorKind::TimedOut, "timed out reading the message"))??;
+    if data.len() as u64 > MAX_MESSAGE_SIZE {
+        return Err(Error::new(ErrorKind::InvalidData, "message too large"));
+    }
+    Ok(decode_message(&data))
+}
+
+/// Decodes the `cwd\0\0arg0\0arg1…` message. Invalid UTF-8 is converted lossily.
+fn decode_message(data: &[u8]) -> (String, Vec<String>) {
+    let data = String::from_utf8_lossy(data);
+    let (cwd, args) = data.split_once("\0\0").unwrap_or_default();
+    (
+        cwd.to_string(),
+        args.split('\0').map(String::from).collect(),
+    )
 }
 
 #[cfg(test)]
@@ -285,6 +320,47 @@ mod tests {
             panic!("expected to become the first instance");
         };
         cleanup(&socket, lock);
+    }
+
+    #[test]
+    fn decodes_messages() {
+        assert_eq!(
+            decode_message(b"/cwd\0\0/app\0--flag\0a|b"),
+            (
+                "/cwd".to_string(),
+                vec!["/app".into(), "--flag".into(), "a|b".into()]
+            )
+        );
+        assert_eq!(
+            decode_message(b"/c\xffwd\0\0a\xfe"),
+            ("/c\u{fffd}wd".to_string(), vec!["a\u{fffd}".into()])
+        );
+        assert_eq!(decode_message(b""), (String::new(), vec![String::new()]));
+    }
+
+    #[test]
+    fn reads_concurrent_and_invalid_messages() {
+        tauri::async_runtime::block_on(async {
+            // a client that never sends anything nor closes doesn't prevent reading another one
+            let (_idle, idle_peer) = UnixStream::pair().unwrap();
+            let (mut client, peer) = UnixStream::pair().unwrap();
+            idle_peer.set_nonblocking(true).unwrap();
+            peer.set_nonblocking(true).unwrap();
+            let idle = tauri::async_runtime::spawn(read_message(
+                tokio::net::UnixStream::from_std(idle_peer).unwrap(),
+            ));
+
+            client.write_all(b"/cwd\0\0/app\0\xff").unwrap();
+            drop(client);
+            let message = read_message(tokio::net::UnixStream::from_std(peer).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(
+                message,
+                ("/cwd".to_string(), vec!["/app".into(), "\u{fffd}".into()])
+            );
+            idle.abort();
+        });
     }
 
     #[test]
