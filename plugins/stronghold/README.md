@@ -26,7 +26,7 @@ Install the Core plugin by adding the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-tauri-plugin-stronghold = "2.0.0"
+tauri-plugin-stronghold = "2"
 # alternatively with Git:
 tauri-plugin-stronghold = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
 ```
@@ -52,17 +52,44 @@ yarn add @tauri-apps/plugin-stronghold
 
 ## Usage
 
-First you need to register the core plugin with Tauri:
+First you need to register the core plugin with Tauri. The plugin needs a function that turns the password given to `Stronghold.load` into the 32 bytes key that encrypts the snapshot file.
+
+The recommended setup uses the built-in Argon2 key derivation (the default `kdf` Cargo feature), which stores a random salt in a file the first time it is needed:
 
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_stronghold::Builder::new(|password| {
-            // Hash the password here with e.g. argon2, blake2b or any other secure algorithm
-            // Here is an example implementation using the `rust-argon2` crate for hashing the password
+use tauri::Manager;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let salt_dir = app
+                .path()
+                .app_local_data_dir()
+                .expect("could not resolve app local data path");
+            // the salt file is written on the first `Stronghold.load`, and its directory
+            // might not exist yet on a fresh install
+            std::fs::create_dir_all(&salt_dir)?;
+            app.handle().plugin(
+                tauri_plugin_stronghold::Builder::with_argon2(&salt_dir.join("salt.txt")).build(),
+            )?;
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+```
+
+Keep the salt file: without it, the snapshots can no longer be decrypted.
+
+Alternatively, provide your own password hash function with `Builder::new`. It runs every time the frontend calls `Stronghold.load`, so it must always return the same 32 bytes for the same password. For example with the `rust-argon2` crate:
+
+```rust
+tauri::Builder::default()
+    .plugin(
+        tauri_plugin_stronghold::Builder::new(|password| {
             use argon2::{hash_raw, Config, Variant, Version};
 
             let config = Config {
@@ -74,16 +101,15 @@ fn main() {
                 ..Default::default()
             };
 
-            let salt = "your-salt".as_bytes();
+            // Use a random salt generated once per installation and stored next to the
+            // snapshot (this is what `Builder::with_argon2` does). A salt hard-coded in
+            // the app is shared by every user, which defeats its purpose.
+            let salt = load_or_create_salt();
 
-            let key = hash_raw(password.as_ref(), salt, &config).expect("failed to hash password");
-
-            key.to_vec()
+            hash_raw(password.as_ref(), &salt, &config).expect("failed to hash password")
         })
-        .build())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
+        .build(),
+    )
 ```
 
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
