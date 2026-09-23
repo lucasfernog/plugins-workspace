@@ -16,7 +16,7 @@ pub struct PermissionStatus {
     ///
     /// On iOS it requests/checks location permissions.
     pub location: PermissionState,
-    /// Permissions state for the coarseLoaction alias.
+    /// Permissions state for the coarseLocation alias.
     ///
     /// On Android it requests/checks ACCESS_COARSE_LOCATION.
     ///
