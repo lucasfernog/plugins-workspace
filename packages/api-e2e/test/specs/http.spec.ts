@@ -7,8 +7,8 @@ import { tauri, tauriError, describePlugin } from '../helpers/index.js'
 
 // The example spawns an echo server on this port: it replies with the request
 // body and the request headers, and sets a `session-token` cookie on requests
-// that do not carry one. It is also the only `http://` origin in the example's
-// http scope.
+// that do not carry one. The e2e fixture server is the other `http://` origin
+// of the example's http scope.
 const echoServer = 'http://localhost:3003'
 
 describePlugin('http', () => {

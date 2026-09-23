@@ -44,6 +44,8 @@ export interface FixtureServer {
  *   {@link UPDATER_TARGET_OLDER}, and replies `204 No Content` when it is
  *   {@link UPDATER_TARGET_NO_UPDATE}.
  * - `GET /download` — {@link DOWNLOAD_FIXTURE_BODY} with a `Content-Length`.
+ * - `GET /slow/{{ms}}` — a `200` sent after `ms` milliseconds.
+ * - `GET /status/{{code}}` — a response with the given status code.
  * - `* /echo` — a JSON description of the request (`method`, `url`, `headers`
  *   and the utf-8 `body`).
  * - `ws /ws` — a WebSocket echo endpoint: text and binary messages are sent
@@ -86,6 +88,25 @@ export function startFixtureServer(): Promise<FixtureServer> {
             'content-length': Buffer.byteLength(DOWNLOAD_FIXTURE_BODY)
           })
           .end(DOWNLOAD_FIXTURE_BODY)
+        return
+      }
+
+      if (route === 'slow') {
+        // answers after the given number of milliseconds
+        const delay = Number(rest[0] ?? 0)
+        setTimeout(() => {
+          if (!res.destroyed) res.writeHead(200).end('slow')
+        }, delay)
+        return
+      }
+
+      if (route === 'status') {
+        // answers with the given status code
+        const status = Number(rest[0] ?? 200)
+        res.writeHead(status)
+        res.end(
+          [204, 205, 304].includes(status) ? undefined : `status ${status}`
+        )
         return
       }
 

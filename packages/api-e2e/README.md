@@ -54,8 +54,9 @@ in the core repository; the `@tauri-apps/api` modules themselves are covered the
   [`tauri.e2e.conf.json`](tauri.e2e.conf.json)) and the upload/download fixtures. It listens
   on the host's loopback; the iOS simulator shares that network stack, and on Android the
   mobile config runs `adb reverse` so the same `127.0.0.1` URL works on the device. The
-  `http` specs use the echo server the example app itself spawns on port 3003, since that
-  is the only `http://` origin in the example's http scope. The fixture server also has a
+  `http` specs mostly use the echo server the example app itself spawns on port 3003, and
+  the fixture server (also in the example's http scope) for slow and custom-status
+  responses. The fixture server also has a
   WebSocket echo endpoint (`ws://127.0.0.1:3004/ws`) for the `websocket` specs.
 
 ## What is (not) covered
