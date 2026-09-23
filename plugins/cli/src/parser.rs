@@ -264,7 +264,7 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = match (arg.min_values, arg.max_values) {
         (Some(min), Some(max)) => clap_arg.num_args(min..=max),
         (Some(min), None) => clap_arg.num_args(min..),
-        (None, Some(max)) => clap_arg.num_args(0..max),
+        (None, Some(max)) => clap_arg.num_args(0..=max),
         (None, None) => clap_arg,
     };
     clap_arg = clap_arg.required(arg.required);
@@ -292,4 +292,52 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    #[test]
+    fn max_values_is_inclusive() {
+        let config = config(serde_json::json!({
+            "args": [{ "name": "file", "takesValue": true, "multiple": true, "maxValues": 3 }]
+        }));
+
+        let matches = parse(&config, &["--file", "a", "b", "c"]).unwrap();
+        assert_eq!(
+            arg(&matches, "file").value,
+            serde_json::json!(["a", "b", "c"])
+        );
+        assert!(parse(&config, &["--file", "a", "b", "c", "d"]).is_err());
+    }
 }
