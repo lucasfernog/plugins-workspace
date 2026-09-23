@@ -37,6 +37,30 @@ describePlugin('sql', () => {
     expect(path).toBe(db)
   })
 
+  it('loading an already loaded database reuses its connection pool', async () => {
+    const result = await tauri(async (api, db) => {
+      const database = await api.sql.load(db)
+      // a TEMP table only exists on the connection that created it; the
+      // queries run one after the other, so the pool hands out its single
+      // idle connection every time
+      await database.execute(
+        'CREATE TEMP TABLE IF NOT EXISTS e2e_reuse (id INTEGER)'
+      )
+      const loads = await Promise.all([
+        api.sql.load(db),
+        api.sql.load(db),
+        api.sql.load(db)
+      ])
+      const again = await api.sql.load(db)
+      return {
+        paths: loads.map((d) => d.path),
+        rows: await again.select<{ id: number }[]>('SELECT * FROM e2e_reuse')
+      }
+    }, db)
+    expect(result.paths).toEqual([db, db, db])
+    expect(result.rows).toEqual([])
+  })
+
   it('migrations registered by the app run when their database is loaded', async () => {
     const result = await tauri(async (api) => {
       const database = await api.sql.load('sqlite:api.db')

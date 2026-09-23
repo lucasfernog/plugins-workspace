@@ -27,6 +27,9 @@ use crate::LastInsertId;
 /// The variant is picked from the scheme of the connection string
 /// (`sqlite:`, `mysql:` or `postgres:`) and only the variants whose Cargo
 /// feature is enabled exist.
+///
+/// Cloning a `DbPool` is cheap: the clone shares the connections of the original.
+#[derive(Clone)]
 pub enum DbPool {
     /// A SQLite connection pool. Only available with the `sqlite` Cargo feature.
     #[cfg(feature = "sqlite")]
@@ -138,6 +141,19 @@ impl DbPool {
             DbPool::None => (),
         }
         Ok(())
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        match self {
+            #[cfg(feature = "sqlite")]
+            DbPool::Sqlite(pool) => pool.is_closed(),
+            #[cfg(feature = "mysql")]
+            DbPool::MySql(pool) => pool.is_closed(),
+            #[cfg(feature = "postgres")]
+            DbPool::Postgres(pool) => pool.is_closed(),
+            #[cfg(not(any(feature = "sqlite", feature = "mysql", feature = "postgres")))]
+            DbPool::None => false,
+        }
     }
 
     pub(crate) async fn close(&self) {

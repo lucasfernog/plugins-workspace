@@ -16,6 +16,12 @@ pub(crate) async fn load<R: Runtime>(
     migrations: State<'_, Migrations>,
     db: String,
 ) -> Result<String, crate::Error> {
+    // reuse the pool of a database that is already loaded instead of opening
+    // a second one and dropping the first while it may still be in use
+    if is_open(&db_instances, &db).await {
+        return Ok(db);
+    }
+
     let pool = DbPool::connect(&db, &app).await?;
 
     if let Some(migrations) = migrations.0.lock().await.remove(&db) {
@@ -23,9 +29,25 @@ pub(crate) async fn load<R: Runtime>(
         pool.migrate(&migrator).await?;
     }
 
-    db_instances.0.write().await.insert(db.clone(), pool);
+    let mut instances = db_instances.0.write().await;
+    if instances.get(&db).is_some_and(|pool| !pool.is_closed()) {
+        // loaded concurrently while this pool was connecting
+        drop(instances);
+        pool.close().await;
+    } else {
+        instances.insert(db.clone(), pool);
+    }
 
     Ok(db)
+}
+
+async fn is_open(db_instances: &DbInstances, db: &str) -> bool {
+    db_instances
+        .0
+        .read()
+        .await
+        .get(db)
+        .is_some_and(|pool| !pool.is_closed())
 }
 
 /// Allows the database connection(s) to be closed; if no database
