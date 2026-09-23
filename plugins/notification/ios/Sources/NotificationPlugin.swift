@@ -33,7 +33,7 @@ enum ScheduleEveryKind: String, Decodable {
   case second
 }
 
-struct ScheduleInterval: Decodable {
+struct ScheduleInterval: Codable {
   var year: Int?
   var month: Int?
   var day: Int?

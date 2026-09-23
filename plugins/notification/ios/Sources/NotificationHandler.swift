@@ -87,11 +87,16 @@ public class NotificationHandler: NSObject, NotificationHandlerProtocol {
     )
   }
 
-  func toPendingNotification(_ request: UNNotificationRequest) -> PendingNotification {
+  /// Returns `nil` for requests without a time based trigger, which are not scheduled notifications.
+  func toPendingNotification(_ request: UNNotificationRequest) -> PendingNotification? {
+    guard let schedule = PendingSchedule(request.trigger) else {
+      return nil
+    }
     return PendingNotification(
       id: Int(request.identifier) ?? -1,
       title: request.content.title,
-      body: request.content.body
+      body: request.content.body,
+      schedule: schedule
     )
   }
 }
@@ -100,6 +105,51 @@ struct PendingNotification: Encodable {
   let id: Int
   let title: String
   let body: String
+  let schedule: PendingSchedule
+}
+
+/// The schedule of a pending notification, in the shape of the JS `Schedule` and Rust `Schedule` types.
+struct PendingSchedule: Encodable {
+  struct At: Encodable {
+    let date: String
+    let repeating: Bool
+    let allowWhileIdle = false
+  }
+
+  struct Interval: Encodable {
+    let interval: ScheduleInterval
+    let allowWhileIdle = false
+  }
+
+  var at: At?
+  var interval: Interval?
+
+  init?(_ trigger: UNNotificationTrigger?) {
+    if let trigger = trigger as? UNCalendarNotificationTrigger {
+      let components = trigger.dateComponents
+      interval = Interval(
+        interval: ScheduleInterval(
+          year: components.year,
+          month: components.month,
+          day: components.day,
+          weekday: components.weekday,
+          hour: components.hour,
+          minute: components.minute,
+          second: components.second
+        ))
+    } else if let trigger = trigger as? UNTimeIntervalNotificationTrigger,
+      let date = trigger.nextTriggerDate()
+    {
+      // `at` and `every` schedules are both time interval triggers: report the next delivery
+      let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.timeZone = TimeZone(identifier: "UTC")
+      formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+      at = At(date: formatter.string(from: date), repeating: trigger.repeats)
+    } else {
+      return nil
+    }
+  }
 }
 
 struct ActiveNotification: Encodable {
