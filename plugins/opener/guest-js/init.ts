@@ -64,7 +64,8 @@ window.addEventListener('click', function (evt) {
 
   evt.preventDefault()
 
+  // pass the string: a URL object cannot be structured-cloned by the IPC
   void invoke('plugin:opener|open_url', {
-    url
+    url: url.href
   })
 })
