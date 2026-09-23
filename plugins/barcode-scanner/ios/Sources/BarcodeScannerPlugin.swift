@@ -128,70 +128,62 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     }
   }
 
-  private func setupCamera(direction: String, windowed: Bool) {
-    do {
-      var cameraDirection = direction
-      cameraView.backgroundColor = UIColor.clear
-      if windowed {
-        webView.superview?.insertSubview(cameraView, belowSubview: webView)
-      } else {
-        webView.superview?.insertSubview(cameraView, aboveSubview: webView)
-      }
+  private func setupCamera(direction: String, windowed: Bool) throws {
+    var cameraDirection = direction
+    cameraView.backgroundColor = UIColor.clear
+    if windowed {
+      webView.superview?.insertSubview(cameraView, belowSubview: webView)
+    } else {
+      webView.superview?.insertSubview(cameraView, aboveSubview: webView)
+    }
 
-      let availableVideoDevices = discoverCaptureDevices()
-      for device in availableVideoDevices {
-        if device.position == AVCaptureDevice.Position.back {
-          backCamera = device
-        } else if device.position == AVCaptureDevice.Position.front {
-          frontCamera = device
-        }
+    let availableVideoDevices = discoverCaptureDevices()
+    for device in availableVideoDevices {
+      if device.position == AVCaptureDevice.Position.back {
+        backCamera = device
+      } else if device.position == AVCaptureDevice.Position.front {
+        frontCamera = device
       }
+    }
 
-      // older iPods have no back camera
-      if cameraDirection == "back" {
-        if backCamera == nil {
-          cameraDirection = "front"
-        }
-      } else {
-        if frontCamera == nil {
-          cameraDirection = "back"
-        }
+    // older iPods have no back camera
+    if cameraDirection == "back" {
+      if backCamera == nil {
+        cameraDirection = "front"
       }
-
-      let input: AVCaptureDeviceInput
-      input = try createCaptureDeviceInput(
-        cameraDirection: cameraDirection, backCamera: backCamera, frontCamera: frontCamera)
-      captureSession = AVCaptureSession()
-      captureSession!.addInput(input)
-      metaOutput = AVCaptureMetadataOutput()
-      captureSession!.addOutput(metaOutput!)
-      metaOutput!.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-      captureVideoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession!)
-      cameraView.addPreviewLayer(captureVideoPreviewLayer)
-
-      self.windowed = windowed
-      if windowed {
-        self.previousBackgroundColor = self.webView.backgroundColor
-        self.webView.isOpaque = false
-        self.webView.backgroundColor = UIColor.clear
-        self.webView.scrollView.backgroundColor = UIColor.clear
+    } else {
+      if frontCamera == nil {
+        cameraDirection = "back"
       }
-    } catch CaptureError.backCameraUnavailable {
-      //
-    } catch CaptureError.frontCameraUnavailable {
-      //
-    } catch CaptureError.couldNotCaptureInput {
-      //
-    } catch {
-      //
+    }
+
+    let input: AVCaptureDeviceInput
+    input = try createCaptureDeviceInput(
+      cameraDirection: cameraDirection, backCamera: backCamera, frontCamera: frontCamera)
+    captureSession = AVCaptureSession()
+    captureSession!.addInput(input)
+    metaOutput = AVCaptureMetadataOutput()
+    captureSession!.addOutput(metaOutput!)
+    metaOutput!.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+    captureVideoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession!)
+    cameraView.addPreviewLayer(captureVideoPreviewLayer)
+
+    self.windowed = windowed
+    if windowed {
+      self.previousBackgroundColor = self.webView.backgroundColor
+      self.webView.isOpaque = false
+      self.webView.backgroundColor = UIColor.clear
+      self.webView.scrollView.backgroundColor = UIColor.clear
     }
   }
 
   private func dismantleCamera() {
+    // the camera view is attached before the capture session is created,
+    // so remove it even if setting up the session failed
+    self.cameraView.removePreviewLayer()
+    self.cameraView.removeFromSuperview()
     if self.captureSession != nil {
       self.captureSession!.stopRunning()
-      self.cameraView.removePreviewLayer()
-      self.cameraView.removeFromSuperview()
       self.captureVideoPreviewLayer = nil
       self.metaOutput = nil
       self.captureSession = nil
@@ -328,10 +320,16 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     DispatchQueue.main.async { [self] in
       self.loadCamera()
       self.dismantleCamera()
-      self.setupCamera(
-        direction: args.cameraDirection ?? "back",
-        windowed: args.windowed ?? false
-      )
+      do {
+        try self.setupCamera(
+          direction: args.cameraDirection ?? "back",
+          windowed: args.windowed ?? false
+        )
+      } catch {
+        self.destroy()
+        invoke.reject("Failed to set up the camera: \(error)")
+        return
+      }
       self.runScanner(invoke, args: args)
     }
   }
