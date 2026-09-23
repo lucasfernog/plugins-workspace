@@ -115,24 +115,49 @@ pub struct Migration {
 #[derive(Debug)]
 struct MigrationList(Vec<Migration>);
 
-impl MigrationSource<'static> for MigrationList {
-    fn resolve(self) -> BoxFuture<'static, std::result::Result<Vec<SqlxMigration>, BoxDynError>> {
-        Box::pin(async move {
-            let mut migrations = Vec::new();
-            for migration in self.0 {
-                if matches!(migration.kind, MigrationKind::Up) {
-                    migrations.push(SqlxMigration::new(
-                        migration.version,
-                        migration.description.into(),
-                        migration.kind.into(),
-                        migration.sql.into(),
-                        false,
-                    ));
-                }
-            }
-            Ok(migrations)
-        })
+impl MigrationList {
+    /// Converts the [`MigrationKind::Up`] migrations of this list to sqlx migrations.
+    fn to_sqlx(&self) -> Vec<SqlxMigration> {
+        self.0
+            .iter()
+            .filter(|migration| matches!(migration.kind, MigrationKind::Up))
+            .map(|migration| {
+                SqlxMigration::new(
+                    migration.version,
+                    migration.description.into(),
+                    MigrationType::ReversibleUp,
+                    migration.sql.into(),
+                    false,
+                )
+            })
+            .collect()
     }
+}
+
+impl<'s> MigrationSource<'s> for &'s MigrationList {
+    fn resolve(self) -> BoxFuture<'s, std::result::Result<Vec<SqlxMigration>, BoxDynError>> {
+        Box::pin(async move { Ok(self.to_sqlx()) })
+    }
+}
+
+/// Runs the migrations registered for `db` against `pool`.
+///
+/// The migrations are only forgotten once they were applied successfully, so a
+/// migration that fails is tried again the next time the database is loaded
+/// instead of being skipped. The lock is held while migrating, so a concurrent
+/// load of the same database waits for the migrations to finish.
+async fn run_migrations(
+    migrations: &Mutex<HashMap<String, MigrationList>>,
+    db: &str,
+    pool: &DbPool,
+) -> Result<(), Error> {
+    let mut migrations = migrations.lock().await;
+    if let Some(list) = migrations.get(db) {
+        let migrator = Migrator::new(list).await?;
+        pool.migrate(&migrator).await?;
+        migrations.remove(db);
+    }
+    Ok(())
 }
 
 /// Allows blocking on async code without creating a nested runtime.
@@ -214,24 +239,18 @@ impl Builder {
                     let instances = DbInstances::default();
                     let mut lock = instances.0.write().await;
 
+                    let migrations =
+                        Migrations(Mutex::new(self.migrations.take().unwrap_or_default()));
+
                     for db in config.preload {
                         let pool = DbPool::connect(&db, app).await?;
-
-                        if let Some(migrations) =
-                            self.migrations.as_mut().and_then(|mm| mm.remove(&db))
-                        {
-                            let migrator = Migrator::new(migrations).await?;
-                            pool.migrate(&migrator).await?;
-                        }
-
+                        run_migrations(&migrations.0, &db, &pool).await?;
                         lock.insert(db, pool);
                     }
                     drop(lock);
 
                     app.manage(instances);
-                    app.manage(Migrations(Mutex::new(
-                        self.migrations.take().unwrap_or_default(),
-                    )));
+                    app.manage(migrations);
 
                     Ok(())
                 })
@@ -248,5 +267,63 @@ impl Builder {
                 }
             })
             .build()
+    }
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod tests {
+    use super::*;
+
+    fn migration(version: i64, sql: &'static str) -> Migration {
+        Migration {
+            version,
+            description: "test",
+            sql,
+            kind: MigrationKind::Up,
+        }
+    }
+
+    async fn memory_pool() -> DbPool {
+        // a single connection, so every query sees the same in-memory database
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        DbPool::Sqlite(pool)
+    }
+
+    #[test]
+    fn failed_migrations_are_retried() {
+        tauri::async_runtime::block_on(async {
+            let pool = memory_pool().await;
+            let db = "sqlite:test.db";
+
+            let migrations = Mutex::new(HashMap::from([(
+                db.to_string(),
+                MigrationList(vec![migration(1, "CREATE TABL broken (id INTEGER);")]),
+            )]));
+            assert!(run_migrations(&migrations, db, &pool).await.is_err());
+            assert!(
+                migrations.lock().await.contains_key(db),
+                "a failed migration must be kept to be retried"
+            );
+
+            migrations.lock().await.insert(
+                db.to_string(),
+                MigrationList(vec![migration(1, "CREATE TABLE fixed (id INTEGER);")]),
+            );
+            run_migrations(&migrations, db, &pool).await.unwrap();
+            assert!(!migrations.lock().await.contains_key(db));
+
+            // nothing is left to run for this database
+            run_migrations(&migrations, db, &pool).await.unwrap();
+
+            let rows = pool
+                .select("SELECT COUNT(*) AS count FROM fixed".into(), Vec::new())
+                .await
+                .unwrap();
+            assert_eq!(rows[0]["count"], 0);
+        });
     }
 }
