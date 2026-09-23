@@ -25,9 +25,9 @@ export interface ConnectionConfig {
   writeBufferSize?: number
   /** The max size of the write buffer in bytes. Setting this can provide backpressure in the case the write buffer is filling up due to write errors. The default value is unlimited.
    *
-   * Note: The write buffer only builds up past write_buffer_size when writes to the underlying stream are failing. So the write buffer can not fill up if you are not observing write errors.
+   * Note: The write buffer only builds up past `writeBufferSize` when writes to the underlying stream are failing. So the write buffer can not fill up if you are not observing write errors.
    *
-   * Note: Should always be at least write_buffer_size + 1 message and probably a little more depending on error handling strategy.
+   * Note: Should always be at least `writeBufferSize` + 1 message and probably a little more depending on error handling strategy.
    */
   maxWriteBufferSize?: number
   /**
@@ -39,11 +39,16 @@ export interface ConnectionConfig {
    */
   maxFrameSize?: number | 'none'
   /**
-   * When set to true, the server will accept and handle unmasked frames from the client. According to the RFC 6455, the server must close the connection to the client in such cases, however it seems like there are some popular libraries that are sending unmasked frames, ignoring the RFC. By default this option is set to false, i.e. according to RFC 6455.
+   * A server-side option of the underlying `tungstenite` library: when set to true, a server accepts unmasked frames from its clients, which RFC 6455 forbids.
+   *
+   * It has **no effect** on this plugin, which is always the client (servers never mask their frames). It is only kept for compatibility.
    */
   acceptUnmaskedFrames?: boolean
   /**
-   * Additional connect request headers.
+   * Additional headers for the connect (upgrade) request, for example `Authorization` or `Sec-WebSocket-Protocol`.
+   *
+   * They replace the request's default values (such as `Host` and the `Sec-WebSocket-*` handshake headers), and any `Origin`
+   * can be sent: unlike a browser `WebSocket`, the webview's origin is not enforced.
    */
   headers?: HeadersInit
 }
