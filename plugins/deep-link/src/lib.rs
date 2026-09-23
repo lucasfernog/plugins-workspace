@@ -24,6 +24,32 @@ pub use error::{Error, Result};
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "app.tauri.deep_link";
 
+/// Checks that `protocol` is a valid URI scheme as defined by
+/// [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986#section-3.1):
+/// `ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`.
+///
+/// The scheme ends up in a registry key path on Windows and in a `.desktop` file and
+/// command arguments on Linux, so anything else (`\`, `/`, `*`, new lines, a leading `.`, ...)
+/// must be rejected before it reaches them.
+#[cfg_attr(not(any(windows, target_os = "linux", test)), allow(dead_code))]
+fn is_valid_scheme(protocol: &str) -> bool {
+    let mut chars = protocol.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn validate_scheme(protocol: &str) -> Result<()> {
+    if is_valid_scheme(protocol) {
+        Ok(())
+    } else {
+        Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid protocol scheme `{protocol}`: it must start with an ASCII letter followed by ASCII letters, digits, `+`, `-` or `.`"),
+        )))
+    }
+}
+
 fn init_deep_link<R: Runtime>(
     app: &AppHandle<R>,
     api: PluginApi<R, Option<config::Config>>,
@@ -268,6 +294,7 @@ mod imp {
             #[cfg(windows)]
             {
                 let protocol = _protocol.as_ref();
+                crate::validate_scheme(protocol)?;
                 let key_base = format!("Software\\Classes\\{protocol}");
 
                 let exe = dunce::simplified(&tauri::utils::platform::current_exe()?)
@@ -290,6 +317,7 @@ mod imp {
 
             #[cfg(target_os = "linux")]
             {
+                crate::validate_scheme(_protocol.as_ref())?;
                 let bin = tauri::utils::platform::current_exe()?;
                 let file_name = format!(
                     "{}-handler.desktop",
@@ -389,6 +417,7 @@ mod imp {
             #[cfg(windows)]
             {
                 let protocol = _protocol.as_ref();
+                crate::validate_scheme(protocol)?;
                 let path = format!("Software\\Classes\\{protocol}");
                 if LOCAL_MACHINE.open(&path).is_ok() {
                     LOCAL_MACHINE.remove_tree(&path)?;
@@ -401,6 +430,7 @@ mod imp {
 
             #[cfg(target_os = "linux")]
             {
+                crate::validate_scheme(_protocol.as_ref())?;
                 let file_name = format!(
                     "{}-handler.desktop",
                     tauri::utils::platform::current_exe()?
@@ -477,6 +507,10 @@ mod imp {
             #[cfg(windows)]
             {
                 let protocol = _protocol.as_ref();
+                // `register` refuses invalid schemes, so the app cannot be their handler
+                if !crate::is_valid_scheme(protocol) {
+                    return Ok(false);
+                }
                 let Ok(cmd_reg) = CLASSES_ROOT.open(format!("{protocol}\\shell\\open\\command"))
                 else {
                     return Ok(false);
@@ -492,6 +526,10 @@ mod imp {
             }
             #[cfg(target_os = "linux")]
             {
+                // `register` refuses invalid schemes, so the app cannot be their handler
+                if !crate::is_valid_scheme(_protocol.as_ref()) {
+                    return Ok(false);
+                }
                 let file_name = format!(
                     "{}-handler.desktop",
                     tauri::utils::platform::current_exe()?
@@ -598,4 +636,36 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
             }
         })
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_schemes() {
+        for scheme in ["tauri", "my-app", "x.y+z", "A1", "web+app", "MyApp"] {
+            assert!(is_valid_scheme(scheme), "{scheme} should be valid");
+        }
+    }
+
+    #[test]
+    fn invalid_schemes() {
+        for scheme in [
+            "",
+            "1app",
+            ".txt",
+            "*",
+            "-app",
+            "exe\\file",
+            "a/b",
+            "foo\nExec=sh",
+            "a b",
+            "a:b",
+            "tauri://",
+            "é",
+        ] {
+            assert!(!is_valid_scheme(scheme), "{scheme:?} should be invalid");
+        }
+    }
 }
