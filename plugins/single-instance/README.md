@@ -38,26 +38,35 @@ First you need to register the core plugin with Tauri:
 `src-tauri/src/lib.rs`
 
 ```rust
-use tauri::{Manager};
+use tauri::Manager;
 
-#[derive(Clone, serde::Serialize)]
-struct Payload {
-    args: Vec<String>,
-    cwd: String,
-}
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let mut builder = tauri::Builder::default();
 
-fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+    // the plugin is only available on desktop
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             println!("{}, {argv:?}, {cwd}", app.package_info().name);
-            app.emit("single-instance", Payload { args: argv, cwd }).unwrap();
-        }))
+            // focus the main window of the running instance
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
 
-Note that currently, plugins run in the order they were added in to the builder, so make sure that this plugin is registered first.
+`argv` are the second instance's command line arguments (the first one is the executable path) and `cwd` is its working directory.
+
+Note that currently, plugins run in the order they were added in to the builder, so make sure that this plugin is registered first. Register it on the builder as shown above, not with `app.handle().plugin()` inside `setup`: by then the windows from `tauri.conf.json` already exist, so a second instance would briefly show them.
 
 ## Usage with Flatpak/Snap
 
