@@ -4,6 +4,7 @@
 
 import { expect } from '@wdio/globals'
 import { tauri, tauriError, describePlugin } from '../helpers/index.js'
+import { FIXTURE_SERVER_URL } from '../helpers/server.js'
 
 // The example spawns an echo server on this port: it replies with the request
 // body and the request headers, and sets a `session-token` cookie on requests
@@ -127,6 +128,48 @@ describePlugin('http', () => {
       await api.http.fetch(`${url}/aborted`, { signal: controller.signal })
     }, echoServer)
     expect(message).toMatch(/abort|cancel/i)
+  })
+
+  it('fetch handles null-body and non-standard statuses', async () => {
+    const result = await tauri(async (api, url) => {
+      const describe = async (status: number) => {
+        const response = await api.http.fetch(`${url}/status/${status}`)
+        const clone = response.clone()
+        return {
+          status: response.status,
+          ok: response.ok,
+          body: await response.text(),
+          cloneStatus: clone.status,
+          cloneUrl: clone.url
+        }
+      }
+      return {
+        noContent: await describe(204),
+        notFound: await describe(404),
+        nonStandard: await describe(999)
+      }
+    }, FIXTURE_SERVER_URL)
+    expect(result.noContent).toEqual({
+      status: 204,
+      ok: true,
+      body: '',
+      cloneStatus: 204,
+      cloneUrl: `${FIXTURE_SERVER_URL}/status/204`
+    })
+    expect(result.notFound).toEqual({
+      status: 404,
+      ok: false,
+      body: 'status 404',
+      cloneStatus: 404,
+      cloneUrl: `${FIXTURE_SERVER_URL}/status/404`
+    })
+    expect(result.nonStandard).toEqual({
+      status: 999,
+      ok: false,
+      body: 'status 999',
+      cloneStatus: 999,
+      cloneUrl: `${FIXTURE_SERVER_URL}/status/999`
+    })
   })
 
   it('rejects URLs outside the configured scope', async () => {

@@ -312,33 +312,45 @@ export async function fetch(
         }
       })
 
+  // `new Response` throws a `RangeError` for statuses outside of 200-599, such
+  // as 101 or the non-standard 999 some servers send: build the response with a
+  // placeholder status and report the actual one through `status` and `ok`
+  const statusInRange = status >= 200 && status <= 599
   const res = new Response(body, {
-    status,
+    status: statusInRange ? status : 200,
     statusText
   })
 
-  // `Response.url` cannot be set via the constructor, so we define it manually
-  Object.defineProperty(res, 'url', { value: url, writable: false })
+  const patchResponse = (response: Response) => {
+    // `Response.url` cannot be set via the constructor, so we define it manually
+    Object.defineProperty(response, 'url', { value: url, writable: false })
 
-  // Expose `set-cookie` via `response.headers` (and `getSetCookie()` where
-  // supported). This is not Fetch-spec compliant for network responses in
-  // browsers, where `set-cookie` is treated as a forbidden response
-  // header and is generally not readable from JavaScript.
-  Object.defineProperty(res, 'headers', {
-    value: new Headers(responseHeaders),
-    writable: false
-  })
+    // Expose `set-cookie` via `response.headers` (and `getSetCookie()` where
+    // supported). This is not Fetch-spec compliant for network responses in
+    // browsers, where `set-cookie` is treated as a forbidden response
+    // header and is generally not readable from JavaScript.
+    Object.defineProperty(response, 'headers', {
+      value: new Headers(responseHeaders),
+      writable: false
+    })
+
+    if (!statusInRange) {
+      Object.defineProperty(response, 'status', {
+        value: status,
+        writable: false
+      })
+      Object.defineProperty(response, 'ok', { value: false, writable: false })
+    }
+  }
+
+  patchResponse(res)
 
   // Patch clone() per-instance so cloning preserves the overridden properties
   const originalClone = res.clone.bind(res)
   Object.defineProperty(res, 'clone', {
     value: () => {
       const cloned = originalClone()
-      Object.defineProperty(cloned, 'url', { value: url, writable: false })
-      Object.defineProperty(cloned, 'headers', {
-        value: new Headers(responseHeaders),
-        writable: false
-      })
+      patchResponse(cloned)
       return cloned
     }
   })
