@@ -22,10 +22,15 @@
  *
  * This module prevents path traversal, not allowing parent directory accessors to be used
  * (i.e. "/usr/path/to/../file" or "../path/to/file" paths are not allowed).
- * Paths accessed with this API must be either relative to one of the {@link BaseDirectory | base directories}
- * or created with the {@link https://v2.tauri.app/reference/javascript/api/namespacepath/ | path API}.
+ * Paths accessed with this API must be either absolute (for instance created with the
+ * {@link https://v2.tauri.app/reference/javascript/api/namespacepath/ | path API})
+ * or relative to the {@link BaseDirectory | base directory} given in the `baseDir` option.
  *
  * The API has a scope configuration that forces you to restrict the paths that can be accessed using glob patterns.
+ *
+ * Patterns are matched case-insensitively on every platform. `*` does not match path separators,
+ * and neither `dir/*` nor `dir/**` match `dir` itself. Deny patterns take precedence over allow patterns.
+ * Existing symlinks are resolved before matching, so an existing path is checked against the location it points to.
  *
  * The scope configuration is an array of glob patterns describing file/directory paths that are allowed.
  * For instance, this scope configuration allows **all** enabled `fs` APIs to (only) access files in the
