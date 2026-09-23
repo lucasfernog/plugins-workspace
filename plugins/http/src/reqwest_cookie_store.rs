@@ -5,8 +5,12 @@
 // taken from https://github.com/pfernie/reqwest_cookie_store/blob/2ec4afabcd55e24d3afe3f0626ee6dc97bed938d/src/lib.rs
 
 use std::{
-    path::PathBuf,
-    sync::{mpsc::Receiver, Mutex},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::Receiver,
+        Arc, Mutex,
+    },
 };
 
 use cookie_store::{CookieStore, RawCookie, RawCookieParseError};
@@ -41,13 +45,41 @@ fn cookies(cookie_store: &CookieStore, url: &url::Url) -> Option<HeaderValue> {
     HeaderValue::from_maybe_shared(bytes::Bytes::from(s)).ok()
 }
 
+fn cookies_to_str(cookie_store: &CookieStore) -> Result<String, serde_json::Error> {
+    let cookies = cookie_store
+        .iter_unexpired()
+        .filter(|cookie| cookie.is_persistent())
+        .collect::<Vec<_>>();
+    serde_json::to_string(&cookies)
+}
+
+/// Writes `contents` to a temporary file next to `path`, then renames it to `path`, so a crash
+/// in the middle of the write never leaves a truncated file behind.
+fn write_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, contents)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Orders the writes of the cookie jar snapshots.
+#[derive(Debug, Default)]
+struct SaveState {
+    /// Generation of the latest snapshot taken.
+    requested: AtomicU64,
+    /// Generation of the latest snapshot written to disk. Its lock is held while writing, so
+    /// writes never overlap.
+    written: Mutex<u64>,
+}
+
 /// A [`cookie_store::CookieStore`] wrapped internally by a [`std::sync::Mutex`], suitable for use in
 /// async/concurrent contexts.
 #[derive(Debug)]
 pub struct CookieStoreMutex {
     pub path: PathBuf,
     store: Mutex<CookieStore>,
-    save_task: Mutex<Option<CancellableTask>>,
+    save_state: Arc<SaveState>,
 }
 
 impl CookieStoreMutex {
@@ -56,7 +88,7 @@ impl CookieStoreMutex {
         CookieStoreMutex {
             path,
             store: Mutex::new(cookie_store),
-            save_task: Default::default(),
+            save_state: Default::default(),
         }
     }
 
@@ -68,40 +100,33 @@ impl CookieStoreMutex {
             .map(|store| CookieStoreMutex::new(path, store))
     }
 
-    fn cookies_to_str(&self) -> Result<String, serde_json::Error> {
-        let mut cookies = Vec::new();
-        for cookie in self
-            .store
-            .lock()
-            .expect("poisoned cookie jar mutex")
-            .iter_unexpired()
-        {
-            if cookie.is_persistent() {
-                cookies.push(cookie.clone());
-            }
-        }
-        serde_json::to_string(&cookies)
-    }
-
+    /// Persists a snapshot of the persistent cookies in the background.
+    ///
+    /// Writes are serialized and a snapshot is skipped when a newer one was already written, so
+    /// the file always ends up with the latest snapshot. The returned receiver gets a message
+    /// once the file holds this snapshot or a newer one.
     pub fn request_save(&self) -> cookie_store::Result<Receiver<()>> {
-        let cookie_str = self.cookies_to_str()?;
+        let (generation, cookie_str) = {
+            let store = self.store.lock().expect("poisoned cookie jar mutex");
+            // taken under the store lock, so generations follow the order of the snapshots
+            let generation = self.save_state.requested.fetch_add(1, Ordering::SeqCst) + 1;
+            (generation, cookies_to_str(&store)?)
+        };
         let path = self.path.clone();
+        let save_state = self.save_state.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        let task = tauri::async_runtime::spawn(async move {
-            match tokio::fs::write(&path, &cookie_str).await {
-                Ok(()) => {
-                    let _ = tx.send(());
-                }
-                Err(_e) => {
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut written = save_state.written.lock().unwrap_or_else(|e| e.into_inner());
+            if *written < generation {
+                if let Err(_e) = write_atomically(&path, cookie_str.as_bytes()) {
                     #[cfg(feature = "tracing")]
                     tracing::error!("failed to save cookie jar: {_e}");
+                    return;
                 }
+                *written = generation;
             }
+            let _ = tx.send(());
         });
-        self.save_task
-            .lock()
-            .unwrap()
-            .replace(CancellableTask(task));
         Ok(rx)
     }
 }
@@ -123,11 +148,44 @@ impl reqwest::cookie::CookieStore for CookieStoreMutex {
     }
 }
 
-#[derive(Debug)]
-struct CancellableTask(tauri::async_runtime::JoinHandle<()>);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl Drop for CancellableTask {
-    fn drop(&mut self) {
-        self.0.abort();
+    #[test]
+    fn saves_are_atomic_and_keep_the_latest_snapshot() {
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-http-cookies-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(".cookies");
+
+        let jar = CookieStoreMutex::new(path.clone(), Default::default());
+        let url = url::Url::parse("https://tauri.app").unwrap();
+        // every response setting a cookie requests a save in the background
+        for i in 0..20 {
+            let header = HeaderValue::from_str(&format!("cookie{i}=value; Max-Age=3600")).unwrap();
+            reqwest::cookie::CookieStore::set_cookies(&jar, &mut std::iter::once(&header), &url);
+        }
+        jar.request_save().unwrap().recv().unwrap();
+
+        let loaded = CookieStoreMutex::load(
+            path.clone(),
+            std::io::BufReader::new(std::fs::File::open(&path).unwrap()),
+        )
+        .unwrap();
+        let count = loaded.store.lock().unwrap().iter_unexpired().count();
+        assert_eq!(count, 20);
+
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        assert!(!PathBuf::from(tmp).exists());
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
