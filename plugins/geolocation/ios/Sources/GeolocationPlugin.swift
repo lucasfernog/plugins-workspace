@@ -144,12 +144,19 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
     Logger.error(error)
 
-    let requests = self.positionRequests + self.permissionRequests
+    // Pending permission requests are not answered by a location failure; they are resolved
+    // by the authorization change callback.
+    let requests = self.positionRequests
     self.positionRequests.removeAll()
-    self.permissionRequests.removeAll()
 
     for request in requests {
       request.reject(error.localizedDescription)
+    }
+
+    // While updating continuously, `locationUnknown` is transient: the location manager keeps
+    // trying, and Apple recommends ignoring it, so don't surface it to the watchers.
+    if let clError = error as? CLError, clError.code == .locationUnknown {
+      return
     }
 
     for channel in self.watcherChannels {
