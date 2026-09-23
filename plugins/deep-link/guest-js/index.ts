@@ -36,7 +36,7 @@ export async function getCurrent(): Promise<string[] | null> {
 /**
  * Register the app as the default handler for the specified protocol.
  *
- * @param protocol The name of the protocol without `://`. For example, if you want your app to handle `tauri://` links, call this method with `tauri` as the protocol.
+ * @param protocol The name of the protocol without `://`. For example, if you want your app to handle `tauri://` links, call this method with `tauri` as the protocol. The promise rejects if it is not a valid URI scheme (an ASCII letter followed by ASCII letters, digits, `+`, `-` or `.`).
  *
  * @example
  * ```typescript
@@ -58,7 +58,7 @@ export async function register(protocol: string): Promise<null> {
 /**
  * Unregister the app as the default handler for the specified protocol.
  *
- * @param protocol The name of the protocol without `://`.
+ * @param protocol The name of the protocol without `://`. The promise rejects if it is not a valid URI scheme.
  *
  * @example
  * ```typescript
@@ -82,7 +82,7 @@ export async function unregister(protocol: string): Promise<null> {
 /**
  * Check whether the app is the default handler for the specified protocol.
  *
- * @param protocol The name of the protocol without `://`.
+ * @param protocol The name of the protocol without `://`. Resolves to `false` if it is not a valid URI scheme.
  *
  * @example
  * ```typescript

@@ -290,7 +290,7 @@ mod imp {
 
         /// Register the app as the default handler for the specified protocol.
         ///
-        /// - `protocol`: The name of the protocol without `://`. For example, if you want your app to handle `tauri://` links, call this method with `tauri` as the protocol.
+        /// - `protocol`: The name of the protocol without `://`. For example, if you want your app to handle `tauri://` links, call this method with `tauri` as the protocol. Must be a valid URI scheme (an ASCII letter followed by ASCII letters, digits, `+`, `-` or `.`), otherwise an error is returned.
         ///
         /// ## Platform-specific:
         ///
@@ -422,7 +422,7 @@ mod imp {
 
         /// Unregister the app as the default handler for the specified protocol.
         ///
-        /// - `protocol`: The name of the protocol without `://`.
+        /// - `protocol`: The name of the protocol without `://`. Must be a valid URI scheme, otherwise an error is returned.
         ///
         /// ## Platform-specific:
         ///
@@ -521,7 +521,7 @@ mod imp {
 
         /// Check whether the app is the default handler for the specified protocol.
         ///
-        /// - `protocol`: The name of the protocol without `://`.
+        /// - `protocol`: The name of the protocol without `://`. Returns `false` if it is not a valid URI scheme.
         ///
         /// ## Platform-specific:
         ///
