@@ -10,7 +10,7 @@ Expose your apps assets through a localhost server instead of the default custom
 | Android  | x         |
 | iOS      | x         |
 
-> Note: This plugins brings considerable security risks and you should only use it if you know what your are doing. If in doubt, use the default custom protocol implementation.
+> Note: This plugin brings considerable security risks and you should only use it if you know what you are doing. If in doubt, use the default custom protocol implementation.
 
 ## Install
 
