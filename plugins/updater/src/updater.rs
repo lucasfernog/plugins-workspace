@@ -1195,6 +1195,10 @@ impl Update {
                         let decoder = flate2::read::GzDecoder::new(archive);
                         let mut archive = tar::Archive::new(decoder);
                         for mut entry in archive.entries()?.flatten() {
+                            // only a regular file can be the AppImage, not e.g. a symlink
+                            if !entry.header().entry_type().is_file() {
+                                continue;
+                            }
                             if let Ok(path) = entry.path() {
                                 if path.extension() == Some(OsStr::new("AppImage")) {
                                     // if something went wrong during the extraction, we should restore previous app
