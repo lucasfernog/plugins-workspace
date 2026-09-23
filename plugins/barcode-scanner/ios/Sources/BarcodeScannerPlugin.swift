@@ -246,6 +246,7 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
 
   @objc func openAppSettings(_ invoke: Invoke) {
     guard let settingsUrl = URL(string: UIApplication.openSettingsURLString) else {
+      invoke.reject("Failed to build the app settings URL")
       return
     }
 
@@ -254,8 +255,14 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
         UIApplication.shared.open(
           settingsUrl,
           completionHandler: { (success) in
-            invoke.resolve()
+            if success {
+              invoke.resolve()
+            } else {
+              invoke.reject("Failed to open the app settings")
+            }
           })
+      } else {
+        invoke.reject("Cannot open the app settings")
       }
     }
   }
