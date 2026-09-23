@@ -85,6 +85,28 @@ struct PluginState {
     pub(crate) state_flags: StateFlags,
     filename: String,
     map_label: Option<Box<LabelMapperFn>>,
+    denylist: HashSet<String>,
+    filter_callback: Option<Box<FilterCallbackFn>>,
+}
+
+impl PluginState {
+    /// The label the state of the window labeled `label` is stored under.
+    fn map_label<'a>(&self, label: &'a str) -> &'a str {
+        self.map_label
+            .as_ref()
+            .map(|map| map(label))
+            .unwrap_or(label)
+    }
+
+    /// Whether the state stored under `label` (as returned by [`Self::map_label`]) is tracked,
+    /// i.e. not excluded by [`Builder::with_denylist`] or [`Builder::with_filter`].
+    fn is_tracked(&self, label: &str) -> bool {
+        !self.denylist.contains(label)
+            && self
+                .filter_callback
+                .as_ref()
+                .map_or(true, |filter_callback| filter_callback(label))
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -182,11 +204,7 @@ impl<R: Runtime> WindowExt for WebviewWindow<R> {
 impl<R: Runtime> WindowExt for Window<R> {
     fn restore_state(&self, flags: StateFlags) -> tauri::Result<()> {
         let plugin_state = self.app_handle().state::<PluginState>();
-        let label = plugin_state
-            .map_label
-            .as_ref()
-            .map(|map| map(self.label()))
-            .unwrap_or_else(|| self.label());
+        let label = plugin_state.map_label(self.label());
 
         let restoring_window_state = self.state::<RestoringWindowState>();
         let _restoring_window_lock = restoring_window_state.0.lock().unwrap();
@@ -273,7 +291,11 @@ impl<R: Runtime> WindowExt for Window<R> {
                 metadata.fullscreen = self.is_fullscreen()?;
             }
 
-            c.insert(label.into(), metadata);
+            // only cache the state of tracked windows, or a denylisted or filtered out window
+            // restored manually (e.g. from JavaScript) would be saved to disk
+            if plugin_state.is_tracked(label) {
+                c.insert(label.into(), metadata);
+            }
         }
 
         if flags.contains(StateFlags::VISIBLE) && should_show {
@@ -412,6 +434,9 @@ impl Builder {
         let state_flags = self.state_flags;
         let filename = self.filename.unwrap_or_else(|| DEFAULT_FILENAME.into());
         let map_label = self.map_label;
+        let denylist = self.denylist;
+        let filter_callback = self.filter_callback;
+        let skip_initial_state = self.skip_initial_state;
 
         PluginBuilder::new("window-state")
             .invoke_handler(tauri::generate_handler![
@@ -427,31 +452,20 @@ impl Builder {
                     state_flags,
                     filename,
                     map_label,
+                    denylist,
+                    filter_callback,
                 });
                 Ok(())
             })
             .on_window_ready(move |window| {
                 let plugin_state = window.app_handle().state::<PluginState>();
-                let label = plugin_state
-                    .map_label
-                    .as_ref()
-                    .map(|map| map(window.label()))
-                    .unwrap_or_else(|| window.label());
+                let label = plugin_state.map_label(window.label());
 
-                // Check deny list names
-                if self.denylist.contains(label) {
+                if !plugin_state.is_tracked(label) {
                     return;
                 }
 
-                // Check deny list callback
-                if let Some(filter_callback) = &self.filter_callback {
-                    // Don't save the state if the callback returns false
-                    if !filter_callback(label) {
-                        return;
-                    }
-                }
-
-                if !self.skip_initial_state.contains(label) {
+                if !skip_initial_state.contains(label) {
                     let _ = window.restore_state(state_flags);
                 }
 
@@ -571,5 +585,38 @@ impl MonitorExt for Monitor {
         ]
         .into_iter()
         .any(|(x, y)| x >= left && x < right && y >= top && y < bottom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plugin_state_maps_and_filters_labels() {
+        let state = PluginState {
+            state_flags: StateFlags::all(),
+            filename: DEFAULT_FILENAME.into(),
+            map_label: Some(Box::new(|label| {
+                label.split_once('-').map_or(label, |(prefix, _)| prefix)
+            })),
+            denylist: ["splash".to_string()].into_iter().collect(),
+            filter_callback: Some(Box::new(|label| label != "tray")),
+        };
+
+        assert_eq!(state.map_label("editor-1"), "editor");
+        assert_eq!(state.map_label("main"), "main");
+        assert!(state.is_tracked("main"));
+        assert!(!state.is_tracked("splash"));
+        assert!(!state.is_tracked("tray"));
+
+        let state = PluginState {
+            map_label: None,
+            filter_callback: None,
+            ..state
+        };
+        assert_eq!(state.map_label("editor-1"), "editor-1");
+        assert!(state.is_tracked("tray"));
+        assert!(!state.is_tracked("splash"));
     }
 }
