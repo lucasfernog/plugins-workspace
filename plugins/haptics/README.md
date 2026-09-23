@@ -60,18 +60,17 @@ fn main() {
 }
 ```
 
-Second, add the required permissions in the project:
+Second, add the required permissions in the project. The `haptics:default` permission set allows every command:
 
 `src-tauri/capabilities/default.json`
 
 ```json
   "permissions": [
-    "haptics:allow-impact-feedback",
-    "haptics:allow-notification-feedback",
-    "haptics:allow-selection-feedback",
-    "haptics:allow-vibrate"
+    "haptics:default"
   ]
 ```
+
+Or allow individual commands with `haptics:allow-impact-feedback`, `haptics:allow-notification-feedback`, `haptics:allow-selection-feedback` and `haptics:allow-vibrate`.
 
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 

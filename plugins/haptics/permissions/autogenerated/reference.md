@@ -1,3 +1,19 @@
+## Default Permission
+
+This permission set configures which haptic feedback
+operations are available from the haptics plugin.
+
+#### Granted Permissions
+
+All haptic feedback and vibration commands are allowed.
+
+#### This default permission set includes the following:
+
+- `allow-vibrate`
+- `allow-impact-feedback`
+- `allow-notification-feedback`
+- `allow-selection-feedback`
+
 ## Permission Table
 
 <table>
