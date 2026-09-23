@@ -157,26 +157,16 @@ export async function fetch(
     throw new Error(ERROR_REQUEST_CANCELLED)
   }
 
-  const maxRedirections = init?.maxRedirections
-  const connectTimeout = init?.connectTimeout
-  const proxy = init?.proxy
-  const danger = init?.danger
+  // Split the client options from the request options without modifying the
+  // caller's object, which may be reused for another request
+  const { maxRedirections, connectTimeout, proxy, danger, ...requestInit } =
+    init ?? {}
 
-  // Remove these fields before creating the request
-  if (init) {
-    delete init.maxRedirections
-    delete init.connectTimeout
-    delete init.proxy
-    delete init.danger
-  }
+  // Always a copy: the headers added below must not end up in a `Headers`
+  // object owned by the caller
+  const headers = new Headers(init?.headers)
 
-  const headers = init?.headers
-    ? init.headers instanceof Headers
-      ? init.headers
-      : new Headers(init.headers)
-    : new Headers()
-
-  const req = new Request(input, init)
+  const req = new Request(input, requestInit)
   const buffer = await req.arrayBuffer()
   const data =
     buffer.byteLength !== 0 ? Array.from(new Uint8Array(buffer)) : null

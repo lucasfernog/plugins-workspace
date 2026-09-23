@@ -93,6 +93,36 @@ describePlugin('http', () => {
     expect(body.text).toContain('qux')
   })
 
+  it('fetch does not modify the options it is given', async () => {
+    const result = await tauri(async (api, url) => {
+      const headers = new Headers({ 'x-e2e-header': 'present' })
+      const form = new FormData()
+      form.append('foo', 'baz')
+      const init = {
+        method: 'POST',
+        headers,
+        body: form,
+        connectTimeout: 30000,
+        maxRedirections: 5
+      }
+      const response = await api.http.fetch(`${url}/form`, init)
+      await response.text()
+      return {
+        keys: Object.keys(init).sort(),
+        headers: Array.from(headers.entries())
+      }
+    }, echoServer)
+    expect(result.keys).toEqual([
+      'body',
+      'connectTimeout',
+      'headers',
+      'maxRedirections',
+      'method'
+    ])
+    // the multipart content-type the browser generates is not written back
+    expect(result.headers).toEqual([['x-e2e-header', 'present']])
+  })
+
   it('the cookie jar stores and replays cookies across requests', async () => {
     const result = await tauri(async (api, url) => {
       // The jar is persisted in the app data dir, so an earlier run (or the
