@@ -178,6 +178,8 @@ func handleScheduledNotification(_ schedule: NotificationSchedule) throws
   case .at(let date, let repeating):
     let dateFormatter = DateFormatter()
     dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+    // the date is sent in UTC; the quoted 'Z' is a literal, so the time zone must be set
+    dateFormatter.timeZone = TimeZone(identifier: "UTC")
     dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
 
     if let at = dateFormatter.date(from: date) {
