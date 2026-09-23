@@ -83,7 +83,8 @@ fn main() {
 
 And in JavaScript, the `action` passed to the TrayIcon should include the handler.
 
-```javascript
+```typescript
+import { TrayIcon, type TrayIconEvent } from "@tauri-apps/api/tray";
 import {
   moveWindow,
   Position,
@@ -109,7 +110,7 @@ Afterwards all the plugin's APIs are available through the JavaScript guest bind
 ```javascript
 import { moveWindow, Position } from '@tauri-apps/plugin-positioner'
 
-moveWindow(Position.TopRight)
+await moveWindow(Position.TopRight)
 ```
 
 If you only move windows from Rust code, you can use the `WindowExt` trait extension, which is implemented for `WebviewWindow` and `Window`:
