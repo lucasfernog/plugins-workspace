@@ -96,7 +96,7 @@ mod imp {
         core::{w, HSTRING, PCWSTR},
         Win32::{
             Foundation::ERROR_FILE_NOT_FOUND,
-            System::Com::CoInitialize,
+            System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
             UI::{
                 Shell::{
                     ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems, ShellExecuteExW,
@@ -119,7 +119,7 @@ mod imp {
             grouped_paths.entry(parent).or_default().push(path);
         }
 
-        let _ = unsafe { CoInitialize(None) };
+        let _com = ComGuard::init();
 
         for (parent, to_reveals) in grouped_paths {
             let parent_item_id_list = OwnedItemIdList::new(&parent)?;
@@ -145,7 +145,7 @@ mod imp {
                 // seems to work as a fallback (although it won't select the file).
                 //
                 // Note: we only handle the first file here if multiple of are present
-                if e.code().0 == ERROR_FILE_NOT_FOUND.0 as i32 {
+                if e.code() == ERROR_FILE_NOT_FOUND.to_hresult() {
                     let first_path = to_reveals[0];
                     let is_dir = first_path.is_dir();
                     let mut info = SHELLEXECUTEINFOW {
@@ -162,11 +162,40 @@ mod imp {
                     };
 
                     unsafe { ShellExecuteExW(&mut info) }?;
+                } else {
+                    return Err(e.into());
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Initializes COM on the current thread for the lifetime of the guard.
+    ///
+    /// COM is uninitialized again on drop if this call initialized it, so the (reused) runtime
+    /// thread running the command is not left in a single-threaded apartment.
+    struct ComGuard {
+        initialized: bool,
+    }
+
+    impl ComGuard {
+        fn init() -> Self {
+            // fails with `RPC_E_CHANGED_MODE` if the thread is already in a multi-threaded
+            // apartment, which the shell APIs below also work with
+            let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+            Self {
+                initialized: hr.is_ok(),
+            }
+        }
+    }
+
+    impl Drop for ComGuard {
+        fn drop(&mut self) {
+            if self.initialized {
+                unsafe { CoUninitialize() };
+            }
+        }
     }
 
     struct OwnedItemIdList {
