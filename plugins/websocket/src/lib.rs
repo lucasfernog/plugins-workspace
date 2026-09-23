@@ -203,11 +203,21 @@ enum WebSocketMessage {
     Close(Option<CloseFrame>),
 }
 
+/// What the reader task forwards to the JS listeners.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ConnectionEvent {
+    /// A received message, serialized as `{ type, data }`.
+    Message(WebSocketMessage),
+    /// A stream error, serialized as a plain string.
+    Error(String),
+}
+
 #[tauri::command]
 async fn connect<R: Runtime>(
     window: Window<R>,
     url: String,
-    on_message: Channel<serde_json::Value>,
+    on_message: Channel<ConnectionEvent>,
     config: Option<ConnectionConfig>,
 ) -> Result<Id> {
     let mut request = url.into_client_request()?;
@@ -256,31 +266,32 @@ async fn connect<R: Runtime>(
                 window.state::<ConnectionManager>().remove(id, &writer);
             }
 
-            let response = match message {
+            let event = match message {
                 Ok(Message::Text(t)) => {
-                    serde_json::to_value(WebSocketMessage::Text(t.to_string())).unwrap()
+                    ConnectionEvent::Message(WebSocketMessage::Text(t.to_string()))
                 }
                 Ok(Message::Binary(t)) => {
-                    serde_json::to_value(WebSocketMessage::Binary(t.to_vec())).unwrap()
+                    ConnectionEvent::Message(WebSocketMessage::Binary(t.to_vec()))
                 }
                 Ok(Message::Ping(t)) => {
-                    serde_json::to_value(WebSocketMessage::Ping(t.to_vec())).unwrap()
+                    ConnectionEvent::Message(WebSocketMessage::Ping(t.to_vec()))
                 }
                 Ok(Message::Pong(t)) => {
-                    serde_json::to_value(WebSocketMessage::Pong(t.to_vec())).unwrap()
+                    ConnectionEvent::Message(WebSocketMessage::Pong(t.to_vec()))
                 }
                 Ok(Message::Close(t)) => {
-                    serde_json::to_value(WebSocketMessage::Close(t.map(|v| CloseFrame {
+                    ConnectionEvent::Message(WebSocketMessage::Close(t.map(|v| CloseFrame {
                         code: v.code.into(),
                         reason: v.reason.to_string(),
                     })))
-                    .unwrap()
                 }
-                Ok(Message::Frame(_)) => serde_json::Value::Null, // This value can't be recieved.
-                Err(e) => serde_json::to_value(Error::from(e)).unwrap(),
+                // Raw frames are never produced when reading, and have no `Message` representation
+                // on the JS side, so they are not forwarded.
+                Ok(Message::Frame(_)) => continue,
+                Err(e) => ConnectionEvent::Error(Error::from(e).to_string()),
             };
 
-            let _ = on_message.send(response);
+            let _ = on_message.send(event);
         }
 
         // The stream has ended (close handshake, error, or the peer going away without a Close
@@ -379,6 +390,40 @@ impl Builder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_events_keep_their_wire_format() {
+        let to_json = |event| serde_json::to_value(event).unwrap();
+        assert_eq!(
+            to_json(ConnectionEvent::Message(WebSocketMessage::Text(
+                "hi".into()
+            ))),
+            serde_json::json!({ "type": "Text", "data": "hi" })
+        );
+        assert_eq!(
+            to_json(ConnectionEvent::Message(WebSocketMessage::Binary(vec![
+                1, 2
+            ]))),
+            serde_json::json!({ "type": "Binary", "data": [1, 2] })
+        );
+        assert_eq!(
+            to_json(ConnectionEvent::Message(WebSocketMessage::Close(Some(
+                CloseFrame {
+                    code: 1000,
+                    reason: "bye".into()
+                }
+            )))),
+            serde_json::json!({ "type": "Close", "data": { "code": 1000, "reason": "bye" } })
+        );
+        assert_eq!(
+            to_json(ConnectionEvent::Message(WebSocketMessage::Close(None))),
+            serde_json::json!({ "type": "Close", "data": null })
+        );
+        assert_eq!(
+            to_json(ConnectionEvent::Error("boom".into())),
+            serde_json::json!("boom")
+        );
+    }
 
     #[test]
     fn unique_id_skips_ids_in_use() {
