@@ -6560,7 +6560,6 @@ dependencies = [
 name = "tauri-plugin-biometric"
 version = "2.3.3"
 dependencies = [
- "log",
  "serde",
  "serde_json",
  "serde_repr",
