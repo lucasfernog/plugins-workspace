@@ -98,6 +98,7 @@ pub struct ScanResponse {
 /// Every field is optional and only the ones that are set take part in the filter.
 /// **Android only**: the iOS implementation ignores this filter.
 #[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UriFilter {
     /// Only match URIs with this scheme, e.g. `https`.
     scheme: Option<String>,
@@ -172,6 +173,7 @@ pub enum ScanKind {
     Ndef {
         /// Only match tags whose NDEF payload has this MIME type, e.g. `text/plain`.
         /// **Android only**.
+        #[serde(rename = "mimeType")]
         mime_type: Option<String>,
         /// Only match tags whose NDEF payload URI matches this filter. **Android only**.
         uri: Option<UriFilter>,
@@ -183,13 +185,52 @@ pub enum ScanKind {
         /// **Android only**. See
         /// <https://developer.android.com/reference/android/nfc/NfcAdapter#ACTION_TECH_DISCOVERED>
         /// for more information.
+        #[serde(rename = "techLists")]
         tech_list: Option<Vec<Vec<TechKind>>>,
     },
     /// Match any tag that is discovered, whether it carries an NDEF message or not.
     Tag {
         /// Only match tags whose payload has this MIME type, e.g. `text/plain`. **Android only**.
+        #[serde(rename = "mimeType")]
         mime_type: Option<String>,
         /// Only match tags whose payload URI matches this filter. **Android only**.
         uri: Option<UriFilter>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_kind_fields_are_serialized_as_the_native_side_expects() {
+        let ndef = ScanKind::Ndef {
+            mime_type: Some("text/plain".into()),
+            uri: Some(UriFilter {
+                scheme: Some("https".into()),
+                host: Some("tauri.app".into()),
+                path_prefix: Some("/docs".into()),
+            }),
+            tech_list: Some(vec![vec![TechKind::NfcA, TechKind::Ndef]]),
+        };
+        assert_eq!(
+            serde_json::to_value(&ndef).unwrap(),
+            serde_json::json!({
+                "ndef": {
+                    "mimeType": "text/plain",
+                    "uri": { "scheme": "https", "host": "tauri.app", "pathPrefix": "/docs" },
+                    "techLists": [["NfcA", "Ndef"]]
+                }
+            })
+        );
+
+        let tag = ScanKind::Tag {
+            mime_type: Some("text/plain".into()),
+            uri: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&tag).unwrap(),
+            serde_json::json!({ "tag": { "mimeType": "text/plain", "uri": null } })
+        );
+    }
 }
