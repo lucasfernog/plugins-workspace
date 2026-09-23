@@ -41,6 +41,9 @@ features = [
 [target."cfg(target_os = \"linux\")".dependencies]
 zbus = { workspace = true }
 
+[target."cfg(target_os = \"macos\")".dependencies]
+libc = "0.2"
+
 [features]
 semver = ["dep:semver"]
 deep-link = ["dep:tauri-plugin-deep-link"]
