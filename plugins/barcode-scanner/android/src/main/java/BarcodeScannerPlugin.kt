@@ -156,9 +156,9 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                             )
                             this.cameraProvider = cameraProvider
                         } catch (e: InterruptedException) {
-                            // ignored
-                        } catch (_: ExecutionException) {
-                            // ignored
+                            failScan("Failed to start the camera: ${e.message ?: e}")
+                        } catch (e: ExecutionException) {
+                            failScan("Failed to start the camera: ${e.message ?: e}")
                         }
                     },
                     ContextCompat.getMainExecutor(activity)
@@ -191,7 +191,7 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                         imageAnalysis
                     )
                 } catch (e: Exception) {
-                    // TODO
+                    failScan("Failed to start the camera: ${e.message ?: e}")
                 }
             }
     }
@@ -227,6 +227,12 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
         setupCamera(direction, windowed)
     }
 
+    /** Rejects the pending scan, if any, and tears the camera down. */
+    private fun failScan(message: String) {
+        savedInvoke?.reject(message)
+        destroy()
+    }
+
     private fun destroy() {
         dismantleCamera()
         savedInvoke = null
@@ -248,7 +254,8 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                     activity.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 this.vibrator = vibrator
                 if (previewView == null) {
-                    throw Exception("Something went wrong configuring the BarcodeScanner")
+                    failScan("Something went wrong configuring the BarcodeScanner")
+                    return@runOnUiThread
                 }
 
                 if (formats.isNotEmpty()) {
@@ -341,16 +348,19 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
     fun scan(invoke: Invoke) {
         val args = invoke.parseArgs(ScanOptions::class.java)
 
-        savedInvoke = invoke
-        if (hasCamera()) {
-            if (getPermissionState("camera") != PermissionState.GRANTED) {
-                throw Exception("No permission to use camera. Did you request it yet?")
-            } else {
-                webViewBackground = null
-                prepare(args.cameraDirection ?: "back", args.windowed)
-                configureCamera(getFormats(args))
-            }
+        if (!hasCamera()) {
+            invoke.reject("No camera available on this device")
+            return
         }
+        if (getPermissionState("camera") != PermissionState.GRANTED) {
+            invoke.reject("No permission to use camera. Did you request it yet?")
+            return
+        }
+
+        savedInvoke = invoke
+        webViewBackground = null
+        prepare(args.cameraDirection ?: "back", args.windowed)
+        configureCamera(getFormats(args))
     }
 
     @SuppressLint("ObsoleteSdkInt")
