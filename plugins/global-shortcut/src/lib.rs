@@ -134,6 +134,23 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         Ok(())
     }
+
+    /// Unregisters the given shortcuts on the main thread, then removes the ones that were
+    /// unregistered from the map, so it keeps matching the OS state if one of them fails.
+    fn unregister_internal(&self, hotkeys: Vec<Shortcut>) -> Result<()> {
+        // the lock must not be held while waiting on the main thread: the main thread may need it
+        // to dispatch a hotkey event, so holding it here could deadlock
+        let (unregistered, result) = run_main_thread!(self.app, self.manager, |m| {
+            unregister_each(&hotkeys, |h| m.0.unregister(h))
+        });
+
+        let mut shortcuts = self.shortcuts.lock().unwrap();
+        for shortcut in unregistered {
+            shortcuts.remove(&shortcut.id());
+        }
+
+        result.map_err(Into::into)
+    }
 }
 
 impl<R: Runtime> GlobalShortcut<R> {
@@ -197,10 +214,7 @@ impl<R: Runtime> GlobalShortcut<R> {
     where
         S::Error: std::error::Error,
     {
-        let shortcut = try_into_shortcut(shortcut)?;
-        run_main_thread!(self.app, self.manager, |m| m.0.unregister(shortcut))?;
-        self.shortcuts.lock().unwrap().remove(&shortcut.id());
-        Ok(())
+        self.unregister_internal(vec![try_into_shortcut(shortcut)?])
     }
 
     /// Unregister multiple shortcuts.
@@ -215,29 +229,19 @@ impl<R: Runtime> GlobalShortcut<R> {
         for shortcut in shortcuts {
             mapped_shortcuts.push(try_into_shortcut(shortcut)?);
         }
-
-        {
-            let mapped_shortcuts = mapped_shortcuts.clone();
-            #[rustfmt::skip]
-            run_main_thread!(self.app, self.manager, |m| m.0.unregister_all(&mapped_shortcuts))?;
-        }
-
-        let mut shortcuts = self.shortcuts.lock().unwrap();
-        for s in mapped_shortcuts {
-            shortcuts.remove(&s.id());
-        }
-
-        Ok(())
+        self.unregister_internal(mapped_shortcuts)
     }
 
     /// Unregister all registered shortcuts.
     pub fn unregister_all(&self) -> Result<()> {
-        let mut shortcuts = self.shortcuts.lock().unwrap();
-        let hotkeys = std::mem::take(&mut *shortcuts);
-        let hotkeys = hotkeys.values().map(|s| s.shortcut).collect::<Vec<_>>();
-        #[rustfmt::skip]
-        let res = run_main_thread!(self.app, self.manager, |m| m.0.unregister_all(hotkeys.as_slice()));
-        res.map_err(Into::into)
+        let hotkeys = self
+            .shortcuts
+            .lock()
+            .unwrap()
+            .values()
+            .map(|s| s.shortcut)
+            .collect::<Vec<_>>();
+        self.unregister_internal(hotkeys)
     }
 
     /// Determines whether the given shortcut is registered by this application or not.
@@ -284,6 +288,27 @@ impl<R: Runtime, T: Manager<R>> GlobalShortcutExt<R> for T {
     fn global_shortcut(&self) -> &GlobalShortcut<R> {
         self.state::<GlobalShortcut<R>>().inner()
     }
+}
+
+/// Unregisters every hotkey with `unregister`, carrying on past failures. Returns the hotkeys
+/// that were unregistered, and the first error, if any.
+fn unregister_each<E>(
+    hotkeys: &[Shortcut],
+    mut unregister: impl FnMut(Shortcut) -> std::result::Result<(), E>,
+) -> (Vec<Shortcut>, std::result::Result<(), E>) {
+    let mut unregistered = Vec::with_capacity(hotkeys.len());
+    let mut result = Ok(());
+    for hotkey in hotkeys {
+        match unregister(*hotkey) {
+            Ok(()) => unregistered.push(*hotkey),
+            Err(e) => {
+                if result.is_ok() {
+                    result = Err(e);
+                }
+            }
+        }
+    }
+    (unregistered, result)
 }
 
 fn parse_shortcut<S: AsRef<str>>(shortcut: S) -> Result<Shortcut> {
@@ -493,5 +518,32 @@ impl<R: Runtime> Builder<R> {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shortcut(s: &str) -> Shortcut {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn unregister_each_reports_what_was_unregistered() {
+        let hotkeys = [shortcut("Alt+A"), shortcut("Alt+B"), shortcut("Alt+C")];
+        let (unregistered, res) = unregister_each(&hotkeys, |h| {
+            if h == hotkeys[1] {
+                Err("not registered")
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(unregistered, [hotkeys[0], hotkeys[2]]);
+        assert_eq!(res, Err("not registered"));
+
+        let (unregistered, res) = unregister_each::<()>(&hotkeys, |_| Ok(()));
+        assert_eq!(unregistered, hotkeys);
+        assert!(res.is_ok());
     }
 }
