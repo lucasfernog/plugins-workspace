@@ -45,9 +45,10 @@ class BiometricPlugin: Plugin {
     LAError.biometryNotEnrolled.rawValue: "biometryNotEnrolled",
   ]
 
-  var status: BiometricStatus!
-
-  public override func load(webview: WKWebView) {
+  /// Evaluates the current biometry state. Called on every `status` and `authenticate` call
+  /// (instead of once when the plugin loads) so enrolment and lockout changes made while the app
+  /// runs are picked up.
+  func currentStatus() -> BiometricStatus {
     let context = LAContext()
     var error: NSError?
     var available = context.canEvaluatePolicy(
@@ -73,7 +74,7 @@ class BiometricPlugin: Plugin {
           LAError.biometryNotAvailable.rawValue] ?? ""
     }
 
-    self.status = BiometricStatus(
+    return BiometricStatus(
       available: available,
       biometryType: context.biometryType,
       errorReason: reason,
@@ -82,17 +83,18 @@ class BiometricPlugin: Plugin {
   }
 
   @objc func status(_ invoke: Invoke) {
-    if self.status.available {
+    let status = self.currentStatus()
+    if status.available {
       invoke.resolve([
-        "isAvailable": self.status.available,
-        "biometryType": self.status.biometryType.rawValue,
+        "isAvailable": status.available,
+        "biometryType": status.biometryType.rawValue,
       ])
     } else {
       invoke.resolve([
-        "isAvailable": self.status.available,
-        "biometryType": self.status.biometryType.rawValue,
-        "error": self.status.errorReason ?? "",
-        "errorCode": self.status.errorCode ?? "",
+        "isAvailable": status.available,
+        "biometryType": status.biometryType.rawValue,
+        "error": status.errorReason ?? "",
+        "errorCode": status.errorCode ?? "",
       ])
     }
   }
@@ -102,13 +104,17 @@ class BiometricPlugin: Plugin {
 
     let allowDeviceCredential = args.allowDeviceCredential ?? false
 
-    guard self.status.available || allowDeviceCredential else {
-      // Biometry unavailable, fallback disabled
-      invoke.reject(
-        self.status.errorReason ?? "",
-        code: self.status.errorCode ?? ""
-      )
-      return
+    // only evaluate the status when it matters: with device credentials allowed the OS falls back to the passcode
+    if !allowDeviceCredential {
+      let status = self.currentStatus()
+      guard status.available else {
+        // Biometry unavailable, fallback disabled
+        invoke.reject(
+          status.errorReason ?? "",
+          code: status.errorCode ?? ""
+        )
+        return
+      }
     }
 
     let context = LAContext()
