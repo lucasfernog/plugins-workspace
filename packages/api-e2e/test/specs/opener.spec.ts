@@ -8,7 +8,8 @@ import { tauriError, describePlugin } from '../helpers/index.js'
 // A successful open launches an external application (browser, file manager)
 // the suite cannot control or close, so only the scope enforcement is covered.
 // The example allows `mailto:`, `tel:`, `http(s)://` URLs (opener:default),
-// `https://` URLs specifically with `inAppBrowser`, and paths under `$APPDATA`.
+// `https://` URLs specifically with `inAppBrowser` (but denies
+// `https://denied.e2e.invalid/*`), and paths under `$APPDATA`.
 
 describePlugin('opener', () => {
   it('openUrl rejects URL schemes outside the scope', async () => {
@@ -26,6 +27,28 @@ describePlugin('opener', () => {
       api.opener.openUrl('http://example.com', 'inAppBrowser')
     )
     expect(message).toMatch(/Not allowed to open url http:\/\/example\.com/)
+  })
+
+  it('openUrl deny rules apply to every app', async () => {
+    // `https://denied.e2e.invalid/*` is denied without an `app`, while
+    // `https://*` is allowed with `inAppBrowser`
+    const message = await tauriError((api) =>
+      api.opener.openUrl('https://denied.e2e.invalid/x', 'inAppBrowser')
+    )
+    expect(message).toMatch(
+      /Not allowed to open url https:\/\/denied\.e2e\.invalid\/x/
+    )
+  })
+
+  it('openUrl deny rules match normalized URLs', async () => {
+    for (const url of [
+      'https://DENIED.e2e.invalid/x',
+      'https://denied.e2e.invalid:443/x',
+      'https://denied.e2e.invalid./x'
+    ]) {
+      const message = await tauriError((api, u) => api.opener.openUrl(u), url)
+      expect(message).toMatch(/Not allowed to open url/)
+    }
   })
 
   it('openPath rejects paths outside the scope', async () => {
