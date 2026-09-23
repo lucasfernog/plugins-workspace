@@ -178,6 +178,44 @@ fn attach_proxy(
     Ok(builder)
 }
 
+/// Parses a proxy URL the way [`reqwest::Proxy`] does: a URL without a scheme (`host:port`) is
+/// an `http://` proxy, and SOCKS proxies default to port 1080.
+fn parse_proxy_url(url: &str) -> Result<url::Url> {
+    let mut parsed = match url::Url::parse(url) {
+        Ok(parsed) if parsed.has_host() => parsed,
+        // `localhost:8080` parses as a URL with a `localhost` scheme and no host
+        Ok(_) | Err(url::ParseError::RelativeUrlWithoutBase) => {
+            url::Url::parse(&format!("http://{url}"))?
+        }
+        Err(e) => return Err(e.into()),
+    };
+    if parsed.port().is_none()
+        && matches!(parsed.scheme(), "socks4" | "socks4a" | "socks5" | "socks5h")
+    {
+        let _ = parsed.set_port(Some(1080));
+    }
+    Ok(parsed)
+}
+
+/// Checks that every proxy URL is allowed by the scope, used when the `scopeProxy`
+/// configuration is enabled.
+fn check_proxy_scope(proxy: &Proxy, scope: &Scope) -> Result<()> {
+    for url_or_config in [&proxy.all, &proxy.http, &proxy.https]
+        .into_iter()
+        .flatten()
+    {
+        let url = match url_or_config {
+            UrlOrConfig::Url(url) => url,
+            UrlOrConfig::Config(config) => &config.url,
+        };
+        let url = parse_proxy_url(url)?;
+        if !scope.is_allowed(&url) {
+            return Err(Error::UrlNotAllowed(url));
+        }
+    }
+    Ok(())
+}
+
 /// Builds the redirect policy for the request.
 ///
 /// When `scope` is [`Some`], **every** hop is checked against it. Validating only the URL the
@@ -311,12 +349,15 @@ pub async fn fetch<R: Runtime>(
                 builder = builder.connect_timeout(Duration::from_millis(timeout));
             }
 
-            let scope = state.config.scope_redirects.then_some(scope);
-            builder = builder.redirect(redirect_policy(scope, max_redirections));
-
             if let Some(proxy_config) = proxy {
+                if state.config.scope_proxy {
+                    check_proxy_scope(&proxy_config, &scope)?;
+                }
                 builder = attach_proxy(proxy_config, builder)?;
             }
+
+            let scope = state.config.scope_redirects.then_some(scope);
+            builder = builder.redirect(redirect_policy(scope, max_redirections));
 
             #[cfg(feature = "cookies")]
             {
@@ -623,6 +664,57 @@ mod tests {
     fn localhost_scope(port: u16) -> Option<Scope> {
         let entry = Arc::new(format!("http://localhost:{port}/*").parse().unwrap());
         Some(Scope::new(vec![entry], Vec::new()))
+    }
+
+    #[test]
+    fn proxy_urls_are_parsed_like_reqwest() {
+        let parsed = |url: &str| parse_proxy_url(url).unwrap().to_string();
+        assert_eq!(
+            parsed("http://proxy.local:8080"),
+            "http://proxy.local:8080/"
+        );
+        assert_eq!(parsed("localhost:8080"), "http://localhost:8080/");
+        assert_eq!(parsed("127.0.0.1:1"), "http://127.0.0.1:1/");
+        assert_eq!(parsed("socks5://proxy.local"), "socks5://proxy.local:1080");
+        assert_eq!(
+            parsed("https://user:pass@proxy.local"),
+            "https://user:pass@proxy.local/"
+        );
+    }
+
+    #[test]
+    fn proxy_urls_are_checked_against_the_scope() {
+        let proxy = |value: serde_json::Value| serde_json::from_value::<Proxy>(value).unwrap();
+        let allow = Arc::new("http://proxy.local:8080".parse().unwrap());
+        let deny = Arc::new("http://proxy.local:8080/denied".parse().unwrap());
+        let scope = Scope::new(vec![allow], vec![deny]);
+
+        check_proxy_scope(
+            &proxy(serde_json::json!({ "all": "proxy.local:8080" })),
+            &scope,
+        )
+        .unwrap();
+        check_proxy_scope(
+            &proxy(serde_json::json!({
+                "http": { "url": "http://proxy.local:8080", "noProxy": "localhost" },
+                "https": "http://proxy.local:8080"
+            })),
+            &scope,
+        )
+        .unwrap();
+
+        for value in [
+            serde_json::json!({ "all": "http://169.254.169.254" }),
+            serde_json::json!({ "all": "http://proxy.local:8080/denied" }),
+            serde_json::json!({ "http": "http://proxy.local:8080", "https": { "url": "127.0.0.1:1" } }),
+            serde_json::json!({ "all": "socks5://proxy.local:8080" }),
+        ] {
+            let err = check_proxy_scope(&proxy(value.clone()), &scope).unwrap_err();
+            assert!(
+                matches!(err, Error::UrlNotAllowed(_)),
+                "{value} must not be allowed, got {err:?}"
+            );
+        }
     }
 
     #[test]

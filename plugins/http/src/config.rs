@@ -23,6 +23,20 @@ pub struct Config {
     // TODO(v3): enforce the scope on redirects by default and remove this option
     #[serde(default)]
     pub scope_redirects: bool,
+    /// Whether the proxy URLs the frontend sets with the `proxy` option of `fetch` must be
+    /// allowed by the scope. Defaults to `false`.
+    ///
+    /// When disabled, the frontend can route an allowed request through any `host:port`, which
+    /// makes the plugin open connections to hosts the scope does not allow - and, for `http://`
+    /// URLs, hand the webview the response of that host.
+    ///
+    /// When enabled, a proxy URL that is not allowed by the scope makes the request fail with
+    /// [`Error::UrlNotAllowed`](crate::Error::UrlNotAllowed), so every proxy the frontend uses
+    /// (for instance `http://proxy.example.com:8080`) must be added to the scope. This is opt-in
+    /// because it breaks applications that let the frontend pick a proxy outside of their scope.
+    // TODO(v3): enforce the scope on proxies by default and remove this option
+    #[serde(default)]
+    pub scope_proxy: bool,
 }
 
 #[cfg(test)]
@@ -37,6 +51,10 @@ mod tests {
 
         let config: Config = serde_json::from_str("{}").unwrap();
         assert!(!config.scope_redirects);
+        assert!(!config.scope_proxy);
+
+        let config: Config = serde_json::from_str(r#"{ "scopeProxy": true }"#).unwrap();
+        assert!(config.scope_proxy);
 
         let config: Config = serde_json::from_str(r#"{ "scopeRedirects": true }"#).unwrap();
         assert!(config.scope_redirects);

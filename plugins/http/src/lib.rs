@@ -53,7 +53,8 @@
 //! {
 //!   "plugins": {
 //!     "http": {
-//!       "scopeRedirects": true
+//!       "scopeRedirects": true,
+//!       "scopeProxy": true
 //!     }
 //!   }
 //! }

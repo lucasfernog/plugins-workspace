@@ -97,6 +97,10 @@ export interface ClientOptions {
   connectTimeout?: number
   /**
    * Configuration of a proxy that a Client should pass requests to.
+   *
+   * The proxy URLs are not checked against the plugin scope unless the
+   * `scopeProxy` plugin configuration is enabled, in which case every proxy URL
+   * must also be allowed by the scope, otherwise the request fails.
    */
   proxy?: Proxy
   /**
