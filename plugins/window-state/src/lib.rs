@@ -57,7 +57,7 @@ bitflags! {
     /// Flags controlling which parts of a window's state are saved and restored.
     ///
     /// Flags can be combined with the bitwise OR operator (`|`), e.g. `StateFlags::SIZE | StateFlags::POSITION`.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct StateFlags: u32 {
         /// Save and restore the window size.
         const SIZE        = 1 << 0;
