@@ -59,13 +59,11 @@ class BiometricPlugin(private val activity: Activity): Plugin(activity) {
         const val DEVICE_CREDENTIAL = "allowDeviceCredential"
         const val CONFIRMATION_REQUIRED = "confirmationRequired"
 
-        // Maps biometry error numbers to string error codes
+        // Maps BiometricPrompt error numbers to string error codes
         private var biometryErrorCodeMap: MutableMap<Int, String> = HashMap()
         private var biometryNameMap: MutableMap<BiometryType, String> = EnumMap(BiometryType::class.java)
 
        init {
-           biometryErrorCodeMap[BiometricManager.BIOMETRIC_SUCCESS] = ""
-           biometryErrorCodeMap[BiometricManager.BIOMETRIC_SUCCESS] = ""
            biometryErrorCodeMap[BiometricPrompt.ERROR_CANCELED] = "systemCancel"
            biometryErrorCodeMap[BiometricPrompt.ERROR_HW_NOT_PRESENT] = "biometryNotAvailable"
            biometryErrorCodeMap[BiometricPrompt.ERROR_HW_UNAVAILABLE] = "biometryNotAvailable"
@@ -79,6 +77,7 @@ class BiometricPlugin(private val activity: Activity): Plugin(activity) {
            biometryErrorCodeMap[BiometricPrompt.ERROR_UNABLE_TO_PROCESS] = "systemCancel"
            biometryErrorCodeMap[BiometricPrompt.ERROR_USER_CANCELED] = "userCancel"
            biometryErrorCodeMap[BiometricPrompt.ERROR_VENDOR] = "systemCancel"
+           biometryErrorCodeMap[BiometricPrompt.ERROR_SECURITY_UPDATE_REQUIRED] = "biometryNotAvailable"
 
            biometryNameMap[BiometryType.NONE] = "No Authentication"
            biometryNameMap[BiometryType.FINGERPRINT] = "Fingerprint Authentication"
@@ -145,9 +144,11 @@ class BiometricPlugin(private val activity: Activity): Plugin(activity) {
                     "Unknown biometry state."
             }
 
-            var errorCode = biometryErrorCodeMap[biometryResult]
-            if (errorCode == null) {
-                errorCode = "biometryNotAvailable"
+            // biometryResult is a BiometricManager status code, not a BiometricPrompt error
+            val errorCode = if (biometryResult == BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED) {
+                "biometryNotEnrolled"
+            } else {
+                "biometryNotAvailable"
             }
             ret.put("error", reason)
             ret.put("errorCode", errorCode)
