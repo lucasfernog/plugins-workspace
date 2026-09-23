@@ -85,6 +85,15 @@ If your app requires GPS functionality to function, **you** should add the follo
 
 The Google Play Store uses this property to decide whether it should show the app to devices without GPS capabilities.
 
+The plugin reads the location through the Google Play Services Fused Location Provider (`com.google.android.gms:play-services-location`). On devices without Google Play Services, `watchPosition` reports an error and `getCurrentPosition` only works when a recent enough cached location exists.
+
+Position watchers are paused while the app is in the background and resumed when it returns to the foreground.
+
+### Platform differences
+
+- `timeout` is not a timeout: on Android `watchPosition` uses it as the interval between updates, and `getCurrentPosition` ignores it. iOS ignores both `timeout` and `maximumAge`.
+- `coarseLocation` only differs from `location` on Android, where users can grant approximate location only (Android 12+). On iOS both report the same state.
+
 ## Usage
 
 First you need to register the core plugin with Tauri:
