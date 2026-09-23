@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::Display;
 
 /// Arguments of the [`Nfc::scan`](crate::Nfc::scan) API.
@@ -78,12 +78,50 @@ pub struct NfcTagRecord {
 /// An NFC tag that has been scanned.
 #[derive(Deserialize)]
 pub struct NfcTag {
-    /// The tag identifier, as reported by the operating system.
+    /// The tag identifier, as reported by the operating system, encoded as a lowercase
+    /// hexadecimal string, e.g. `"04a1b2c3d4e5f6"`. Empty when the platform does not expose it.
+    #[serde(default, deserialize_with = "deserialize_tag_id")]
     pub id: String,
-    /// The technology the tag supports.
+    /// The technologies the tag supports, separated by `", "`.
+    ///
+    /// On Android these are the `android.nfc.tech` class names, e.g. `"android.nfc.tech.NfcA, android.nfc.tech.Ndef"`.
+    /// On iOS this is one of `"MiFare"`, `"ISO15693"`, `"ISO7816Compatible"`, `"FeliCa"` or `"Unknown"`.
+    #[serde(default, deserialize_with = "deserialize_tag_kind")]
     pub kind: String,
     /// The NDEF records stored on the tag. Empty when the tag holds no NDEF message.
     pub records: Vec<NfcTagRecord>,
+}
+
+/// The native plugins send the tag id as a byte array.
+fn deserialize_tag_id<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Id {
+        Bytes(Vec<u8>),
+        String(String),
+    }
+
+    Ok(match Option::<Id>::deserialize(deserializer)? {
+        Some(Id::Bytes(bytes)) => bytes.iter().map(|b| format!("{b:02x}")).collect(),
+        Some(Id::String(id)) => id,
+        None => String::new(),
+    })
+}
+
+/// The native plugins send the tag technologies as an array of strings.
+fn deserialize_tag_kind<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Kind {
+        List(Vec<String>),
+        String(String),
+    }
+
+    Ok(match Option::<Kind>::deserialize(deserializer)? {
+        Some(Kind::List(kinds)) => kinds.join(", "),
+        Some(Kind::String(kind)) => kind,
+        None => String::new(),
+    })
 }
 
 /// Response of the [`Nfc::scan`](crate::Nfc::scan) API.
@@ -192,4 +230,50 @@ pub enum ScanKind {
         /// Only match tags whose payload URI matches this filter. **Android only**.
         uri: Option<UriFilter>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_android_tag() {
+        let tag: NfcTag = serde_json::from_value(serde_json::json!({
+            "id": [4, 161, 178, 255],
+            "kind": ["android.nfc.tech.NfcA", "android.nfc.tech.Ndef"],
+            "records": [{ "tnf": 1, "kind": [84], "id": [], "payload": [2, 101, 110, 200] }]
+        }))
+        .unwrap();
+        assert_eq!(tag.id, "04a1b2ff");
+        assert_eq!(tag.kind, "android.nfc.tech.NfcA, android.nfc.tech.Ndef");
+        assert_eq!(tag.records.len(), 1);
+        assert!(matches!(
+            tag.records[0].tnf,
+            NFCTypeNameFormat::NfcWellKnown
+        ));
+        assert_eq!(tag.records[0].kind, vec![84]);
+        assert_eq!(tag.records[0].payload, vec![2, 101, 110, 200]);
+    }
+
+    #[test]
+    fn deserializes_ios_tag() {
+        let tag: NfcTag = serde_json::from_value(serde_json::json!({
+            "id": [],
+            "kind": ["FeliCa"],
+            "readOnly": false,
+            "records": []
+        }))
+        .unwrap();
+        assert_eq!(tag.id, "");
+        assert_eq!(tag.kind, "FeliCa");
+        assert!(tag.records.is_empty());
+
+        // older iOS versions of the plugin omitted the id of FeliCa tags
+        let tag: NfcTag = serde_json::from_value(serde_json::json!({
+            "kind": ["FeliCa"],
+            "records": []
+        }))
+        .unwrap();
+        assert_eq!(tag.id, "");
+    }
 }
