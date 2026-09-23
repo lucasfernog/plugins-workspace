@@ -59,9 +59,6 @@ internal class ReadClipDataSerializer @JvmOverloads constructor(t: Class<ReadCli
 
         jgen.writeEndObject()
       }
-      else -> {
-        throw Exception("unimplemented ReadClipData")
-      }
     }
 
     jgen.writeEndObject()
@@ -77,7 +74,7 @@ internal class WriteOptionsDeserializer: JsonDeserializer<WriteOptions>() {
     node.get("plainText")?.let {
       return jsonParser.codec.treeToValue(it, WriteOptions.PlainText::class.java)
     } ?: run {
-      throw Error("unknown write options $node")
+      throw IllegalArgumentException("unknown write options $node")
     }
   }
 }
@@ -88,18 +85,9 @@ class ClipboardPlugin(private val activity: Activity) : Plugin(activity) {
     activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
   @Command
-  @Suppress("MoveVariableDeclarationIntoWhen")
   fun writeText(invoke: Invoke) {
-    val args = invoke.parseArgs(WriteOptions::class.java)
-
-    val clipData = when (args) {
-      is WriteOptions.PlainText -> {
-        ClipData.newPlainText(args.label, args.text)
-      } else -> {
-        invoke.reject("unimplemented WriteOptions")
-        return
-      }
-
+    val clipData = when (val args = invoke.parseArgs(WriteOptions::class.java)) {
+      is WriteOptions.PlainText -> ClipData.newPlainText(args.label, args.text)
     }
 
     manager.setPrimaryClip(clipData)
