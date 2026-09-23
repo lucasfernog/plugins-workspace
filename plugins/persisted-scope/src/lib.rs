@@ -51,14 +51,11 @@ enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Tauri(#[from] tauri::Error),
-    #[error(transparent)]
     Bincode(#[from] Box<bincode::ErrorKind>),
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq)]
 enum TargetType {
-    #[default]
     File,
     Directory,
     RecursiveDirectory,
@@ -80,11 +77,11 @@ fn fix_pattern(ac: &AhoCorasick, s: &str) -> String {
     s
 }
 
-const RESURSIVE_DIRECTORY_SUFFIX: &str = "**";
+const RECURSIVE_DIRECTORY_SUFFIX: &str = "**";
 const DIRECTORY_SUFFIX: &str = "*";
 
 fn detect_scope_type(scope_state_path: &str) -> TargetType {
-    if scope_state_path.ends_with(RESURSIVE_DIRECTORY_SUFFIX) {
+    if scope_state_path.ends_with(RECURSIVE_DIRECTORY_SUFFIX) {
         TargetType::RecursiveDirectory
     } else if scope_state_path.ends_with(DIRECTORY_SUFFIX) {
         TargetType::Directory
@@ -96,7 +93,7 @@ fn detect_scope_type(scope_state_path: &str) -> TargetType {
 fn fix_directory(path_str: &str) -> &Path {
     let mut path = Path::new(path_str);
 
-    if path.ends_with(DIRECTORY_SUFFIX) || path.ends_with(RESURSIVE_DIRECTORY_SUFFIX) {
+    if path.ends_with(DIRECTORY_SUFFIX) || path.ends_with(RECURSIVE_DIRECTORY_SUFFIX) {
         path = match path.parent() {
             Some(value) => value,
             None => return path,
@@ -109,34 +106,27 @@ fn fix_directory(path_str: &str) -> &Path {
 fn allow_path(scope: &tauri::fs::Scope, path: &str) {
     let target_type = detect_scope_type(path);
 
-    match target_type {
-        TargetType::File => {
-            let _ = scope.allow_file(Path::new(path));
-        }
-        TargetType::Directory => {
-            // We remove the '*' at the end of it, else it will be escaped by the pattern.
-            let _ = scope.allow_directory(fix_directory(path), false);
-        }
-        TargetType::RecursiveDirectory => {
-            // We remove the '**' at the end of it, else it will be escaped by the pattern.
-            let _ = scope.allow_directory(fix_directory(path), true);
-        }
+    // For directories we remove the '*' / '**' at the end, else it would be escaped by the pattern.
+    let result = match target_type {
+        TargetType::File => scope.allow_file(Path::new(path)),
+        TargetType::Directory => scope.allow_directory(fix_directory(path), false),
+        TargetType::RecursiveDirectory => scope.allow_directory(fix_directory(path), true),
+    };
+    if let Err(e) = result {
+        log::warn!("failed to restore allowed path {path}: {e}");
     }
 }
 
 fn forbid_path(scope: &tauri::fs::Scope, path: &str) {
     let target_type = detect_scope_type(path);
 
-    match target_type {
-        TargetType::File => {
-            let _ = scope.forbid_file(Path::new(path));
-        }
-        TargetType::Directory => {
-            let _ = scope.forbid_directory(fix_directory(path), false);
-        }
-        TargetType::RecursiveDirectory => {
-            let _ = scope.forbid_directory(fix_directory(path), true);
-        }
+    let result = match target_type {
+        TargetType::File => scope.forbid_file(Path::new(path)),
+        TargetType::Directory => scope.forbid_directory(fix_directory(path), false),
+        TargetType::RecursiveDirectory => scope.forbid_directory(fix_directory(path), true),
+    };
+    if let Err(e) = result {
+        log::warn!("failed to restore forbidden path {path}: {e}");
     }
 }
 
@@ -177,7 +167,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             let fs_scope = app.try_fs_scope();
             #[cfg(feature = "protocol-asset")]
             let asset_protocol_scope = app.asset_protocol_scope();
-            let app = app.clone();
             let app_dir = app.path().app_data_dir();
 
             if let Ok(app_dir) = app_dir {
@@ -244,9 +233,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 let app_dir_ = app_dir.clone();
 
                 if let Some(fs_scope) = &fs_scope {
+                    let fs_scope_ = fs_scope.clone();
                     fs_scope.listen(move |event| {
                         if let tauri::fs::Event::PathAllowed(_) = event {
-                            save_scopes(&app.fs_scope(), &app_dir, &fs_scope_state_path);
+                            save_scopes(&fs_scope_, &app_dir, &fs_scope_state_path);
                         }
                     });
                 }

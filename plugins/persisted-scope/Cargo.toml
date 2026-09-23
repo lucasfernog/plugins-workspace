@@ -18,7 +18,6 @@ ios = { level = "full", notes = "" }
 
 [dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
