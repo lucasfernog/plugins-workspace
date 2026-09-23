@@ -177,7 +177,7 @@ internal class ScanKindDeserializer: JsonDeserializer<ScanKind>() {
         } ?: node.get("ndef")?.let {
             return jsonParser.codec.treeToValue(it, ScanKind.Ndef::class.java)
         } ?: run {
-            throw Error("unknown scan kind $node")
+            throw IllegalArgumentException("unknown scan kind $node")
         }
     }
 }
