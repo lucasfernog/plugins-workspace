@@ -26,8 +26,13 @@ Install the Core plugin by adding the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-tauri-plugin-notification = "2.0.0"
-# alternatively with Git:
+tauri-plugin-notification = "2"
+```
+
+or, to use the Git sources:
+
+```toml
+[dependencies]
 tauri-plugin-notification = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
 ```
 
@@ -97,42 +102,42 @@ export async function enqueueNotification(title, body) {
 
 ### Notification with Sound
 
-You can add sound to your notifications on all platforms (desktop and mobile):
+The `sound` option takes a platform-specific value:
+
+- **macOS**: a system sound name (e.g. `Ping`, `Blow`) or a sound file in the app bundle.
+- **Linux**: an XDG sound theme name (e.g. `message-new-instant`).
+- **Windows**: one of the built-in toast sounds: `Default`, `IM`, `Mail`, `Reminder`, `SMS`, `Alarm`, `Alarm2`-`Alarm10`, `Call`, `Call2`-`Call10`. Sound files are not supported.
+- **Android**: the name of a sound resource in the app's `res/raw` folder. On Android 8 and later the sound is decided by the notification channel, so create a channel with that sound (`createChannel`) and send the notification with its `channelId`.
+- **iOS**: the name of a sound file in the app bundle.
 
 ```javascript
 import { sendNotification } from '@tauri-apps/plugin-notification'
-import { platform } from '@tauri-apps/api/os'
+import { platform } from '@tauri-apps/plugin-os'
 
-// Basic notification with sound
+let sound
+switch (platform()) {
+  case 'macos':
+    sound = 'Ping'
+    break
+  case 'linux':
+    sound = 'message-new-instant'
+    break
+  case 'windows':
+    sound = 'Mail'
+    break
+  default:
+    // mobile: a sound resource bundled with the app
+    sound = 'notification'
+}
+
 sendNotification({
   title: 'New Message',
   body: 'You have a new message',
-  sound: 'notification.wav' // Path to sound file
+  sound
 })
-
-// Platform-specific sounds
-async function sendPlatformSpecificNotification() {
-  const platformName = platform()
-
-  let soundPath
-  if (platformName === 'darwin') {
-    // On macOS: use system sounds or sound files in the app bundle
-    soundPath = 'Ping' // macOS system sound
-  } else if (platformName === 'linux') {
-    // On Linux: use XDG theme sounds or file paths
-    soundPath = 'message-new-instant' // XDG theme sound
-  } else {
-    // On Windows: use file paths
-    soundPath = 'notification.wav'
-  }
-
-  sendNotification({
-    title: 'Platform-specific Notification',
-    body: 'This notification uses platform-specific sound',
-    sound: soundPath
-  })
-}
 ```
+
+This example uses [`@tauri-apps/plugin-os`](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/os) to detect the platform.
 
 ## Contributing
 
