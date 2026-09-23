@@ -243,7 +243,8 @@ export async function fetch(
     throw abortError()
   }
 
-  signal?.addEventListener('abort', () => void abort())
+  const onAbort = () => void abort()
+  signal?.addEventListener('abort', onAbort, { once: true })
 
   interface FetchSendResponse {
     status: number
@@ -262,6 +263,9 @@ export async function fetch(
     // the Rust side rejects an aborted request with a plain string
     if (signal?.aborted) throw abortError()
     throw e
+  } finally {
+    // the request is done, a long-lived signal must not keep the listener
+    signal?.removeEventListener('abort', onAbort)
   }
 
   const {
@@ -273,7 +277,10 @@ export async function fetch(
   } = sendResponse
 
   let bodyDropped = false
+  // set once the body stream listens for aborts
+  let removeBodyAbortListener = () => {}
   const dropBody = () => {
+    removeBodyAbortListener()
     if (bodyDropped) return Promise.resolve()
     bodyDropped = true
     return invoke('plugin:http|fetch_cancel_body', { rid: responseRid }).catch(
@@ -310,6 +317,7 @@ export async function fetch(
 
     // close when the signal to close (last byte is 1) is sent from the IPC.
     if (lastByte === 1) {
+      removeBodyAbortListener()
       controller.close()
       return
     }
@@ -324,10 +332,13 @@ export async function fetch(
     : new ReadableStream<Uint8Array>({
         start: (controller) => {
           // listen for abort events to cancel reading
-          signal?.addEventListener('abort', () => {
+          const onBodyAbort = () => {
             controller.error(abortError())
             void dropBody()
-          })
+          }
+          signal?.addEventListener('abort', onBodyAbort, { once: true })
+          removeBodyAbortListener = () =>
+            signal?.removeEventListener('abort', onBodyAbort)
         },
         pull: (controller) => readChunk(controller),
         cancel: () => {

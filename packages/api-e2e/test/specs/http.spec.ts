@@ -176,6 +176,36 @@ describePlugin('http', () => {
     }
   })
 
+  it('fetch removes its abort listeners once the request is done', async () => {
+    const listeners = await tauri(async (api, url) => {
+      const controller = new AbortController()
+      const signal = controller.signal
+      let count = 0
+      const add = signal.addEventListener.bind(signal)
+      const remove = signal.removeEventListener.bind(signal)
+      signal.addEventListener = (
+        ...args: Parameters<AbortSignal['addEventListener']>
+      ) => {
+        if (args[0] === 'abort') count++
+        add(...args)
+      }
+      signal.removeEventListener = (
+        ...args: Parameters<AbortSignal['removeEventListener']>
+      ) => {
+        if (args[0] === 'abort') count--
+        remove(...args)
+      }
+
+      // a long-lived signal shared by several requests
+      for (let i = 0; i < 3; i++) {
+        const response = await api.http.fetch(url, { signal })
+        await response.text()
+      }
+      return count
+    }, echoServer)
+    expect(listeners).toBe(0)
+  })
+
   it('rejects URLs outside the configured scope', async () => {
     const message = await tauriError((api) =>
       api.http.fetch('http://localhost:3999/not-in-scope')
