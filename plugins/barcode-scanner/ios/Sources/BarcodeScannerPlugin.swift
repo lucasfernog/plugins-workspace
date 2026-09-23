@@ -219,7 +219,8 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     switch AVCaptureDevice.authorizationStatus(for: .video) {
     case .authorized:
       permissionState = "granted"
-    case .denied:
+    case .denied, .restricted:
+      // `restricted` (parental controls, MDM) cannot be changed by the user or granted by a prompt
       permissionState = "denied"
     default:
       permissionState = "prompt"
