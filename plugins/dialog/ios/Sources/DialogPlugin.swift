@@ -147,16 +147,32 @@ class DialogPlugin: Plugin {
     // so the app dev can write to it later - matching cross platform behavior as mentioned above
     let fileManager = FileManager.default
     let srcFolder = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-    let srcPath = srcFolder.appendingPathComponent(args.fileName ?? "file")
+    // Only the last path component is used, so the name cannot point outside the folder.
+    var fileName = ((args.fileName ?? "") as NSString).lastPathComponent
+    if fileName.isEmpty || fileName == "/" || fileName == "." || fileName == ".." {
+      fileName = "file"
+    }
+    let srcPath = srcFolder.appendingPathComponent(fileName)
+    var createdPlaceholder = false
     if !fileManager.fileExists(atPath: srcPath.path) {
       // the file contents must be actually provided by the tauri dev after the path is resolved by the save API
       try "".write(to: srcPath, atomically: true, encoding: .utf8)
+      createdPlaceholder = true
     }
 
     onFilePickerResult = { (event: FilePickerEvent) -> Void in
+      // The export has finished or was cancelled; remove the placeholder we created so it does
+      // not pile up in the app's Documents folder. An existing file is left untouched.
+      if createdPlaceholder {
+        try? fileManager.removeItem(at: srcPath)
+      }
       switch event {
       case .selected(let urls):
-        invoke.resolve(["file": urls.first!])
+        if let url = urls.first {
+          invoke.resolve(["file": url])
+        } else {
+          invoke.resolve(["file": nil])
+        }
       case .cancelled:
         invoke.resolve(["file": nil])
       case .error(let error):
