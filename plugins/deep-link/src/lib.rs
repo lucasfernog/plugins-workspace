@@ -58,7 +58,10 @@ fn init_deep_link<R: Runtime>(
                         _ => None,
                     };
 
-                    let _ = app_handle.emit("deep-link://new-url", vec![url]);
+                    // never emit `[null]` for a payload that could not be read
+                    if let Some(url) = url {
+                        let _ = app_handle.emit("deep-link://new-url", vec![url]);
+                    }
 
                     Ok(())
                 }),
