@@ -50,6 +50,7 @@ use tokio_tungstenite::{
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 type Id = u32;
 type WebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -77,8 +78,18 @@ impl Serialize for Error {
     }
 }
 
+/// The writer half of every open connection.
+///
+/// The map lock is only held to look up, insert or remove an entry, never across network I/O;
+/// each writer has its own lock, so a slow connection does not block sends on the others.
 #[derive(Default)]
-struct ConnectionManager(Mutex<HashMap<Id, WebSocketWriter>>);
+struct ConnectionManager(std::sync::Mutex<HashMap<Id, Arc<Mutex<WebSocketWriter>>>>);
+
+impl ConnectionManager {
+    fn connections(&self) -> std::sync::MutexGuard<'_, HashMap<Id, Arc<Mutex<WebSocketWriter>>>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
 
 #[cfg(any(
     feature = "rustls-tls",
@@ -207,10 +218,8 @@ async fn connect<R: Runtime>(
     let (write, read) = ws_stream.split();
     window
         .state::<ConnectionManager>()
-        .0
-        .lock()
-        .await
-        .insert(id, write);
+        .connections()
+        .insert(id, Arc::new(Mutex::new(write)));
 
     tauri::async_runtime::spawn(async move {
         read.for_each(move |message| {
@@ -218,8 +227,10 @@ async fn connect<R: Runtime>(
             let on_message_ = on_message.clone();
             async move {
                 if let Ok(Message::Close(_)) = message {
-                    let manager = window_.state::<ConnectionManager>();
-                    manager.0.lock().await.remove(&id);
+                    window_
+                        .state::<ConnectionManager>()
+                        .connections()
+                        .remove(&id);
                 }
 
                 let response = match message {
@@ -261,8 +272,12 @@ async fn send(
     id: Id,
     message: WebSocketMessage,
 ) -> Result<()> {
-    if let Some(write) = manager.0.lock().await.get_mut(&id) {
-        write
+    // Clone the writer out so the map lock is not held while sending.
+    let writer = manager.connections().get(&id).cloned();
+    if let Some(writer) = writer {
+        writer
+            .lock()
+            .await
             .send(match message {
                 WebSocketMessage::Text(t) => Message::Text(t.into()),
                 WebSocketMessage::Binary(t) => Message::Binary(t.into()),
