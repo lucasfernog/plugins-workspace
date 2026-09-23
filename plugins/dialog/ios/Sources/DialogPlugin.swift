@@ -220,6 +220,16 @@ class DialogPlugin: Plugin {
           picker.sourceType = .photoLibrary
         }
 
+        // the default media types only include images
+        var mediaTypes: [String] = []
+        if filtersIncludeImage {
+          mediaTypes.append(kUTTypeImage as String)
+        }
+        if filtersIncludeVideo {
+          mediaTypes.append(kUTTypeMovie as String)
+        }
+        picker.mediaTypes = mediaTypes
+
         picker.modalPresentationStyle = .fullScreen
         self.presentViewController(picker)
       }

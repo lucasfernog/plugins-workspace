@@ -163,7 +163,8 @@ extension FilePickerController: UIImagePickerControllerDelegate, UINavigationCon
 
 	public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
 		dismissViewController(picker) {
-			if let url = info[.mediaURL] as? URL {
+			// videos are reported through `mediaURL`, images through `imageURL`
+			if let url = (info[.mediaURL] as? URL) ?? (info[.imageURL] as? URL) {
 				do {
 					let temporaryUrl = try self.saveTemporaryFile(url)
 					self.plugin.onFilePickerEvent(.selected([temporaryUrl]))
