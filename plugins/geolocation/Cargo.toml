@@ -26,7 +26,6 @@ tauri-plugin = { workspace = true, features = ["build"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
-log = { workspace = true }
 thiserror = { workspace = true }
 specta = { workspace = true, optional = true }
 

@@ -9,6 +9,7 @@
 //! - **specta**: Add support for [`specta::specta`](https://docs.rs/specta/2.0.0-rc.25/specta/attr.specta.html) on structs like [`PermissionStatus`], [`PositionOptions`].
 
 use tauri::{
+    ipc::{Channel, InvokeResponseBody},
     plugin::{Builder, TauriPlugin},
     Manager, Runtime,
 };
@@ -41,6 +42,25 @@ impl<R: Runtime, T: Manager<R>> crate::GeolocationExt<R> for T {
     fn geolocation(&self) -> &Geolocation<R> {
         self.state::<Geolocation<R>>().inner()
     }
+}
+
+/// Creates the channel a Rust `watch_position` caller receives its [`WatchEvent`]s through.
+fn watch_channel<F: Fn(WatchEvent) + Send + Sync + 'static>(callback: F) -> Channel {
+    Channel::new(move |event| {
+        let payload = match event {
+            InvokeResponseBody::Json(payload) => serde_json::from_str::<WatchEvent>(&payload)
+                .unwrap_or_else(|error| {
+                    WatchEvent::Error(format!(
+                        "Couldn't deserialize watch event payload: `{error}`"
+                    ))
+                }),
+            _ => WatchEvent::Error("Unexpected watch event payload.".to_string()),
+        };
+
+        callback(payload);
+
+        Ok(())
+    })
 }
 
 /// Initializes the plugin.

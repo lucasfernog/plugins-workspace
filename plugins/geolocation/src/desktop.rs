@@ -2,12 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use serde::{de::DeserializeOwned, Serialize};
-use tauri::{
-    ipc::{Channel, InvokeResponseBody},
-    plugin::PluginApi,
-    AppHandle, Runtime,
-};
+use serde::de::DeserializeOwned;
+use tauri::{ipc::Channel, plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::*;
 
@@ -36,21 +32,7 @@ impl<R: Runtime> Geolocation<R> {
         options: PositionOptions,
         callback: F,
     ) -> crate::Result<u32> {
-        let channel = Channel::new(move |event| {
-            let payload = match event {
-                InvokeResponseBody::Json(payload) => serde_json::from_str::<WatchEvent>(&payload)
-                    .unwrap_or_else(|error| {
-                        WatchEvent::Error(format!(
-                            "Couldn't deserialize watch event payload: `{error}`"
-                        ))
-                    }),
-                _ => WatchEvent::Error("Unexpected watch event payload.".to_string()),
-            };
-
-            callback(payload);
-
-            Ok(())
-        });
+        let channel = crate::watch_channel(callback);
         let id = channel.id();
 
         self.watch_position_inner(options, channel)?;
@@ -83,18 +65,4 @@ impl<R: Runtime> Geolocation<R> {
     ) -> crate::Result<PermissionStatus> {
         Ok(PermissionStatus::default())
     }
-}
-
-#[derive(Serialize)]
-#[allow(unused)] // TODO:
-struct WatchPayload {
-    options: PositionOptions,
-    channel: Channel,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(unused)] // TODO:
-struct ClearWatchPayload {
-    channel_id: u32,
 }
