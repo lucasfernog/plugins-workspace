@@ -139,7 +139,9 @@ async function readImage(): Promise<Image> {
 }
 
 /**
- * * Writes HTML or fallbacks to write provided plain text to the clipboard.
+ * Writes HTML to the clipboard, along with an optional plain text fallback.
+ *
+ * Applications that can paste HTML get the markup; the others, and {@link readText}, get `altText`.
  *
  * #### Platform-specific
  *
@@ -147,12 +149,10 @@ async function readImage(): Promise<Image> {
  *
  * @example
  * ```typescript
- * import { writeHtml } from '@tauri-apps/plugin-clipboard-manager';
- * await writeHtml('<h1>Tauri is awesome!</h1>', 'plaintext');
- * // The following will write "<h1>Tauri is awesome</h1>" as plain text
- * await writeHtml('<h1>Tauri is awesome!</h1>', '<h1>Tauri is awesome</h1>');
- * // we can read html data only as a string so there's just readText(), no readHtml()
- * assert(await readText(), '<h1>Tauri is awesome!</h1>');
+ * import { writeHtml, readText } from '@tauri-apps/plugin-clipboard-manager';
+ * await writeHtml('<h1>Tauri is awesome!</h1>', 'Tauri is awesome!');
+ * // reading the clipboard as text returns the plain text fallback, not the markup
+ * assert(await readText(), 'Tauri is awesome!');
  * ```
  *
  * @param html The HTML markup to write to the clipboard.
