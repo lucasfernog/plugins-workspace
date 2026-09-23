@@ -118,9 +118,8 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
       var jsObject: JsonObject = [:]
 
       jsObject["format"] = formatStringFromMetadata(found.type)
-      if found.stringValue != nil {
-        jsObject["content"] = found.stringValue
-      }
+      // `content` is always a string in the JS `Scanned` type, as on Android
+      jsObject["content"] = found.stringValue ?? ""
 
       invoke?.resolve(jsObject)
       destroy()
