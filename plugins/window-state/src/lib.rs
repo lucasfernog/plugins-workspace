@@ -20,8 +20,9 @@ use tauri::{
 
 use std::{
     collections::{HashMap, HashSet},
-    fs::create_dir_all,
-    io::BufReader,
+    fs::{create_dir_all, File},
+    io::{BufReader, Write},
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -157,7 +158,7 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         }
 
         create_dir_all(app_dir)?;
-        std::fs::write(state_path, serde_json::to_vec_pretty(&*state)?)?;
+        write_atomically(&state_path, &serde_json::to_vec_pretty(&*state)?)?;
 
         Ok(())
     }
@@ -534,6 +535,27 @@ impl Builder {
     }
 }
 
+/// Writes `contents` to a temporary file next to `path` and renames it over `path`, so a
+/// crash or kill mid-write leaves the previous file intact instead of a truncated one.
+fn write_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let mut tmp_path = path.as_os_str().to_owned();
+    tmp_path.push(".tmp");
+    let tmp_path = PathBuf::from(tmp_path);
+
+    let result = (|| {
+        let mut file = File::create(&tmp_path)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        std::fs::rename(&tmp_path, path)
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    result
+}
+
 fn load_saved_window_states<R: Runtime>(
     app: &AppHandle<R>,
     filename: &String,
@@ -571,5 +593,34 @@ impl MonitorExt for Monitor {
         ]
         .into_iter()
         .any(|(x, y)| x >= left && x < right && y >= top && y < bottom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_atomically_replaces_the_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-window-state-test-{}",
+            std::process::id()
+        ));
+        create_dir_all(&dir).unwrap();
+        let path = dir.join(DEFAULT_FILENAME);
+
+        write_atomically(&path, b"first").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        write_atomically(&path, b"second").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+
+        // no temporary file is left behind
+        let entries: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, [DEFAULT_FILENAME]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
