@@ -9,6 +9,7 @@ use crate::SingleInstanceCallback;
 use std::{
     cell::RefCell,
     collections::VecDeque,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use tauri::{
@@ -44,9 +45,9 @@ const FIND_FIRST_INSTANCE_TIMEOUT: Duration = Duration::from_secs(5);
 /// includes running the callback) before exiting anyway.
 const SEND_TIMEOUT_MS: u32 = 10_000;
 
-struct MutexHandle(isize);
+struct MutexHandle(Mutex<Option<isize>>);
 
-struct TargetWindowHandle(isize);
+struct TargetWindowHandle(Mutex<Option<isize>>);
 
 struct UserData<R: Runtime> {
     app: AppHandle<R>,
@@ -143,11 +144,11 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                 }
             }
 
-            app.manage(MutexHandle(hmutex as _));
+            app.manage(MutexHandle(Mutex::new(Some(hmutex as _))));
 
             let userdata = Box::into_raw(Box::new(UserData::new(app.clone(), callback)));
             let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
-            app.manage(TargetWindowHandle(hwnd as _));
+            app.manage(TargetWindowHandle(Mutex::new(Some(hwnd as _))));
 
             Ok(())
         })
@@ -192,13 +193,21 @@ fn forward_to_first_instance(hwnd: HWND) {
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
     // Destroy the window before releasing the mutex: a starting instance that finds the mutex
     // taken looks for the window, and must not find one that is about to go away.
-    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
-        unsafe { DestroyWindow(hwnd.0 as _) };
+    // The handles are taken out of the state so calling this more than once (manually, then on
+    // `RunEvent::Exit`) doesn't close a handle value that may have been reused since.
+    if let Some(hwnd) = manager
+        .try_state::<TargetWindowHandle>()
+        .and_then(|hwnd| hwnd.0.lock().unwrap().take())
+    {
+        unsafe { DestroyWindow(hwnd as _) };
     }
-    if let Some(hmutex) = manager.try_state::<MutexHandle>() {
+    if let Some(hmutex) = manager
+        .try_state::<MutexHandle>()
+        .and_then(|hmutex| hmutex.0.lock().unwrap().take())
+    {
         unsafe {
-            ReleaseMutex(hmutex.0 as _);
-            CloseHandle(hmutex.0 as _);
+            ReleaseMutex(hmutex as _);
+            CloseHandle(hmutex as _);
         }
     }
 }
@@ -275,7 +284,12 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
 
         WM_DESTROY => {
             let userdata = UserData::<R>::from_hwnd_raw(hwnd);
-            drop(Box::from_raw(userdata));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            // If the window is destroyed from within the callback (e.g. the callback calls
+            // `destroy()`), the user data is still in use: leak it instead of freeing it.
+            if !userdata.is_null() && (*userdata).callback.try_borrow_mut().is_ok() {
+                drop(Box::from_raw(userdata));
+            }
             0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),

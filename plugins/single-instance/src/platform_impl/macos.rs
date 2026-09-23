@@ -6,6 +6,7 @@ use std::{
     io::{BufWriter, Error, ErrorKind, Write},
     os::unix::net::UnixStream,
     path::PathBuf,
+    sync::Mutex,
 };
 
 #[cfg(feature = "semver")]
@@ -32,6 +33,7 @@ pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
                         ErrorKind::NotFound | ErrorKind::ConnectionRefused => {
                             // This process claims itself as singleton as likely none exists
                             socket_cleanup(&socket);
+                            app.manage(OwnedSocket(Mutex::new(Some(socket.clone()))));
                             listen_for_other_instances(socket, app.clone(), cb);
                         }
                         _ => {
@@ -53,9 +55,18 @@ pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
         .build()
 }
 
+/// The socket this instance listens on, removed by [`destroy`].
+struct OwnedSocket(Mutex<Option<PathBuf>>);
+
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
-    let socket = socket_path(manager.config(), manager.package_info());
-    socket_cleanup(&socket);
+    // Only remove the socket if this instance created it, and only once: by the time `destroy`
+    // runs a second time, a new instance may have created a socket at the same path.
+    if let Some(socket) = manager
+        .try_state::<OwnedSocket>()
+        .and_then(|socket| socket.0.lock().unwrap().take())
+    {
+        socket_cleanup(&socket);
+    }
 }
 
 fn socket_path(config: &Config, _package_info: &tauri::PackageInfo) -> PathBuf {
