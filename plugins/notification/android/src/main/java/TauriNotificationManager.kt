@@ -38,6 +38,7 @@ const val NOTIFICATION_OBJ_INTENT_KEY = "LocalNotficationObject"
 const val ACTION_INTENT_KEY = "NotificationUserAction"
 const val NOTIFICATION_IS_REMOVABLE_KEY = "NotificationRepeating"
 const val REMOTE_INPUT_KEY = "NotificationRemoteInput"
+const val NOTIFICATION_TOKEN_INTENT_KEY = "NotificationToken"
 const val DEFAULT_NOTIFICATION_CHANNEL_ID = "default"
 const val DEFAULT_PRESS_ACTION = "tap"
 
@@ -59,6 +60,14 @@ class TauriNotificationManager(
       data.getIntExtra(NOTIFICATION_INTENT_KEY, Int.MIN_VALUE)
     if (notificationId == Int.MIN_VALUE) {
       Logger.debug(Logger.tags("Notification"), "Activity started without notification attached")
+      return null
+    }
+    if (data.getStringExtra(NOTIFICATION_TOKEN_INTENT_KEY) != notificationStorage.getIntentToken()) {
+      Logger.error(
+        Logger.tags("Notification"),
+        "Ignoring a notification intent that was not created by the notification plugin",
+        null
+      )
       return null
     }
     val isRemovable =
@@ -300,6 +309,7 @@ class TauriNotificationManager(
     intent.putExtra(NOTIFICATION_INTENT_KEY, notification.id)
     intent.putExtra(ACTION_INTENT_KEY, action)
     intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, notification.sourceJson)
+    intent.putExtra(NOTIFICATION_TOKEN_INTENT_KEY, storage.getIntentToken())
     val schedule = notification.schedule
     intent.putExtra(NOTIFICATION_IS_REMOVABLE_KEY, schedule == null || schedule.isRemovable())
     return intent

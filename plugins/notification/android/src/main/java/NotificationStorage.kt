@@ -9,11 +9,15 @@ import android.content.SharedPreferences
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.json.JSONException
 import java.lang.Exception
+import java.util.UUID
 
 // Key for private preferences
 private const val NOTIFICATION_STORE_ID = "NOTIFICATION_STORE"
 // Key used to save action types
 private const val ACTION_TYPES_ID = "ACTION_TYPE_STORE"
+// Key for the preferences holding the notification intent token
+private const val INTENT_TOKEN_STORE_ID = "NOTIFICATION_INTENT_TOKEN_STORE"
+private const val INTENT_TOKEN_KEY = "token"
 
 class NotificationStorage(private val context: Context, private val jsonMapper: ObjectMapper) {
   fun appendNotifications(localNotifications: List<Notification>) {
@@ -72,6 +76,22 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
     val editor = getStorage(NOTIFICATION_STORE_ID).edit()
     editor.remove(id)
     editor.apply()
+  }
+
+  /**
+   * A random token, generated once per installation, that the plugin attaches to the intents
+   * of its notifications. The launcher activity is exported, so any app can start it with
+   * notification extras; only intents carrying this token are reported as notification actions.
+   */
+  fun getIntentToken(): String {
+    val storage = getStorage(INTENT_TOKEN_STORE_ID)
+    val token = storage.getString(INTENT_TOKEN_KEY, null)
+    if (token != null) {
+      return token
+    }
+    val newToken = UUID.randomUUID().toString()
+    storage.edit().putString(INTENT_TOKEN_KEY, newToken).commit()
+    return newToken
   }
 
   private fun getStorage(key: String): SharedPreferences {
