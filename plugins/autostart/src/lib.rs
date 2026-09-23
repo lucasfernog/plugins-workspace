@@ -66,10 +66,28 @@ pub struct AutoLaunchManager(AutoLaunch);
 impl AutoLaunchManager {
     /// Enables auto start, registering the application to launch at login.
     ///
+    /// The registered program is the executable that is currently running (the AppImage on
+    /// Linux, and the `.app` bundle with [`MacosLauncher::AppleScript`]), so enabling it from
+    /// `tauri dev` registers the development binary. The entry is named after
+    /// [`Builder::app_name`] (defaults to the app's `productName`); renaming the app later leaves
+    /// the old entry behind.
+    ///
+    /// - **Linux:** writes `~/.config/autostart/<app name>.desktop`.
+    /// - **macOS:** writes `~/Library/LaunchAgents/<app name>.plist` with
+    ///   [`MacosLauncher::LaunchAgent`], or adds a login item through System Events with
+    ///   [`MacosLauncher::AppleScript`].
+    /// - **Windows:** writes the `<app name>` value of the
+    ///   `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` registry key.
+    ///
+    /// Enabling it again rewrites the entry.
+    ///
     /// ## Errors
     ///
     /// Returns [`Error::Anyhow`] if the platform-specific registration fails, for example
-    /// when the application path does not exist or is not absolute.
+    /// when the application path does not exist or is not absolute, when the home directory
+    /// can't be resolved, or on macOS when the app runs from a temporary App Translocation path
+    /// (a quarantined app launched from its download location) or, with
+    /// [`MacosLauncher::AppleScript`], when the user denies the Automation permission.
     pub fn enable(&self) -> Result<()> {
         self.0
             .enable()
@@ -78,6 +96,8 @@ impl AutoLaunchManager {
     }
 
     /// Disables auto start, removing the application from the list of programs launched at login.
+    ///
+    /// Succeeds without doing anything when auto start is already disabled.
     ///
     /// ## Errors
     ///
@@ -93,6 +113,14 @@ impl AutoLaunchManager {
     }
 
     /// Returns whether auto start is currently enabled for the application.
+    ///
+    /// - **Linux:** `false` when the desktop entry is missing, or was turned off in the desktop
+    ///   environment's settings (`Hidden=true` or `X-GNOME-Autostart-enabled=false`).
+    /// - **macOS:** with [`MacosLauncher::LaunchAgent`], whether the Launch Agent file exists;
+    ///   with [`MacosLauncher::AppleScript`], whether a login item with the app's name exists
+    ///   (`false` if the Automation permission is denied).
+    /// - **Windows:** `false` when the `Run` registry value is missing, or the app was turned off
+    ///   in Task Manager's startup apps.
     ///
     /// ## Errors
     ///
