@@ -1399,11 +1399,6 @@ impl Update {
     /// │          └── ...
     /// └── ...
     fn install_inner(&self, bytes: &[u8]) -> Result<()> {
-        use flate2::read::GzDecoder;
-
-        let cursor = Cursor::new(bytes);
-        let mut extracted_files: Vec<PathBuf> = Vec::new();
-
         // Create temp directories for backup and extraction
         let tmp_backup_dir = tempfile::Builder::new()
             .prefix("tauri_current_app")
@@ -1413,27 +1408,8 @@ impl Update {
             .prefix("tauri_updated_app")
             .tempdir()?;
 
-        let decoder = GzDecoder::new(cursor);
-        let mut archive = tar::Archive::new(decoder);
-
         // Extract files to temporary directory
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            let collected_path: PathBuf = entry.path()?.iter().skip(1).collect();
-            let extraction_path = tmp_extract_dir.path().join(&collected_path);
-
-            // Ensure parent directories exist
-            if let Some(parent) = extraction_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-
-            if let Err(err) = entry.unpack(&extraction_path) {
-                // Cleanup on error
-                std::fs::remove_dir_all(tmp_extract_dir.path()).ok();
-                return Err(err.into());
-            }
-            extracted_files.push(extraction_path);
-        }
+        extract_app_archive(bytes, tmp_extract_dir.path())?;
 
         // Try to move the current app to backup
         let move_result = std::fs::rename(
@@ -1492,6 +1468,159 @@ impl Update {
 
         Ok(())
     }
+}
+
+/// Extracts the `.app` bundle in the gzipped tarball `bytes` into `dest`, stripping the bundle
+/// directory itself (the archive's single top-level directory).
+#[cfg(target_os = "macos")]
+fn extract_app_archive(bytes: &[u8], dest: &Path) -> Result<()> {
+    let invalid = |message: String| {
+        Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            message,
+        ))
+    };
+
+    // resolved, so that it can be compared with the resolved parents of the extracted files
+    let dest = dest.canonicalize()?;
+
+    let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
+    let mut archive = tar::Archive::new(decoder);
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let entry_path = entry.path()?.into_owned();
+        let relative_path = app_archive_entry_path(&entry_path).ok_or_else(|| {
+            invalid(format!(
+                "invalid path in the update archive: {}",
+                entry_path.display()
+            ))
+        })?;
+
+        let extraction_path = dest.join(&relative_path);
+        // the bundle directory itself is unpacked onto `dest`, which applies its permissions
+        if !relative_path.as_os_str().is_empty() {
+            let parent = extraction_path.parent().unwrap_or(dest.as_path());
+            // Ensure parent directories exist
+            std::fs::create_dir_all(parent)?;
+            // a symlink extracted earlier must not redirect the entry out of the directory
+            if !parent.canonicalize()?.starts_with(&dest) {
+                return Err(invalid(format!(
+                    "the update archive entry {} points outside of the app bundle",
+                    entry_path.display()
+                )));
+            }
+        }
+
+        entry.unpack(&extraction_path)?;
+    }
+
+    Ok(())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::extract_app_archive;
+    use std::{fs, os::unix::fs::PermissionsExt, path::Path};
+
+    enum Entry<'a> {
+        Dir(&'a str),
+        File(&'a str, &'a str),
+        Symlink(&'a str, &'a str),
+    }
+
+    fn archive(entries: &[Entry]) -> Vec<u8> {
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        for entry in entries {
+            let mut header = tar::Header::new_gnu();
+            match entry {
+                Entry::Dir(path) => {
+                    header.set_entry_type(tar::EntryType::Directory);
+                    header.set_mode(0o755);
+                    header.set_size(0);
+                    builder
+                        .append_data(&mut header, path, std::io::empty())
+                        .unwrap();
+                }
+                Entry::File(path, contents) => {
+                    header.set_mode(0o644);
+                    header.set_size(contents.len() as u64);
+                    builder
+                        .append_data(&mut header, path, contents.as_bytes())
+                        .unwrap();
+                }
+                Entry::Symlink(path, target) => {
+                    header.set_entry_type(tar::EntryType::Symlink);
+                    header.set_size(0);
+                    builder.append_link(&mut header, path, target).unwrap();
+                }
+            }
+        }
+        builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn read(path: &Path) -> String {
+        fs::read_to_string(path).unwrap()
+    }
+
+    #[test]
+    fn extracts_the_bundle_contents() {
+        for prefix in ["", "./"] {
+            let dest = tempfile::tempdir().unwrap();
+            let bytes = archive(&[
+                Entry::Dir(&format!("{prefix}App.app/")),
+                Entry::Dir(&format!("{prefix}App.app/Contents/")),
+                Entry::File(&format!("{prefix}App.app/Contents/Info.plist"), "plist"),
+                Entry::File(&format!("{prefix}App.app/Contents/MacOS/app"), "binary"),
+            ]);
+            extract_app_archive(&bytes, dest.path()).unwrap();
+            assert_eq!(read(&dest.path().join("Contents/Info.plist")), "plist");
+            assert_eq!(read(&dest.path().join("Contents/MacOS/app")), "binary");
+            assert!(!dest.path().join("App.app").exists());
+            // the bundle directory permissions come from the archive
+            let mode = fs::metadata(dest.path()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
+    }
+
+    #[test]
+    fn rejects_entries_escaping_the_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let dest = root.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+
+        // `..` components are covered by `resolves_app_archive_entry_paths`, `tar::Builder`
+        // refuses to write them
+        let outside = root.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let bytes = archive(&[
+            Entry::Dir("App.app/"),
+            Entry::Symlink("App.app/link", outside.to_str().unwrap()),
+            Entry::File("App.app/link/escaped", "x"),
+        ]);
+        assert!(extract_app_archive(&bytes, &dest).is_err());
+        assert!(!outside.join("escaped").exists());
+    }
+}
+
+/// Path of an entry of a macOS update archive, relative to the `.app` bundle directory, which is
+/// the archive's single top-level directory.
+///
+/// Leading `./` components are ignored, and `None` is returned for paths that could escape the
+/// bundle directory (absolute paths and `..` components).
+#[cfg(any(target_os = "macos", test))]
+fn app_archive_entry_path(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(c) => components.push(c),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    Some(components.into_iter().skip(1).collect())
 }
 
 /// Gets the base target string used by the updater. If bundle type is available it
@@ -1873,6 +2002,31 @@ mod tests {
         let comment = "timestamp:1700000000\tfile:app.zip\tversion:2024-01-01";
         assert!(verify_signed_version(comment, "2024-01-01", true).is_ok());
         assert!(verify_signed_version(comment, "2024-01-02", true).is_err());
+    }
+
+    #[test]
+    fn resolves_app_archive_entry_paths() {
+        use super::app_archive_entry_path;
+        use std::path::{Path, PathBuf};
+
+        let resolve = |p: &str| app_archive_entry_path(Path::new(p));
+
+        assert_eq!(resolve("App.app"), Some(PathBuf::new()));
+        assert_eq!(resolve("App.app/"), Some(PathBuf::new()));
+        assert_eq!(
+            resolve("App.app/Contents/MacOS/app"),
+            Some(PathBuf::from("Contents/MacOS/app"))
+        );
+        // archives created with `tar -C dir .`
+        assert_eq!(resolve("./"), Some(PathBuf::new()));
+        assert_eq!(
+            resolve("./App.app/Contents/Info.plist"),
+            Some(PathBuf::from("Contents/Info.plist"))
+        );
+        // must not escape the extraction directory
+        assert_eq!(resolve("App.app/../../../x"), None);
+        assert_eq!(resolve("App.app/Contents/../../x"), None);
+        assert_eq!(resolve("/App.app/Contents"), None);
     }
 
     #[test]
