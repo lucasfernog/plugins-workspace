@@ -542,11 +542,15 @@ impl Updater {
         // Set SSL certs for linux if they aren't available.
         #[cfg(target_os = "linux")]
         {
-            if std::env::var_os("SSL_CERT_FILE").is_none() {
-                std::env::set_var("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
+            // only point at the Debian locations when they exist: on other distributions (e.g.
+            // Fedora) a missing file would break TLS for the whole app and its child processes
+            const CERT_FILE: &str = "/etc/ssl/certs/ca-certificates.crt";
+            const CERT_DIR: &str = "/etc/ssl/certs";
+            if std::env::var_os("SSL_CERT_FILE").is_none() && Path::new(CERT_FILE).is_file() {
+                std::env::set_var("SSL_CERT_FILE", CERT_FILE);
             }
-            if std::env::var_os("SSL_CERT_DIR").is_none() {
-                std::env::set_var("SSL_CERT_DIR", "/etc/ssl/certs");
+            if std::env::var_os("SSL_CERT_DIR").is_none() && Path::new(CERT_DIR).is_dir() {
+                std::env::set_var("SSL_CERT_DIR", CERT_DIR);
             }
         }
         let target = if let Some(target) = &self.target {
