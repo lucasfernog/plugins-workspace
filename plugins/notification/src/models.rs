@@ -243,6 +243,12 @@ pub struct NotificationData {
     pub(crate) auto_cancel: bool,
     #[serde(default)]
     pub(crate) silent: bool,
+    /// Lock screen visibility (`Notification.VISIBILITY_*`), only used on Android.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) visibility: Option<i8>,
+    /// Number of items the notification represents, only used on Android.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) number: Option<i32>,
 }
 
 fn default_id() -> i32 {
@@ -272,6 +278,8 @@ impl Default for NotificationData {
             ongoing: false,
             auto_cancel: false,
             silent: false,
+            visibility: None,
+            number: None,
         }
     }
 }
@@ -910,5 +918,27 @@ mod android {
         pub fn build(self) -> Channel {
             self.0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_data_forwards_visibility_and_number() {
+        let data: NotificationData = serde_json::from_value(serde_json::json!({
+            "title": "title",
+            "visibility": -1,
+            "number": 3
+        }))
+        .unwrap();
+        let value = serde_json::to_value(&data).unwrap();
+        assert_eq!(value["visibility"], -1);
+        assert_eq!(value["number"], 3);
+
+        let value = serde_json::to_value(NotificationData::default()).unwrap();
+        assert!(value.get("visibility").is_none());
+        assert!(value.get("number").is_none());
     }
 }

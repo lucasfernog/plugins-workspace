@@ -198,6 +198,7 @@ class TauriNotificationManager(
       }
     }
     mBuilder.setVisibility(notification.visibility ?: NotificationCompat.VISIBILITY_PRIVATE)
+    notification.number?.let { mBuilder.setNumber(it) }
     mBuilder.setOnlyAlertOnce(true)
     mBuilder.setSmallIcon(notification.getSmallIcon(context, getDefaultSmallIcon(context)))
     mBuilder.setLargeIcon(notification.getLargeIcon(context))
