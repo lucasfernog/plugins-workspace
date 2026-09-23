@@ -6,9 +6,14 @@ use crate::{ChangePayload, StoreState};
 use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
+    ffi::OsString,
     fs,
+    io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager, Resource, ResourceId, Runtime};
@@ -42,6 +47,58 @@ pub fn resolve_store_path<R: Runtime>(
     path: impl AsRef<Path>,
 ) -> crate::Result<PathBuf> {
     Ok(dunce::simplified(&app.path().resolve(path, BaseDirectory::AppData)?).to_path_buf())
+}
+
+/// Writes `bytes` to `path` without ever leaving a truncated file behind.
+///
+/// The bytes are written to a temporary file next to `path`, flushed to disk and then renamed
+/// over `path`, so a crash or power loss in the middle of a save leaves either the old or the new
+/// contents. If `path` is a symbolic link, its target is replaced instead of the link.
+/// If the rename fails (e.g. the file is held open without delete sharing on Windows),
+/// this falls back to writing the file in place.
+fn write_file_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let path = match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => fs::canonicalize(path)?,
+        _ => path.to_path_buf(),
+    };
+    let Some(file_name) = path.file_name() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid store path {path:?}: it has no file name"),
+        ));
+    };
+
+    let mut tmp_name = OsString::from(".");
+    tmp_name.push(file_name);
+    tmp_name.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let tmp_path = path.with_file_name(tmp_name);
+
+    let write_tmp = || -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp_path)?;
+        file.write_all(bytes)?;
+        if let Ok(metadata) = fs::metadata(&path) {
+            let _ = file.set_permissions(metadata.permissions());
+        }
+        file.sync_all()
+    };
+
+    if let Err(error) = write_tmp() {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error);
+    }
+
+    if fs::rename(&tmp_path, &path).is_err() {
+        let _ = fs::remove_file(&tmp_path);
+        fs::write(&path, bytes)?;
+    }
+
+    Ok(())
 }
 
 /// Builds a [`Store`]
@@ -307,7 +364,7 @@ impl<R: Runtime> StoreInner<R> {
         fs::create_dir_all(self.path.parent().expect("invalid store path"))?;
 
         let bytes = (self.serialize_fn)(&self.cache).map_err(crate::Error::Serialize)?;
-        fs::write(&self.path, bytes)?;
+        write_file_atomically(&self.path, &bytes)?;
 
         Ok(())
     }
@@ -634,5 +691,71 @@ impl<R: Runtime> Store<R> {
 impl<R: Runtime> Drop for Store<R> {
     fn drop(&mut self) {
         self.apply_pending_auto_save();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-store-test-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn write_file_atomically_creates_and_replaces() {
+        let dir = temp_dir("atomic-write");
+        let path = dir.join("store.json");
+
+        write_file_atomically(&path, b"first").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"first");
+
+        write_file_atomically(&path, b"second, longer contents").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"second, longer contents");
+
+        write_file_atomically(&path, b"3").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"3");
+
+        // no temporary file is left behind
+        let entries: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![OsString::from("store.json")]);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_file_atomically_rejects_paths_without_file_name() {
+        let root = if cfg!(windows) { "C:\\" } else { "/" };
+        let error = write_file_atomically(Path::new(root), b"{}").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_file_atomically_follows_symlinks() {
+        let dir = temp_dir("atomic-write-symlink");
+        let target = dir.join("target.json");
+        let link = dir.join("link.json");
+        fs::write(&target, b"old").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        write_file_atomically(&link, b"new").unwrap();
+
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }
