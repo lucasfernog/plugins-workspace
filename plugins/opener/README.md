@@ -116,6 +116,80 @@ fn main() {
 }
 ```
 
+## Permissions
+
+By default, the `opener:default` permission allows:
+
+- `openUrl` for `mailto:`, `tel:`, `http://` and `https://` URLs, with their default application only (no `openWith`),
+- `revealItemInDir` for **any** path. This command has no scope, so a page can reveal any file in the file explorer and learn whether a path exists.
+
+`openPath` is not allowed by default. Allow it with the `opener:allow-open-path` permission and a `path` scope:
+
+```json
+{
+  "permissions": [
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$APPDATA/**" }]
+    }
+  ]
+}
+```
+
+Paths can start with a base directory variable (`$APPDATA`, `$DOWNLOAD`, `$HOME`, ...) and use glob patterns: `*` matches within one directory, `**` any number of directories. Opening an executable file runs it (on Windows and macOS for instance), so keep path scopes narrow, e.g. avoid allowing all of `$DOWNLOAD`.
+
+URL entries (`{ "url": "https://tauri.app/*" }`) are glob patterns matched against the whole URL string. Note that `*` also matches `/`, `?`, `#` and `@` there, so a pattern such as `https://*.tauri.app/*` does **not** restrict the host: it also matches `https://evil.com/?.tauri.app/`. Prefer patterns that start with a fixed origin, like `https://tauri.app/*`.
+
+### Opening with a specific application
+
+Each `url` or `path` entry has an optional `app` field that controls the `openWith` argument of `openUrl` / `openPath`:
+
+- omitted: only the default application may be used (`openWith` must not be set),
+- `"<name>"`: only this application may be used, e.g. `{ "path": "$APPDATA/*.mp4", "app": "vlc" }`,
+- `true`: any application may be used. This lets the webview run any program installed on the system (`openPath(file, "powershell")`), so avoid it,
+- `false`: the entry never matches.
+
+On Windows, the URL or path is passed to the application unquoted, so only allow applications you trust with the arguments your scope permits.
+
+`openUrl(url, "inAppBrowser")` opens the URL in an in-app browser on Android and iOS (and in the default browser on desktop). Since `opener:default` only allows the default application, it needs its own scope entry:
+
+```json
+{
+  "identifier": "opener:allow-open-url",
+  "allow": [{ "url": "https://*", "app": "inAppBrowser" }]
+}
+```
+
+### Configuration
+
+The plugin can be configured in `tauri.conf.json`:
+
+```json
+{
+  "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": true
+    }
+  }
+}
+```
+
+- `requireLiteralLeadingDot`: whether `*`, `?`, `**` and `[...]` in `path` scopes can match path components starting with a `.` (hidden files). Defaults to `true` (they cannot) on Unix systems and `false` on Windows.
+
+### Links
+
+By default, the plugin injects a script that opens `http:`, `https:`, `mailto:` and `tel:` links with the default application when they have `target="_blank"` or are clicked while holding `Ctrl` or `Shift`. These links go through `openUrl`, so they need the `opener:allow-open-url` permission and a matching scope. To disable this behavior:
+
+```rust
+tauri::Builder::default()
+    .plugin(
+        tauri_plugin_opener::Builder::new()
+            .open_js_links_on_click(false)
+            .build(),
+    )
+```
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
