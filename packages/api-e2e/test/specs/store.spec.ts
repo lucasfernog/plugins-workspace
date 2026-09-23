@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauri, describePlugin, scratchDir } from '../helpers/index.js'
+import {
+  tauri,
+  tauriError,
+  describePlugin,
+  scratchDir
+} from '../helpers/index.js'
 
 // Store paths are relative to `$APPDATA`, which is also inside the example's
 // fs scope, so the specs can inspect what the plugin persists.
@@ -125,6 +130,33 @@ describePlugin('store', () => {
       return contents
     }, `${dir}/autosave.json`)
     expect(onDisk).toEqual({ auto: true })
+  })
+
+  it('autoSave accepts fractional milliseconds and rejects negative ones', async () => {
+    const onDisk = await tauri(async (api, path) => {
+      const baseDir = api.fs.BaseDirectory.AppData
+      const store = await api.store.load(path, { autoSave: 50.5 })
+      await store.set('fractional', true)
+      const deadline = Date.now() + 10_000
+      while (!(await api.fs.exists(path, { baseDir }))) {
+        if (Date.now() > deadline) {
+          throw new Error('store was never auto-saved')
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      const contents = JSON.parse(
+        await api.fs.readTextFile(path, { baseDir })
+      ) as Record<string, unknown>
+      await store.close()
+      return contents
+    }, `${dir}/autosave-fractional.json`)
+    expect(onDisk).toEqual({ fractional: true })
+
+    const error = await tauriError(
+      (api, path) => api.store.load(path, { autoSave: -1 }),
+      `${dir}/autosave-negative.json`
+    )
+    expect(error).toContain('Invalid autoSave value')
   })
 
   it('defaults apply on load and reset restores them', async () => {

@@ -32,6 +32,11 @@ pub enum Error {
     /// Deserialize function not found
     #[error("Deserialize Function \"{0}\" not found")]
     DeserializeFunctionNotFound(String),
+    /// The `autoSave` option is not a boolean or a non-negative number of milliseconds.
+    #[error(
+        "Invalid autoSave value {0}, expected a boolean or a non-negative number of milliseconds"
+    )]
+    InvalidAutoSave(f64),
     /// Some Tauri API failed
     #[error(transparent)]
     Tauri(#[from] tauri::Error),

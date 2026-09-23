@@ -49,8 +49,17 @@ struct StoreState {
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum AutoSave {
-    DebounceDuration(u64),
+    /// Debounce duration in milliseconds, JavaScript numbers can be fractional.
+    DebounceDuration(f64),
     Bool(bool),
+}
+
+fn auto_save_debounce_duration(milliseconds: f64) -> Result<Duration> {
+    if milliseconds < 0.0 {
+        return Err(Error::InvalidAutoSave(milliseconds));
+    }
+    Duration::try_from_secs_f64(milliseconds / 1000.0)
+        .map_err(|_| Error::InvalidAutoSave(milliseconds))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,7 +94,7 @@ fn builder<R: Runtime>(
     if let Some(auto_save) = options.auto_save {
         match auto_save {
             AutoSave::DebounceDuration(duration) => {
-                builder = builder.auto_save(Duration::from_millis(duration));
+                builder = builder.auto_save(auto_save_debounce_duration(duration)?);
             }
             AutoSave::Bool(false) => {
                 builder = builder.disable_auto_save();
@@ -479,5 +488,36 @@ impl Builder {
                 }
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_save_option() {
+        let parse = |json: &str| {
+            let options: LoadStoreOptions = serde_json::from_str(json).unwrap();
+            match options.auto_save {
+                Some(AutoSave::DebounceDuration(ms)) => {
+                    Some(auto_save_debounce_duration(ms).map_err(|e| e.to_string()))
+                }
+                _ => None,
+            }
+        };
+        assert_eq!(
+            parse(r#"{"autoSave": 100}"#),
+            Some(Ok(Duration::from_millis(100)))
+        );
+        assert_eq!(parse(r#"{"autoSave": 0}"#), Some(Ok(Duration::ZERO)));
+        assert_eq!(
+            parse(r#"{"autoSave": 100.5}"#),
+            Some(Ok(Duration::from_micros(100_500)))
+        );
+        assert!(matches!(parse(r#"{"autoSave": -1}"#), Some(Err(_))));
+        assert!(matches!(parse(r#"{"autoSave": 1e300}"#), Some(Err(_))));
+        assert!(parse(r#"{"autoSave": false}"#).is_none());
+        assert!(parse(r#"{"autoSave": true}"#).is_none());
     }
 }
