@@ -25,6 +25,8 @@ import { type UnlistenFn, listen } from '@tauri-apps/api/event'
  * - **Windows / Linux:** This function reads the command line arguments and checks if there's only one value, which must be an URL with scheme matching one of the configured values.
  *   Note that you must manually check the arguments when registering deep link schemes dynamically with {@link register}.
  *   Additionally, the deep link might have been provided as a CLI argument so you should check if its format matches what you expect.
+ *   Later deep links only update it when they are forwarded by the single-instance plugin with its `deep-link` feature.
+ * - **Android:** Returns at most one URL, the last one the app was opened with.
  *
  * @returns A promise resolving to the list of URLs that triggered the deep link, or `null` if the app was not started via a deep link.
  * @since 2.0.0
@@ -46,6 +48,9 @@ export async function getCurrent(): Promise<string[] | null> {
  *
  * #### Platform-specific
  *
+ * - **Windows:** Writes the scheme under `HKEY_CURRENT_USER\Software\Classes`.
+ * - **Linux:** Writes `$XDG_DATA_HOME/applications/<binary name>-handler.desktop` (usually `~/.local/share/applications`) and makes it the default handler.
+ *   Needs the `xdg-mime` and `update-desktop-database` commands available on the system (the `xdg-utils` and `desktop-file-utils` packages).
  * - **macOS / Android / iOS:** Unsupported.
  *
  * @returns A promise that resolves once the protocol has been registered.
@@ -69,7 +74,7 @@ export async function register(protocol: string): Promise<null> {
  * #### Platform-specific
  *
  * - **Windows:** Requires admin rights if the protocol is registered on the local machine (this can happen when registered from the NSIS installer when the install mode is set to both or per machine).
- * - **Linux:** Can only unregister the scheme if it was initially registered with {@link register}. May not work on older distros.
+ * - **Linux:** Can only unregister the scheme if it was initially registered with {@link register}. Refreshes the desktop database with the `update-desktop-database` command; without it, {@link isRegistered} may keep returning `true`. May not work on older distros.
  * - **macOS / Android / iOS:** Unsupported.
  *
  * @returns A promise that resolves once the protocol has been unregistered.
@@ -92,6 +97,7 @@ export async function unregister(protocol: string): Promise<null> {
  *
  * #### Platform-specific
  *
+ * - **Linux:** Needs the `xdg-mime` command available on the system.
  * - **macOS / Android / iOS:** Unsupported.
  *
  * @returns A promise resolving to `true` if the app is the default handler for the protocol, `false` otherwise.
