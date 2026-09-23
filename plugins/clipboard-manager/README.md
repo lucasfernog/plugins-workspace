@@ -82,6 +82,37 @@ await writeText('Tauri is awesome!')
 assert(await readText(), 'Tauri is awesome!')
 ```
 
+`writeHtml(html, altText)` writes HTML along with a plain text fallback, which is what `readText` returns afterwards, and `clear()` empties the clipboard.
+
+### Images
+
+On desktop, `writeImage` and `readImage` work with images:
+
+```javascript
+import { Image } from '@tauri-apps/api/image'
+import { writeImage, readImage } from '@tauri-apps/plugin-clipboard-manager'
+
+// raw RGBA pixels: a 2x1 image with a red and a green pixel
+const image = await Image.new([255, 0, 0, 255, 0, 255, 0, 255], 2, 1)
+await writeImage(image)
+await image.close()
+
+const read = await readImage()
+const { width, height } = await read.size()
+const rgba = await read.rgba()
+// free the image held by the Rust side once you are done with it
+await read.close()
+```
+
+`writeImage` also accepts the bytes of a PNG or ICO file, or a path to one. Tauri decodes those only when the `image-png` and/or `image-ico` feature of the `tauri` crate is enabled:
+
+```toml
+[dependencies]
+tauri = { version = "2", features = ["image-png"] }
+```
+
+Note that file paths are not checked against any file system scope: granting `allow-write-image` lets the webview copy any PNG or ICO file the app can read to the clipboard.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
