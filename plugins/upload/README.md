@@ -58,6 +58,16 @@ pub fn run() {
 }
 ```
 
+Then allow the plugin's commands in one of your [capabilities](https://v2.tauri.app/security/capabilities/). `upload:default` allows both `upload` and `download`:
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": ["upload:default"]
+}
+```
+
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings.
 
 ### Upload
@@ -117,6 +127,13 @@ The request is a `GET`, unless the optional fifth argument `body` is given: then
 The progress callback receives `progress` (the size of the last chunk, not the cumulative count), `progressTotal` (the bytes transferred so far), `total` and `transferSpeed` (bytes per second, recalculated about every 500 ms).
 
 Both functions reject when the file cannot be read or written, when the request fails, or when the server replies with a non-2xx status (`request failed with status code <code>: <response body>`). A transfer cannot be cancelled once it has started, and there is no timeout.
+
+### Security and paths
+
+> [!WARNING]
+> The plugin has no URL or file system scope, and the [file system plugin](../fs)'s scope does not apply to it. With `upload:default`, any code running in the webview can read any file the app process can read and send it to any server, and write a download to any path the process can write. Only grant these permissions to windows that load trusted content.
+
+File paths are used as-is. They are not resolved against a base directory, so a relative path resolves against the process's current working directory, which is unpredictable for a bundled app (often `/` on macOS). Always pass absolute paths, for example built with the `@tauri-apps/api/path` functions. On Android, `content://` URIs (such as those returned by the dialog plugin) are not supported.
 
 ## Contributing
 
