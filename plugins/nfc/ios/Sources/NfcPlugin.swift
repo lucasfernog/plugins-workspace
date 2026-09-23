@@ -24,7 +24,7 @@ struct ScanOptions: Decodable {
 struct NDEFRecord: Decodable {
   var format: UInt8?
   var kind: [UInt8]?
-  var identifier: [UInt8]?
+  var id: [UInt8]?
   var payload: [UInt8]?
 }
 
@@ -416,7 +416,7 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
         NFCNDEFPayload(
           format: NFCTypeNameFormat(rawValue: record.format ?? 0) ?? .unknown,
           type: dataFromByteArray(record.kind ?? []),
-          identifier: dataFromByteArray(record.identifier ?? []),
+          identifier: dataFromByteArray(record.id ?? []),
           payload: dataFromByteArray(record.payload ?? [])
         )
       )
