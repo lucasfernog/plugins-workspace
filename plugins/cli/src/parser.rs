@@ -240,12 +240,14 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = bind_string_arg!(arg, clap_arg, description, help);
     clap_arg = bind_string_arg!(arg, clap_arg, long_description, long_help);
 
-    let action = if arg.multiple {
-        ArgAction::Append
-    } else if arg.takes_value {
-        ArgAction::Set
-    } else {
+    // a flag (an argument that takes no value) can always be repeated, e.g. `-vvv`,
+    // and its matches are read with `ArgMatches::get_count`, which requires `Count`
+    let action = if !arg.takes_value {
         ArgAction::Count
+    } else if arg.multiple {
+        ArgAction::Append
+    } else {
+        ArgAction::Set
     };
 
     clap_arg = clap_arg.action(action);
@@ -292,4 +294,56 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    #[test]
+    fn repeated_flag_is_counted() {
+        let config = config(serde_json::json!({
+            "args": [{ "name": "verbose", "short": "v", "multiple": true }]
+        }));
+
+        let matches = parse(&config, &[]).unwrap();
+        assert_eq!(arg(&matches, "verbose").value, Value::Bool(false));
+        assert_eq!(arg(&matches, "verbose").occurrences, 0);
+
+        let matches = parse(&config, &["-vvv"]).unwrap();
+        assert_eq!(arg(&matches, "verbose").value, Value::Bool(true));
+        assert_eq!(arg(&matches, "verbose").occurrences, 3);
+
+        let matches = parse(&config, &["--verbose", "-v"]).unwrap();
+        assert_eq!(arg(&matches, "verbose").occurrences, 2);
+    }
 }
