@@ -95,23 +95,17 @@ impl DbPool {
 
                 let conn_url = &path_mapper(app_path, conn_url);
 
-                if !Sqlite::database_exists(conn_url).await.unwrap_or(false) {
-                    Sqlite::create_database(conn_url).await?;
-                }
+                create_if_missing::<Sqlite>(conn_url).await?;
                 Ok(Self::Sqlite(Pool::connect(conn_url).await?))
             }
             #[cfg(feature = "mysql")]
             "mysql" => {
-                if !MySql::database_exists(conn_url).await.unwrap_or(false) {
-                    MySql::create_database(conn_url).await?;
-                }
+                create_if_missing::<MySql>(conn_url).await?;
                 Ok(Self::MySql(Pool::connect(conn_url).await?))
             }
             #[cfg(feature = "postgres")]
             "postgres" => {
-                if !Postgres::database_exists(conn_url).await.unwrap_or(false) {
-                    Postgres::create_database(conn_url).await?;
-                }
+                create_if_missing::<Postgres>(conn_url).await?;
                 Ok(Self::Postgres(Pool::connect(conn_url).await?))
             }
             #[cfg(not(any(feature = "sqlite", feature = "postgres", feature = "mysql")))]
@@ -321,6 +315,24 @@ impl DbPool {
             DbPool::None => Vec::new(),
         })
     }
+}
+
+/// Creates the database behind `conn_url` when it does not exist yet.
+///
+/// When the existence check itself fails (for example because the server's
+/// maintenance database cannot be reached), the database is not created and the
+/// caller connects to it directly, so a transient or permission error never
+/// leads to a new database being created.
+#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+async fn create_if_missing<DB: MigrateDatabase>(conn_url: &str) -> Result<(), crate::Error> {
+    match DB::database_exists(conn_url).await {
+        Ok(true) => {}
+        Ok(false) => DB::create_database(conn_url).await?,
+        Err(error) => {
+            log::warn!("could not check whether the database exists, connecting without creating it: {error}")
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "sqlite")]
