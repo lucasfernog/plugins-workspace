@@ -7,7 +7,6 @@ import CoreHaptics
 import SwiftRs
 import Tauri
 import UIKit
-import WebKit
 
 class ImpactFeedbackOptions: Decodable {
   let style: ImpactFeedbackStyle
