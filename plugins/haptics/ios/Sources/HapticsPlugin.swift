@@ -99,7 +99,14 @@ class HapticsPlugin: Plugin {
   }
 
   /// Plays a continuous vibration of `duration` seconds, replacing the current one.
+  /// A zero duration only stops the current vibration.
   private func playVibration(duration: Double) {
+    guard duration > 0 else {
+      try? player?.stop(atTime: CHHapticTimeImmediate)
+      player = nil
+      return
+    }
+
     guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
       AudioServicesPlayAlertSound(kSystemSoundID_Vibrate)
       return

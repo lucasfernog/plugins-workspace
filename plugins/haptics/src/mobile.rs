@@ -32,7 +32,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Haptics<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Haptics<R> {
-    /// Triggers a vibration for `duration` milliseconds.
+    /// Triggers a vibration for `duration` milliseconds, replacing the vibration that is still
+    /// playing, if any. A `duration` of `0` only stops the current vibration.
     ///
     /// On iOS this plays a continuous [Core Haptics](https://developer.apple.com/documentation/corehaptics)
     /// pattern when the device supports it, falling back to the system alert vibration

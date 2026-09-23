@@ -17,7 +17,8 @@ import type {
 } from './bindings'
 
 /**
- * Triggers a vibration for `duration` milliseconds.
+ * Triggers a vibration for `duration` milliseconds, replacing the vibration that is still
+ * playing, if any. A `duration` of `0` only stops the current vibration.
  *
  * Has no effect on desktop platforms.
  *
@@ -27,7 +28,7 @@ import type {
  * await vibrate(300)
  * ```
  *
- * @param duration Duration of the vibration, in milliseconds.
+ * @param duration Duration of the vibration, in milliseconds. `0` stops the current vibration.
  * @returns A promise resolving to the {@link Result} of the operation.
  * @since 2.0.0
  */

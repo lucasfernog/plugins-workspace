@@ -102,7 +102,11 @@ class HapticsPlugin(private val activity: Activity): Plugin(activity) {
     @Command
     fun vibrate(invoke: Invoke) {
         val args = invoke.parseArgs(HapticsOptions::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (args.duration <= 0) {
+            // like the web Vibration API, a zero duration stops the current vibration
+            // (VibrationEffect.createOneShot throws for it)
+            vibrator.cancel()
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createOneShot(args.duration, VibrationEffect.DEFAULT_AMPLITUDE))
         } else {
             vibrator.vibrate(args.duration)
