@@ -82,14 +82,20 @@ pub(crate) const YES: &str = "Yes";
 #[cfg(mobile)]
 pub(crate) const NO: &str = "No";
 
+/// Runs a callback-based API and blocks until the callback is called.
+///
+/// If the callback is dropped without being called (for instance because the dialog could not
+/// be dispatched to the main thread while the app is exiting), this returns the default value
+/// (`None`, `false` or [`MessageDialogResult::Cancel`]), the same as a cancelled dialog, instead
+/// of panicking.
 macro_rules! blocking_fn {
     ($self:ident, $fn:ident) => {{
-        let (tx, rx) = sync_channel(0);
+        let (tx, rx) = sync_channel(1);
         let cb = move |response| {
-            tx.send(response).unwrap();
+            let _ = tx.send(response);
         };
         $self.$fn(cb);
-        rx.recv().unwrap()
+        rx.recv().unwrap_or_default()
     }};
 }
 
