@@ -89,11 +89,11 @@ impl DbPool {
                 let app_path = _app
                     .path()
                     .app_config_dir()
-                    .expect("No App config path was found!");
+                    .map_err(|e| sqlx::Error::Io(std::io::Error::other(e)))?;
 
-                create_dir_all(&app_path).expect("Couldn't create app config dir");
+                create_dir_all(&app_path).map_err(sqlx::Error::Io)?;
 
-                let conn_url = &path_mapper(app_path, conn_url);
+                let conn_url = &path_mapper(app_path, conn_url)?;
 
                 if !Sqlite::database_exists(conn_url).await.unwrap_or(false) {
                     Sqlite::create_database(conn_url).await?;
@@ -326,18 +326,46 @@ impl DbPool {
 #[cfg(feature = "sqlite")]
 /// Maps the user supplied DB connection string to a connection string
 /// with a fully qualified file path to the App's designed "app_path"
-fn path_mapper(mut app_path: std::path::PathBuf, connection_string: &str) -> String {
-    app_path.push(
-        connection_string
-            .split_once(':')
-            .expect("Couldn't parse the connection string for DB!")
-            .1,
-    );
+fn path_mapper(
+    mut app_path: std::path::PathBuf,
+    connection_string: &str,
+) -> Result<String, crate::Error> {
+    let invalid_url = || crate::Error::InvalidDbUrl(connection_string.to_string());
 
-    format!(
+    app_path.push(connection_string.split_once(':').ok_or_else(invalid_url)?.1);
+
+    Ok(format!(
         "sqlite:{}",
-        app_path
-            .to_str()
-            .expect("Problem creating fully qualified path to Database file!")
-    )
+        app_path.to_str().ok_or_else(invalid_url)?
+    ))
+}
+
+#[cfg(all(test, feature = "sqlite"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_mapper_joins_the_path_to_the_app_dir() {
+        let base = std::path::PathBuf::from("base");
+        let expected = format!("sqlite:{}", base.join("test.db").display());
+        assert_eq!(
+            path_mapper(base.clone(), "sqlite:test.db").unwrap(),
+            expected
+        );
+        assert!(matches!(
+            path_mapper(base, "no-scheme"),
+            Err(crate::Error::InvalidDbUrl(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_mapper_rejects_non_utf8_paths() {
+        use std::os::unix::ffi::OsStrExt;
+        let base = std::path::PathBuf::from(std::ffi::OsStr::from_bytes(b"base-\xff"));
+        assert!(matches!(
+            path_mapper(base, "sqlite:test.db"),
+            Err(crate::Error::InvalidDbUrl(_))
+        ));
+    }
 }
