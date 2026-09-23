@@ -11,12 +11,12 @@
     html_favicon_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png"
 )]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, net::SocketAddr};
 
 use http::Uri;
 use tauri::{
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    Runtime,
+    Manager, Runtime,
 };
 use tiny_http::{Header, Response as HttpResponse, Server};
 
@@ -64,6 +64,11 @@ impl Builder {
     /// Creates a new [`Builder`] that will serve the app's assets on the given `port`, bound to
     /// `localhost` unless [`Self::host`] is called.
     ///
+    /// Pass `0` to let the operating system pick a free port, then read the port that was
+    /// actually bound with [`LocalhostExt::localhost_addr`]. This avoids the race of picking a
+    /// free port first (e.g. with `portpicker`) and binding it later, when another process may
+    /// have taken it.
+    ///
     /// # Examples
     ///
     /// ```no_run
@@ -105,11 +110,13 @@ impl Builder {
 
     /// Builds the plugin, ready to be registered with [`tauri::Builder::plugin`].
     ///
-    /// On setup it spawns a background thread that starts a `tiny_http` server bound to
-    /// `host:port`. For every incoming request whose path resolves to a known frontend asset, the
-    /// server responds with that asset's bytes, automatically setting the `Content-Type`, the
-    /// `Content-Security-Policy` (when the asset has one) and a `Cache-Control: no-cache` header,
-    /// then invoking the [`Self::on_request`] hook (if any) before writing the response.
+    /// On setup it binds a `tiny_http` server to `host:port` and serves it from a background
+    /// thread. The bound address is available from [`LocalhostExt::localhost_addr`] once the
+    /// plugin is set up, for example in [`tauri::Builder::setup`]. For every incoming request whose
+    /// path resolves to a known frontend asset, the server responds with that asset's bytes,
+    /// automatically setting the `Content-Type`, the `Content-Security-Policy` (when the asset has
+    /// one) and a `Cache-Control: no-cache` header, then invoking the [`Self::on_request`] hook
+    /// (if any) before writing the response.
     ///
     /// # Errors
     ///
@@ -132,6 +139,9 @@ impl Builder {
                 let server = Server::http(format!("{host}:{port}")).map_err(|e| {
                     format!("failed to start the localhost server on {host}:{port}: {e}")
                 })?;
+                if let Some(addr) = server.server_addr().to_ip() {
+                    app.manage(ServerAddr(addr));
+                }
                 std::thread::spawn(move || {
                     for req in server.incoming_requests() {
                         let path = req
@@ -177,5 +187,42 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+struct ServerAddr(SocketAddr);
+
+/// Extension for [`Manager`] types (such as [`tauri::App`] and [`tauri::AppHandle`]) to read the
+/// localhost server's address.
+///
+/// # Examples
+///
+/// ```no_run
+/// use tauri::{WebviewUrl, WebviewWindowBuilder};
+/// use tauri_plugin_localhost::LocalhostExt;
+///
+/// fn setup<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+///     builder
+///         // port 0 lets the operating system pick a free port
+///         .plugin(tauri_plugin_localhost::Builder::new(0).host("127.0.0.1").build())
+///         .setup(|app| {
+///             let addr = app.localhost_addr().expect("localhost plugin not registered");
+///             let url = format!("http://{addr}").parse().unwrap();
+///             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url)).build()?;
+///             Ok(())
+///         })
+/// }
+/// ```
+pub trait LocalhostExt<R: Runtime> {
+    /// The address the localhost server is bound to, including the actual port when the
+    /// [`Builder`] was created with port `0`.
+    ///
+    /// Returns `None` if the plugin is not registered or not set up yet.
+    fn localhost_addr(&self) -> Option<SocketAddr>;
+}
+
+impl<R: Runtime, T: Manager<R>> LocalhostExt<R> for T {
+    fn localhost_addr(&self) -> Option<SocketAddr> {
+        self.try_state::<ServerAddr>().map(|addr| addr.0)
     }
 }
