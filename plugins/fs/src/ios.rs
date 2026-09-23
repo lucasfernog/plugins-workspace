@@ -28,10 +28,12 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 impl<R: Runtime> Fs<R> {
     /// Open a file.
     ///
-    /// # Platform-specific
+    /// Accepts regular paths and `file://` URLs. The path is not checked against the fs scope.
     ///
-    /// - **iOS**: This method will automatically start accessing a security-scoped resource if the path is a file URL.
-    ///   You must call [`Self::stop_accessing_security_scoped_resource`] when you're done accessing the file.
+    /// When `path` is a `file://` URL, this method starts accessing its security-scoped resource
+    /// (required for files outside of the app sandbox, e.g. picked with the dialog plugin).
+    /// Call [`Self::stop_accessing_security_scoped_resource`] when you are done with the file.
+    /// This only applies to direct Rust calls: the JavaScript API manages the access itself.
     pub fn open<P: Into<FilePath>>(
         &self,
         path: P,
@@ -53,7 +55,7 @@ impl<R: Runtime> Fs<R> {
                     // This is required for files outside the app's sandbox (e.g., from file picker)
                     // Note: We don't call stopAccessingSecurityScopedResource here because
                     // the file handle needs to remain accessible while the File is in use.
-                    // The access will be automatically stopped when the app is backgrounded or terminated.
+                    // The caller must stop accessing it when done (see the method docs).
                     unsafe {
                         let success = ns_url.startAccessingSecurityScopedResource();
                         if success {

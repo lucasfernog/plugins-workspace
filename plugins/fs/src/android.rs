@@ -30,10 +30,9 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 impl<R: Runtime> Fs<R> {
     /// Open a file.
     ///
-    /// # Platform-specific
-    ///
-    /// - **iOS**: This method will automatically start accessing a security-scoped resource if the path is a file URL.
-    ///   You must call `stop_accessing_security_scoped_resource` when you're done accessing the file.
+    /// Accepts regular paths, `content://` URIs and bundled resources (paths starting with
+    /// `asset://localhost/`, as returned by the resource directory on Android). URIs and resources
+    /// are opened by the Android plugin implementation. The path is not checked against the fs scope.
     pub fn open<P: Into<FilePath>>(
         &self,
         path: P,
