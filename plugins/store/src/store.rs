@@ -219,10 +219,20 @@ impl<R: Runtime> StoreBuilder<R> {
         } else {
             let rid = state.stores.read().unwrap().get(&self.path).copied();
             if let Some(rid) = rid {
-                // The resource id we stored can be invalid due to
-                // the resource table getting modified by an external source
-                // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
-                return Ok((self.app.resources_table().get(rid)?, rid));
+                let store = self.app.resources_table().get(rid);
+                match store {
+                    Ok(store) => return Ok((store, rid)),
+                    // The resource id we stored can be invalid due to
+                    // the resource table getting modified by an external source
+                    // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`),
+                    // forget it and create a new store instead
+                    Err(_) => {
+                        let mut stores = state.stores.write().unwrap();
+                        if stores.get(&self.path) == Some(&rid) {
+                            stores.remove(&self.path);
+                        }
+                    }
+                }
             }
         }
 

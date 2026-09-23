@@ -141,8 +141,10 @@ async fn get_store<R: Runtime>(
     store_state: State<'_, StoreState>,
     path: PathBuf,
 ) -> Result<Option<ResourceId>> {
-    let stores = store_state.stores.read().unwrap();
-    Ok(stores.get(&resolve_store_path(&app, path)?).copied())
+    let path = resolve_store_path(&app, path)?;
+    let rid = store_state.stores.read().unwrap().get(&path).copied();
+    // the stored resource id can be stale, see `StoreBuilder::build_inner`
+    Ok(rid.filter(|rid| app.resources_table().get::<Store<R>>(*rid).is_ok()))
 }
 
 #[tauri::command]
@@ -635,6 +637,38 @@ mod tests {
         new.close_resource();
         let current = app.get_store(&path).expect("the reloaded store was closed");
         assert!(Arc::ptr_eq(&current, &reloaded));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stale_resource_id_does_not_prevent_loading() {
+        let app = mock_app();
+        let dir = temp_dir("stale-rid");
+        let path = dir.join("store.json");
+
+        let (_, rid) = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .build_inner()
+            .unwrap();
+        // removes the store from the resources table without closing it, like
+        // `App::cleanup_before_exit` does
+        let removed = app
+            .resources_table()
+            .take::<Store<MockRuntime>>(rid)
+            .unwrap();
+        drop(removed);
+
+        assert!(app.get_store(&path).is_none());
+        let (store, new_rid) = app
+            .store_builder(&path)
+            .disable_auto_save()
+            .build_inner()
+            .expect("a stale resource id prevented loading the store");
+        assert_ne!(rid, new_rid);
+        let current = app.get_store(&path).unwrap();
+        assert!(Arc::ptr_eq(&current, &store));
 
         let _ = std::fs::remove_dir_all(dir);
     }
