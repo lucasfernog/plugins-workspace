@@ -6838,7 +6838,6 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
- "serde_repr",
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.12",

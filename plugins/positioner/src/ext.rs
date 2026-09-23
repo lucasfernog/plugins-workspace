@@ -5,7 +5,7 @@
 
 #[cfg(feature = "tray-icon")]
 use crate::Tray;
-use serde_repr::Deserialize_repr;
+use serde::{de::Error as _, Deserialize, Deserializer};
 #[cfg(feature = "tray-icon")]
 use tauri::Manager;
 #[cfg(feature = "tray-icon")]
@@ -16,7 +16,7 @@ use tauri::{PhysicalPosition, PhysicalSize, Result, Runtime, WebviewWindow, Wind
 ///
 /// The `Tray*` variants require the `tray-icon` feature and only resolve once the tray icon has
 /// reported its position (see `on_tray_event`); using one before that happens returns an error.
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug)]
 #[repr(u16)]
 pub enum Position {
     /// Top left corner of the current screen.
@@ -62,6 +62,50 @@ pub enum Position {
     /// Directly below the tray icon, horizontally centered on it.
     #[cfg(feature = "tray-icon")]
     TrayBottomCenter,
+}
+
+/// Deserializes from the variant's numeric value (as sent by the JS `Position` enum), with a
+/// clear error when a `Tray*` value is used without the `tray-icon` feature.
+impl<'de> Deserialize<'de> for Position {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        use Position::*;
+
+        let value = u16::deserialize(deserializer)?;
+        Ok(match value {
+            0 => TopLeft,
+            1 => TopRight,
+            2 => BottomLeft,
+            3 => BottomRight,
+            4 => TopCenter,
+            5 => BottomCenter,
+            6 => LeftCenter,
+            7 => RightCenter,
+            8 => Center,
+            #[cfg(feature = "tray-icon")]
+            9 => TrayLeft,
+            #[cfg(feature = "tray-icon")]
+            10 => TrayBottomLeft,
+            #[cfg(feature = "tray-icon")]
+            11 => TrayRight,
+            #[cfg(feature = "tray-icon")]
+            12 => TrayBottomRight,
+            #[cfg(feature = "tray-icon")]
+            13 => TrayCenter,
+            #[cfg(feature = "tray-icon")]
+            14 => TrayBottomCenter,
+            #[cfg(not(feature = "tray-icon"))]
+            9..=14 => {
+                return Err(D::Error::custom(
+                    "tray positions require the `tray-icon` feature of `tauri-plugin-positioner`",
+                ))
+            }
+            _ => {
+                return Err(D::Error::custom(format_args!(
+                    "invalid position `{value}`, expected a value between 0 and 14"
+                )))
+            }
+        })
+    }
 }
 
 /// A [`Window`] extension that provides extra methods related to positioning.
@@ -343,4 +387,32 @@ fn calculate_position<R: Runtime>(
     };
 
     Ok(physical_pos)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn position_deserializes_from_its_numeric_value() {
+        let position: Position = serde_json::from_value(serde_json::json!(8)).unwrap();
+        assert!(matches!(position, Position::Center));
+
+        let error = serde_json::from_value::<Position>(serde_json::json!(15)).unwrap_err();
+        assert!(error.to_string().contains("invalid position `15`"));
+    }
+
+    #[cfg(feature = "tray-icon")]
+    #[test]
+    fn tray_position_deserializes_with_the_tray_icon_feature() {
+        let position: Position = serde_json::from_value(serde_json::json!(14)).unwrap();
+        assert!(matches!(position, Position::TrayBottomCenter));
+    }
+
+    #[cfg(not(feature = "tray-icon"))]
+    #[test]
+    fn tray_position_names_the_missing_feature() {
+        let error = serde_json::from_value::<Position>(serde_json::json!(13)).unwrap_err();
+        assert!(error.to_string().contains("`tray-icon` feature"));
+    }
 }

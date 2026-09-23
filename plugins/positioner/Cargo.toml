@@ -32,7 +32,6 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
-serde_repr = "0.1"
 
 [features]
 tray-icon = ["tauri/tray-icon"]
