@@ -20,6 +20,10 @@ use tauri::{
 
 use std::env::current_exe;
 
+mod escape;
+#[cfg(target_os = "macos")]
+mod macos;
+
 type Result<T> = std::result::Result<T, Error>;
 
 /// The strategy used to register the application for auto start on macOS.
@@ -61,7 +65,11 @@ impl Serialize for Error {
 ///
 /// An instance is created and managed as Tauri state when the plugin is built; access it
 /// through [`ManagerExt::autolaunch`].
-pub struct AutoLaunchManager(AutoLaunch);
+pub struct AutoLaunchManager {
+    inner: AutoLaunch,
+    #[cfg(target_os = "macos")]
+    macos_launcher: MacosLauncher,
+}
 
 impl AutoLaunchManager {
     /// Enables auto start, registering the application to launch at login.
@@ -71,7 +79,7 @@ impl AutoLaunchManager {
     /// Returns [`Error::Anyhow`] if the platform-specific registration fails, for example
     /// when the application path does not exist or is not absolute.
     pub fn enable(&self) -> Result<()> {
-        self.0
+        self.inner
             .enable()
             .map_err(|e| e.to_string())
             .map_err(Error::Anyhow)
@@ -83,10 +91,17 @@ impl AutoLaunchManager {
     ///
     /// Returns [`Error::Anyhow`] if the platform-specific removal fails.
     pub fn disable(&self) -> Result<()> {
-        match self.0.disable() {
+        // `auto_launch` runs `delete login item "<name>"`, which fails when the login item
+        // doesn't exist, so only delete it when it exists.
+        #[cfg(target_os = "macos")]
+        if matches!(self.macos_launcher, MacosLauncher::AppleScript) {
+            return macos::delete_login_item(self.inner.get_app_name());
+        }
+
+        match self.inner.disable() {
             // On Windows, disabling deletes the app's `Run` registry value, which fails with
-            // "not found" when autostart is already disabled. macOS and Linux treat that as a
-            // no-op, so do the same here.
+            // "not found" when autostart is already disabled. The Launch Agent (macOS) and
+            // Linux backends skip a missing file, so treat it as a no-op here too.
             Err(auto_launch::Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             result => result.map_err(|e| e.to_string()).map_err(Error::Anyhow),
         }
@@ -98,7 +113,7 @@ impl AutoLaunchManager {
     ///
     /// Returns [`Error::Anyhow`] if the platform-specific check fails.
     pub fn is_enabled(&self) -> Result<bool> {
-        self.0
+        self.inner
             .is_enabled()
             .map_err(|e| e.to_string())
             .map_err(Error::Anyhow)
@@ -260,9 +275,11 @@ impl Builder {
                     builder.set_app_path(&current_exe.display().to_string());
                 }
 
-                app.manage(AutoLaunchManager(
-                    builder.build().map_err(|e| e.to_string())?,
-                ));
+                app.manage(AutoLaunchManager {
+                    inner: builder.build().map_err(|e| e.to_string())?,
+                    #[cfg(target_os = "macos")]
+                    macos_launcher: self.macos_launcher,
+                });
                 Ok(())
             })
             .build()
