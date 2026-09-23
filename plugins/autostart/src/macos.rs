@@ -4,9 +4,51 @@
 
 //! macOS pieces that the plugin implements itself instead of delegating to `auto_launch`.
 
-use std::process::Command;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-use crate::{escape::applescript_string, Error, Result};
+use crate::{
+    escape::{applescript_string, launch_agent_plist},
+    Error, Result,
+};
+
+/// `~/Library/LaunchAgents`, the directory `auto_launch` stores Launch Agents in.
+fn launch_agents_dir() -> Result<PathBuf> {
+    dirs::home_dir()
+        .map(|home| home.join("Library").join("LaunchAgents"))
+        .ok_or_else(|| Error::Anyhow("failed to resolve the home directory".into()))
+}
+
+/// Writes the Launch Agent that starts `app_path` with `args` at login.
+///
+/// This replaces `auto_launch`'s implementation, which doesn't escape the values it writes to
+/// the property list, so a `&` or `<` in the name, path or arguments made launchd ignore it.
+/// The file name and content are otherwise the same, so `auto_launch` still finds it in
+/// `is_enabled` and `disable`.
+pub(crate) fn write_launch_agent(app_name: &str, app_path: &str, args: &[String]) -> Result<()> {
+    let path = Path::new(app_path);
+    if !path.exists() {
+        return Err(Error::Anyhow(format!("app path doesn't exist: {app_path}")));
+    }
+    if !path.is_absolute() {
+        return Err(Error::Anyhow(format!(
+            "app path is not absolute: {app_path}"
+        )));
+    }
+
+    let dir = launch_agents_dir()?;
+    fs::create_dir_all(&dir)
+        .and_then(|()| {
+            fs::write(
+                dir.join(format!("{app_name}.plist")),
+                launch_agent_plist(app_name, app_path, args),
+            )
+        })
+        .map_err(|e| Error::Anyhow(e.to_string()))
+}
 
 /// Runs `tell application "System Events" to <command>` through `osascript`.
 fn run_system_events_script(command: &str) -> Result<()> {

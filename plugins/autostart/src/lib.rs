@@ -79,6 +79,15 @@ impl AutoLaunchManager {
     /// Returns [`Error::Anyhow`] if the platform-specific registration fails, for example
     /// when the application path does not exist or is not absolute.
     pub fn enable(&self) -> Result<()> {
+        #[cfg(target_os = "macos")]
+        if matches!(self.macos_launcher, MacosLauncher::LaunchAgent) {
+            return macos::write_launch_agent(
+                self.inner.get_app_name(),
+                self.inner.get_app_path(),
+                self.inner.get_args(),
+            );
+        }
+
         self.inner
             .enable()
             .map_err(|e| e.to_string())
