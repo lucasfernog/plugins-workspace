@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauriError, describePlugin } from '../helpers/index.js'
+import {
+  tauriError,
+  describePlugin,
+  itDesktop,
+  itOn
+} from '../helpers/index.js'
 
 // A successful open launches an external application (browser, file manager)
 // the suite cannot control or close, so only the scope enforcement is covered.
@@ -35,12 +40,23 @@ describePlugin('opener', () => {
     expect(message).toMatch(/Not allowed to open path/)
   })
 
-  it('revealItemInDir rejects paths that do not exist', async () => {
+  itDesktop('revealItemInDir rejects paths that do not exist', async () => {
     const message = await tauriError(async (api) =>
       api.opener.revealItemInDir(
         await api.path.join(await api.path.appDataDir(), 'does-not-exist-e2e')
       )
     )
-    expect(message).toMatch(/os error 2/)
+    expect(message).toMatch(/os error 2|path doesn't exist/)
   })
+
+  itOn(
+    ['android', 'ios'],
+    'revealItemInDir is unsupported on mobile',
+    async () => {
+      const message = await tauriError(async (api) =>
+        api.opener.revealItemInDir(await api.path.appDataDir())
+      )
+      expect(message).toMatch(/API not supported on the current platform/)
+    }
+  )
 })

@@ -2,56 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Reveal a path in the system's default explorer.
 ///
 /// ## Platform-specific:
 ///
-/// - **Android / iOS:** Unsupported.
+/// - **Android / iOS:** Unsupported, returns [`crate::Error::UnsupportedPlatform`].
 pub fn reveal_item_in_dir<P: AsRef<Path>>(path: P) -> crate::Result<()> {
-    let path = canonicalize(path.as_ref())?;
-
-    #[cfg(any(
-        windows,
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    ))]
-    return imp::reveal_items_in_dir(&[path]);
-
-    #[cfg(not(any(
-        windows,
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "netbsd",
-        target_os = "openbsd"
-    )))]
-    Err(crate::Error::UnsupportedPlatform)
+    reveal_items_in_dir([path])
 }
 
 /// Reveal multiple paths in the system's default explorer.
 ///
 /// ## Platform-specific:
 ///
-/// - **Android / iOS:** Unsupported.
+/// - **Android / iOS:** Unsupported, returns [`crate::Error::UnsupportedPlatform`].
 pub fn reveal_items_in_dir<I, P>(paths: I) -> crate::Result<()>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,
 {
-    let mut canonicalized = vec![];
-
-    for path in paths {
-        let path = canonicalize(path.as_ref())?;
-        canonicalized.push(path);
-    }
-
     #[cfg(any(
         windows,
         target_os = "macos",
@@ -61,7 +32,13 @@ where
         target_os = "netbsd",
         target_os = "openbsd"
     ))]
-    return imp::reveal_items_in_dir(&canonicalized);
+    {
+        let canonicalized = paths
+            .into_iter()
+            .map(|path| canonicalize(path.as_ref()))
+            .collect::<crate::Result<Vec<_>>>()?;
+        imp::reveal_items_in_dir(&canonicalized)
+    }
 
     #[cfg(not(any(
         windows,
@@ -72,10 +49,22 @@ where
         target_os = "netbsd",
         target_os = "openbsd"
     )))]
-    Err(crate::Error::UnsupportedPlatform)
+    {
+        let _ = paths;
+        Err(crate::Error::UnsupportedPlatform)
+    }
 }
 
-fn canonicalize(path: &Path) -> crate::Result<PathBuf> {
+#[cfg(any(
+    windows,
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+fn canonicalize(path: &Path) -> crate::Result<std::path::PathBuf> {
     #[cfg(windows)]
     let path = crate::windows_shell_path::absolute_and_check_exists(dunce::simplified(path))?;
     #[cfg(not(windows))]
