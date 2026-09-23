@@ -48,7 +48,8 @@ First you need to register the core plugin with Tauri:
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .run(tauri::generate_context!())
@@ -58,33 +59,34 @@ fn main() {
 
 Afterwards all windows will remember their state when the app is being closed and will restore to their previous state on the next launch.
 
-Optionally you can also tell the plugin to save the state of all open window to disk by using the `save_window_state()` method exposed by the `AppHandleExt` trait:
+Optionally you can also tell the plugin to save the state of all open windows to disk by using the `save_window_state()` method exposed by the `AppHandleExt` trait:
 
 ```rust
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 // `tauri::AppHandle` now has the following additional method
-app.save_window_state(StateFlags::all()); // will save the state of all open windows to disk
+// (from the `setup` hook, use `app.handle().save_window_state(...)`)
+app.save_window_state(StateFlags::all())?; // will save the state of all open windows to disk
 ```
 
-or through Javascript
+or through JavaScript
 
 ```javascript
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state'
 
-saveWindowState(StateFlags.ALL)
+await saveWindowState(StateFlags.ALL)
 ```
 
-To manually restore a windows state from disk you can call the `restore_state()` method exposed by the `WindowExt` trait:
+To manually restore a window's state you can call the `restore_state()` method exposed by the `WindowExt` trait:
 
 ```rust
 use tauri_plugin_window_state::{WindowExt, StateFlags};
 
 // all `Window` types now have the following additional method
-window.restore_state(StateFlags::all()); // will restore the windows state from disk
+window.restore_state(StateFlags::all())?; // will restore the window's saved state
 ```
 
-or through Javascript
+or through JavaScript
 
 ```javascript
 import {
@@ -92,7 +94,7 @@ import {
   StateFlags
 } from '@tauri-apps/plugin-window-state'
 
-restoreStateCurrent(StateFlags.ALL)
+await restoreStateCurrent(StateFlags.ALL)
 ```
 
 ## Contributing
