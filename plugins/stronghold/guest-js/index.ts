@@ -704,7 +704,9 @@ export class Stronghold {
 
   /**
    * Loads an existing client from the snapshot. The promise rejects if the
-   * client does not exist in the snapshot or was already loaded.
+   * client does not exist in the snapshot. If the client is already loaded
+   * (or was created with {@link Stronghold.createClient} and not saved yet),
+   * it resolves to a handle to that client, keeping its current state.
    *
    * @example
    * ```typescript

@@ -397,8 +397,14 @@ async fn load_client(
     client: BytesDto,
 ) -> Result<()> {
     let stronghold = get_stronghold(collection, snapshot_path)?;
-    stronghold.load_client(client)?;
-    Ok(())
+    match stronghold.load_client(client) {
+        // The client is already loaded (by another window or component, or it was
+        // created in this session), so its in-memory state is the current one.
+        // Rejecting here made the documented `loadClient` -> `createClient` fallback
+        // replace the loaded client with an empty one, wiping its data on the next save.
+        Ok(_) | Err(iota_stronghold::ClientError::ClientAlreadyLoaded(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 #[tauri::command]

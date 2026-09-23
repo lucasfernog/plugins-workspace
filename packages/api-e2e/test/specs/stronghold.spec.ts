@@ -107,6 +107,55 @@ describePlugin('stronghold', () => {
     expect(result).toEqual({ removed: [1, 2, 3], after: null })
   })
 
+  it('loading an already loaded client keeps its data', async () => {
+    const result = await tauri(
+      async (api, dir, password, clientName) => {
+        const path = await api.path.join(
+          await api.path.appDataDir(),
+          dir,
+          'reload-client.stronghold'
+        )
+        const stronghold = await api.stronghold.Stronghold.load(path, password)
+        const created = await stronghold.createClient(clientName)
+        await created.getStore().insert('unsaved', [1])
+        // a client created in this session can be loaded again
+        const loadedCreated = await (await stronghold.loadClient(clientName))
+          .getStore()
+          .get('unsaved')
+        await stronghold.save()
+        await stronghold.unload()
+
+        const reopened = await api.stronghold.Stronghold.load(path, password)
+        const first = await reopened.loadClient(clientName)
+        await first.getStore().insert('unsaved', [2])
+        // e.g. another component running the loadClient/createClient fallback
+        const second = await reopened.loadClient(clientName)
+        const loadedTwice = await second.getStore().get('unsaved')
+        await reopened.save()
+        await reopened.unload()
+
+        const final = await api.stronghold.Stronghold.load(path, password)
+        const persisted = await (await final.loadClient(clientName))
+          .getStore()
+          .get('unsaved')
+        await final.unload()
+        return {
+          loadedCreated: loadedCreated && Array.from(loadedCreated),
+          loadedTwice: loadedTwice && Array.from(loadedTwice),
+          persisted: persisted && Array.from(persisted)
+        }
+      },
+      dir,
+      password,
+      clientName
+    )
+    expect(result).toEqual({
+      loadedCreated: [1],
+      loadedTwice: [2],
+      persisted: [2]
+    })
+  })
+
   it('different spellings of a snapshot path share one instance', async () => {
     const result = await tauri(
       async (api, dir, password, clientName) => {
