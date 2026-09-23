@@ -437,17 +437,19 @@ mod imp {
                 crate::validate_scheme(protocol)?;
                 let path = format!("Software\\Classes\\{protocol}");
                 // Only delete keys that are URL protocols, never other classes (e.g. `exefile`).
-                if LOCAL_MACHINE
-                    .open(&path)
-                    .is_ok_and(|key| is_url_protocol_key(&key))
-                {
-                    LOCAL_MACHINE.remove_tree(&path)?;
-                }
+                // The per-user key (the one `register` writes) goes first so that it is removed
+                // even when removing the per-machine one fails for lack of admin rights.
                 if CURRENT_USER
                     .open(&path)
                     .is_ok_and(|key| is_url_protocol_key(&key))
                 {
                     CURRENT_USER.remove_tree(&path)?;
+                }
+                if LOCAL_MACHINE
+                    .open(&path)
+                    .is_ok_and(|key| is_url_protocol_key(&key))
+                {
+                    LOCAL_MACHINE.remove_tree(&path)?;
                 }
                 Ok(())
             }
