@@ -14,14 +14,16 @@ struct ScanOptions: Decodable {
 }
 
 enum SupportedFormat: String, CaseIterable, Decodable {
-  // UPC_A not supported
+  // not supported by AVFoundation, only declared so `scan` rejects them with a clear message
+  // instead of failing to decode its arguments
+  case UPC_A
+  case CODABAR
   case UPC_E
   case EAN_8
   case EAN_13
   case CODE_39
   case CODE_93
   case CODE_128
-  // CODABAR not supported
   case ITF
   case AZTEC
   case DATA_MATRIX
@@ -33,6 +35,7 @@ enum SupportedFormat: String, CaseIterable, Decodable {
 
   var value: AVMetadataObject.ObjectType? {
     switch self {
+    case .UPC_A, .CODABAR: return nil
     case .UPC_E: return AVMetadataObject.ObjectType.upce
     case .EAN_8: return AVMetadataObject.ObjectType.ean8
     case .EAN_13: return AVMetadataObject.ObjectType.ean13
