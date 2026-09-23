@@ -24,7 +24,8 @@
 //!   from the rustls-native-certs crate.
 //! - **blocking**: Provides the [blocking](https://docs.rs/reqwest/0.12.28/reqwest/blocking/index.html) client API.
 //! - **charset** *(enabled by default)*: Improved support for decoding text.
-//! - **cookies** *(enabled by default)*: Provides cookie session support.
+//! - **cookies** *(enabled by default)*: Provides cookie session support. The plugin keeps one cookie jar
+//!   for every webview, persisted to a `.cookies` file in the application cache directory.
 //! - **gzip**: Provides response body gzip decompression.
 //! - **brotli**: Provides response body brotli decompression.
 //! - **zstd**: Provides response body zstd decompression.
@@ -41,8 +42,10 @@
 //! ### tauri-plugin-http features
 //!
 //! - **tracing**: Adds request, response, and cookie-store diagnostics through `tracing`.
-//! - **unsafe-headers**: Allows webview requests to send any headers.
+//! - **unsafe-headers**: Allows webview requests to send any headers, including the ones the Fetch spec
+//!   forbids, such as `Host`, `Cookie` or `Origin`. It applies to every webview allowed to use `fetch`.
 //! - **dangerous-settings**: Allows dangerous client settings such as accepting invalid certificates or hostnames.
+//!   It applies to every webview allowed to use `fetch`.
 //!
 //! ## Configuration
 //!

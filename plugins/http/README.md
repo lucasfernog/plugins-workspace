@@ -120,6 +120,22 @@ The `proxy` option of `fetch` is not checked against the scope: a frontend allow
 it through any host and port it picks. Keep this in mind when granting `http` permissions to remote or less trusted
 content.
 
+## Cargo features
+
+Besides forwarding most [`reqwest` features](https://docs.rs/reqwest/0.12/reqwest/#optional-features) (TLS backends,
+`json`, `multipart`, `stream`, `socks`, ...), the crate has these notable features:
+
+| Feature                             | Default | Description                                                                                                                                                                                                                        |
+| ----------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cookies`                           | yes     | A cookie jar shared by every `fetch` call of every webview, persisted to a `.cookies` file in the app cache directory (so it is lost when that directory is cleared). Requests always use it, whatever their `credentials` option. |
+| `gzip`, `brotli`, `zstd`, `deflate` | no      | Ask for compressed responses and decompress their bodies transparently. Without them, responses are not compressed.                                                                                                                |
+| `unsafe-headers`                    | no      | Lets the frontend send headers the Fetch spec forbids (`Host`, `Cookie`, `Origin`...), which are dropped otherwise. It applies to every webview that can use `fetch`.                                                              |
+| `dangerous-settings`                | no      | Enables the `danger` option of `fetch`, which disables TLS certificate and hostname verification. It applies to every webview that can use `fetch`; without it, a request using `danger` fails.                                    |
+| `tracing`                           | no      | Request, response and cookie store diagnostics through `tracing`.                                                                                                                                                                  |
+
+Requests made from Rust with the re-exported `tauri_plugin_http::reqwest` are not restricted by the scope and do not
+use the plugin's cookie jar.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
