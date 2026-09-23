@@ -204,7 +204,10 @@ pub async fn execute<R: Runtime>(
         prepare_cmd(window, program, args, options, command_scope, global_scope)?;
 
     let mut command: std::process::Command = command.into();
-    let output = command.output()?;
+    // waiting for the process blocks, so keep it off the async runtime's worker threads
+    let output = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await
+        .map_err(|e| std::io::Error::other(e.to_string()))??;
 
     let (stdout, stderr) = match encoding {
         EncodingWrapper::Text(Some(encoding)) => (
