@@ -49,6 +49,15 @@ fn main() {
 
 Afterwards the plugin will automatically save and restore the `fs` plugin scope. Only runtime changes to the scope are persisted, for example paths picked with the dialog plugin, dropped onto a window, or allowed from Rust with `app.fs_scope()`. Scopes defined in capability files are not affected.
 
+To also persist the [asset protocol](https://v2.tauri.app/security/asset-protocol/) scope, enable the `protocol-asset` feature:
+
+```toml
+[dependencies]
+tauri-plugin-persisted-scope = { version = "2", features = ["protocol-asset"] }
+```
+
+The state is stored in the app data directory, in `.persisted-scope` (filesystem scope) and `.persisted-scope-asset` (asset protocol scope). Delete these files to reset all persisted grants.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
