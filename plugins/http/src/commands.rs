@@ -254,7 +254,7 @@ pub async fn fetch<R: Runtime>(
     for (h, v) in headers_raw {
         let name = HeaderName::from_str(&h)?;
         #[cfg(not(feature = "unsafe-headers"))]
-        if is_unsafe_header(&name) {
+        if is_unsafe_header(&name, &v) {
             #[cfg(debug_assertions)]
             {
                 eprintln!("[\x1b[33mWARNING\x1b[0m] Skipping {name} header as it is a forbidden header per fetch spec https://fetch.spec.whatwg.org/#terminology-headers");
@@ -508,11 +508,17 @@ pub async fn fetch_cancel_body<R: Runtime>(
     Ok(())
 }
 
-// forbidden headers per fetch spec https://fetch.spec.whatwg.org/#terminology-headers
+// forbidden request headers per fetch spec https://fetch.spec.whatwg.org/#forbidden-request-header
 #[cfg(not(feature = "unsafe-headers"))]
-fn is_unsafe_header(header: &HeaderName) -> bool {
+fn is_unsafe_header(name: &HeaderName, value: &str) -> bool {
+    const METHOD_OVERRIDE_HEADERS: &[&str] = &[
+        "x-http-method",
+        "x-http-method-override",
+        "x-method-override",
+    ];
+
     matches!(
-        *header,
+        *name,
         header::ACCEPT_CHARSET
             | header::ACCEPT_ENCODING
             | header::ACCESS_CONTROL_REQUEST_HEADERS
@@ -532,10 +538,20 @@ fn is_unsafe_header(header: &HeaderName) -> bool {
             | header::TRANSFER_ENCODING
             | header::UPGRADE
             | header::VIA
-    ) || {
-        let lower = header.as_str().to_lowercase();
-        lower.starts_with("proxy-") || lower.starts_with("sec-")
-    }
+    ) || matches!(
+        // `HeaderName` is always lowercase
+        name.as_str(),
+        "access-control-request-private-network" | "cookie2" | "keep-alive"
+    ) || name.as_str().starts_with("proxy-")
+        || name.as_str().starts_with("sec-")
+        // a method override header is forbidden when it names a forbidden method
+        || (METHOD_OVERRIDE_HEADERS.contains(&name.as_str())
+            && value.split(',').any(|method| {
+                let method = method.trim();
+                ["CONNECT", "TRACE", "TRACK"]
+                    .iter()
+                    .any(|forbidden| method.eq_ignore_ascii_case(forbidden))
+            }))
 }
 
 #[cfg(test)]
@@ -623,6 +639,40 @@ mod tests {
     fn localhost_scope(port: u16) -> Option<Scope> {
         let entry = Arc::new(format!("http://localhost:{port}/*").parse().unwrap());
         Some(Scope::new(vec![entry], Vec::new()))
+    }
+
+    #[test]
+    #[cfg(not(feature = "unsafe-headers"))]
+    fn forbidden_request_headers() {
+        let forbidden =
+            |name: &str, value: &str| is_unsafe_header(&HeaderName::from_str(name).unwrap(), value);
+
+        for name in [
+            "Accept-Charset",
+            "accept-encoding",
+            "Access-Control-Request-Private-Network",
+            "Connection",
+            "Cookie",
+            "Cookie2",
+            "Host",
+            "Keep-Alive",
+            "Origin",
+            "Proxy-Authorization",
+            "Sec-Fetch-Mode",
+            "Set-Cookie",
+        ] {
+            assert!(forbidden(name, "value"), "{name} must be forbidden");
+        }
+
+        for name in ["Accept", "Authorization", "Content-Type", "X-Custom"] {
+            assert!(!forbidden(name, "value"), "{name} must be allowed");
+        }
+
+        assert!(forbidden("X-HTTP-Method-Override", "trace"));
+        assert!(forbidden("X-HTTP-Method", "GET, CONNECT"));
+        assert!(forbidden("X-Method-Override", " Track "));
+        assert!(!forbidden("X-HTTP-Method-Override", "PATCH"));
+        assert!(!forbidden("X-Custom", "TRACE"));
     }
 
     #[test]
