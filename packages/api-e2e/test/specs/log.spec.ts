@@ -130,6 +130,39 @@ describePlugin('log', () => {
     expect(count).toBe(1)
   })
 
+  it('records reach attachLogger in the order they were logged', async () => {
+    const count = 20
+    const received = await tauri(
+      (api, needle, count) =>
+        new Promise<number[]>((resolve, reject) => {
+          const received: number[] = []
+          api.log
+            .attachLogger((record) => {
+              const marker = `${needle} #`
+              const index = record.message.indexOf(marker)
+              if (index !== -1) {
+                received.push(
+                  Number(record.message.slice(index + marker.length))
+                )
+              }
+            })
+            .then(async (detach) => {
+              for (let i = 0; i < count; i++) {
+                await api.log.info(`${needle} #${i}`)
+              }
+              setTimeout(() => {
+                detach()
+                resolve(received)
+              }, 1000)
+            })
+            .catch(reject)
+        }),
+      'ordered record from e2e',
+      count
+    )
+    expect(received).toEqual(Array.from({ length: count }, (_, i) => i))
+  })
+
   it('attachConsole forwards records to the console', async () => {
     const forwarded = await tauri(
       (api, needle) =>

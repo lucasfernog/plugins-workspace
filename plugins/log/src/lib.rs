@@ -835,14 +835,21 @@ impl Builder {
                 TargetKind::Webview => {
                     let app_handle = app_handle.clone();
 
+                    // Emit every record from a single thread so the webview receives them in the order they
+                    // were logged, without emitting from inside the `log` call itself.
+                    let (sender, receiver) = std::sync::mpsc::channel::<RecordPayload>();
+                    std::thread::Builder::new()
+                        .name("tauri-plugin-log-webview".into())
+                        .spawn(move || {
+                            for payload in receiver {
+                                let _ = app_handle.emit("log://log", payload);
+                            }
+                        })?;
+
                     fern::Output::call(move |record| {
-                        let payload = RecordPayload {
+                        let _ = sender.send(RecordPayload {
                             message: record.args().to_string(),
                             level: record.level().into(),
-                        };
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let _ = app_handle.emit("log://log", payload);
                         });
                     })
                 }
