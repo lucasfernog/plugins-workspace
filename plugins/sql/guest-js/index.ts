@@ -21,7 +21,7 @@ export interface QueryResult {
   /**
    * The last inserted `id`.
    *
-   * This value is not set for Postgres databases. If the
+   * This value is `null` for Postgres databases. If the
    * last inserted id is required on Postgres, the `select` function
    * must be used, with a `RETURNING` clause
    * (`INSERT INTO todos (title) VALUES ($1) RETURNING id`).
@@ -122,6 +122,14 @@ export default class Database {
    *
    * Passes a SQL expression to the database for execution.
    *
+   * Each call can run on a different connection of the database's connection
+   * pool, so a transaction cannot be spread over several calls
+   * (`BEGIN`, ..., `COMMIT`).
+   *
+   * Numbers are bound as 64-bit floats, and `null`, booleans, arrays and
+   * objects as JSON. On PostgreSQL, cast such parameters when the column has
+   * another type (`$1::int`, `$1::boolean`).
+   *
    * @example
    * ```typescript
    * import Database from '@tauri-apps/plugin-sql'
@@ -175,6 +183,12 @@ export default class Database {
    * **select**
    *
    * Passes in a SELECT query to the database for execution.
+   *
+   * Values are bound the same way as in {@link Database.execute}. The rows
+   * are returned as objects keyed by column name; the type parameter is the
+   * type of the whole result, for example `select<Todo[]>(...)`. Integers
+   * above `Number.MAX_SAFE_INTEGER` lose precision, and SQLite returns values
+   * as stored (`BOOLEAN` columns as `0`/`1`).
    *
    * @example
    * ```typescript

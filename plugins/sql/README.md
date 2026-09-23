@@ -106,6 +106,57 @@ const result = await db.execute(
 )
 ```
 
+## Limitations
+
+### Connection pools and transactions
+
+Every database is backed by a connection pool, and each `execute` and `select` call can run on a different connection of that pool. Running `BEGIN`, the statements and `COMMIT` as separate calls is therefore not supported: the statements can end up on different connections, and a connection can go back to the pool with a transaction still open (on SQLite this keeps the database locked, and later writes fail with `database is locked`). For writes that must be atomic, write a Tauri command that runs a sqlx transaction on the pool (see [Using the pools from Rust](#using-the-pools-from-rust)).
+
+### Bound values
+
+- JavaScript numbers are bound as 64-bit floating point values. Where the database requires an integer, cast the parameter, for example `LIMIT $1::bigint` on PostgreSQL.
+- `null` is bound as a JSON null, and booleans, arrays and objects are bound as JSON. On PostgreSQL they are sent as `jsonb`, so cast the parameter when the column has another type (`$1::int`, `$1::boolean`); on SQLite `true` is stored as the text `'true'`, so bind `1`/`0` for boolean columns.
+- Strings are bound as text. On PostgreSQL cast them for `uuid`, `date`, `timestamptz` or `numeric` columns (`$1::uuid`).
+
+### Returned values
+
+- Rows are returned as objects keyed by column name.
+- Integers are returned as JavaScript numbers, which cannot represent values above `Number.MAX_SAFE_INTEGER` (2^53 - 1) exactly. Cast such columns to text in the query if you need them exactly.
+- SQLite returns the value as stored: `BOOLEAN` columns come back as `0`/`1`, `DATETIME` columns as the stored text or number.
+- Date and time columns of MySQL and PostgreSQL are returned as strings, `BLOB`/`BYTEA` columns as arrays of bytes, `JSON`/`JSONB` columns as parsed JSON and PostgreSQL `NUMERIC` as a number (or a string when it cannot be represented as one).
+- A value that cannot be decoded is returned as `null`, and `select` rejects with `unsupported datatype` for column types it does not know. Cast such columns in the query, for example to text.
+- `lastInsertId` is `null` on PostgreSQL. Use `select` with a `RETURNING` clause (`INSERT INTO todos (title) VALUES ($1) RETURNING id`) instead.
+
+## Using the pools from Rust
+
+The connection pools are managed as Tauri state (`tauri_plugin_sql::DbInstances`), keyed by the connection string they were loaded with, so Rust code can run its own queries on a database the frontend loaded or that is preloaded:
+
+```rust
+use tauri_plugin_sql::{DbInstances, DbPool};
+
+#[tauri::command]
+async fn add_todos(
+    instances: tauri::State<'_, DbInstances>,
+    titles: Vec<String>,
+) -> Result<(), String> {
+    let instances = instances.0.read().await;
+    let Some(DbPool::Sqlite(pool)) = instances.get("sqlite:mydatabase.db") else {
+        return Err("database not loaded".into());
+    };
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    for title in titles {
+        sqlx::query("INSERT INTO todos (title) VALUES ($1)")
+            .bind(title)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().await.map_err(|e| e.to_string())
+}
+```
+
+This requires `sqlx` as a direct dependency of your app, with the same major version as the plugin.
+
 ## Permissions
 
 The `sql:default` permission set allows `load`, `select` and `close`. Statements run with `execute` (`INSERT`, `UPDATE`, `CREATE TABLE`, ...) need the `sql:allow-execute` permission as well:
