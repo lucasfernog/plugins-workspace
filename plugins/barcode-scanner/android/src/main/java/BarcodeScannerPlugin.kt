@@ -252,10 +252,12 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                 }
 
                 if (formats.isNotEmpty()) {
-                    val mappedFormats = mapFormats(formats)
                     val options =
                         BarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, *mappedFormats).build()
+                            .setBarcodeFormats(
+                                formats[0],
+                                *formats.drop(1).toIntArray()
+                            ).build()
                     scannerOptions = options
                     scanner = BarcodeScanning.getClient(options)
                 } else {
@@ -265,14 +267,6 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
                     scanner = BarcodeScanning.getClient(options)
                 }
             }
-    }
-
-    private fun mapFormats(integers: List<Int>): IntArray {
-        val ret = IntArray(integers.size)
-        for (i in ret.indices) {
-            if (integers[i] != Barcode.FORMAT_QR_CODE) ret[i] = integers[i]
-        }
-        return ret
     }
 
     override fun analyze(image: ImageProxy) {
