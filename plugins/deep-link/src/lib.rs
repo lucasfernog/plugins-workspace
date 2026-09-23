@@ -65,10 +65,11 @@ fn init_deep_link<R: Runtime>(
             },
         )?;
 
-        return Ok(DeepLink {
+        Ok(DeepLink {
             app: app.clone(),
             plugin_handle: handle,
-        });
+            config: _api.config().clone(),
+        })
     }
 
     #[cfg(target_os = "ios")]
@@ -114,6 +115,7 @@ mod imp {
     pub struct DeepLink<R: Runtime> {
         pub(crate) app: AppHandle<R>,
         pub(crate) plugin_handle: PluginHandle<R>,
+        pub(crate) config: Option<crate::config::Config>,
     }
 
     impl<R: Runtime> DeepLink<R> {
@@ -129,6 +131,26 @@ mod imp {
                 .run_mobile_plugin::<GetCurrentResponse>("getCurrent", ())
                 .map(|v| v.url.map(|url| vec![url]))
                 .map_err(Into::into)
+        }
+
+        /// Registers all schemes defined in the configuration file.
+        ///
+        /// This is useful to ensure the schemes are registered even if the user did not install the app properly
+        /// (e.g. an AppImage that was not properly registered with an AppImage launcher).
+        ///
+        /// ## Platform-specific:
+        ///
+        /// - **macOS / Android / iOS**: Returns [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`) if any desktop scheme is configured.
+        pub fn register_all(&self) -> crate::Result<()> {
+            let Some(config) = &self.config else {
+                return Ok(());
+            };
+
+            for scheme in config.desktop.schemes() {
+                self.register(scheme)?;
+            }
+
+            Ok(())
         }
 
         /// Register the app as the default handler for the specified protocol.
