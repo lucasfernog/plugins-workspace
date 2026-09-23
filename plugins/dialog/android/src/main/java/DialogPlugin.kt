@@ -6,7 +6,6 @@ package app.tauri.dialog
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.webkit.MimeTypeMap
@@ -107,21 +106,20 @@ class DialogPlugin(private val activity: Activity): Plugin(activity) {
 
   private fun createPickFilesResult(data: Intent?): JSObject {
     val callResult = JSObject()
-    if (data == null) {
-      callResult.put("files", null)
-      return callResult
-    }
-    val uris: MutableList<String?> = ArrayList()
-    if (data.clipData == null) {
-      val uri: Uri? = data.data
-      uris.add(uri?.toString())
+    // never send `null` entries: the Rust side expects a list of paths
+    val uris: MutableList<String> = ArrayList()
+    val clipData = data?.clipData
+    if (clipData == null) {
+      data?.data?.let { uris.add(it.toString()) }
     } else {
-      for (i in 0 until data.clipData!!.itemCount) {
-        val uri: Uri = data.clipData!!.getItemAt(i).uri
-        uris.add(uri.toString())
+      for (i in 0 until clipData.itemCount) {
+        clipData.getItemAt(i).uri?.let { uris.add(it.toString()) }
       }
     }
-    callResult.put("files", JSArray.from(uris.toTypedArray()))
+    // no `files` key when nothing was picked, which the Rust side reports as a cancelled picker
+    if (uris.isNotEmpty()) {
+      callResult.put("files", JSArray.from(uris.toTypedArray()))
+    }
     return callResult
   }
 
