@@ -22,8 +22,8 @@ targets = ["x86_64-linux-android"]
 windows = { level = "none", notes = "" }
 linux = { level = "none", notes = "" }
 macos = { level = "none", notes = "" }
-android = { level = "full", notes = "" }
-ios = { level = "full", notes = "" }
+android = { level = "full", notes = "Declares a required camera feature in the manifest. GS1 DataBar formats are not supported" }
+ios = { level = "full", notes = "Requires `NSCameraUsageDescription` in `Info.plist`. UPC-A and Codabar are not supported" }
 
 
 [build-dependencies]
