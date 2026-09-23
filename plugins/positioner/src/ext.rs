@@ -210,11 +210,20 @@ fn calculate_position<R: Runtime>(
     if pos.is_tray() {
         let (tray_position, tray_size) = tray_rect(window)?
             .ok_or_else(|| tauri::Error::Io(std::io::Error::other("Tray position not set")))?;
+        // The window flips below the tray icon when it would cross the top edge of the
+        // monitor the tray icon is on. Fall back to `0` (the primary monitor's top edge on
+        // most setups) when that monitor can't be determined.
+        let monitor_top = window
+            .monitor_from_point(tray_position.x, tray_position.y)
+            .ok()
+            .flatten()
+            .map_or(0, |monitor| monitor.position().y);
         return Ok(tray_relative_position(
             pos,
             PhysicalPosition::new(tray_position.x as i32, tray_position.y as i32),
             PhysicalSize::new(tray_size.width as i32, tray_size.height as i32),
             window_size,
+            monitor_top,
         ));
     }
 
@@ -287,12 +296,20 @@ fn screen_relative_position(
 
 /// Top-left position of a window of `window_size` at a tray `pos`, relative to the tray icon at
 /// `tray_position` with `tray_size`.
+///
+/// `monitor_top` is the top edge of the monitor the tray icon is on. On Windows and macOS,
+/// positions above the icon move below it when the window would cross that edge.
 #[cfg(feature = "tray-icon")]
+#[cfg_attr(
+    not(any(target_os = "windows", target_os = "macos")),
+    allow(unused_variables)
+)]
 fn tray_relative_position(
     pos: Position,
     tray_position: PhysicalPosition<i32>,
     tray_size: PhysicalSize<i32>,
     window_size: PhysicalSize<i32>,
+    monitor_top: i32,
 ) -> PhysicalPosition<i32> {
     use Position::*;
 
@@ -310,10 +327,14 @@ fn tray_relative_position(
         let y = tray_y - window_size.height;
         // Choose y value based on the target OS
         #[cfg(target_os = "windows")]
-        let y = if y < 0 { tray_y + _tray_height } else { y };
+        let y = if y < monitor_top {
+            tray_y + _tray_height
+        } else {
+            y
+        };
 
         #[cfg(target_os = "macos")]
-        let y = if y < 0 { tray_y } else { y };
+        let y = if y < monitor_top { tray_y } else { y };
 
         y
     };
@@ -382,7 +403,7 @@ mod tests {
     fn tray_positions_are_relative_to_the_tray_icon() {
         let tray = PhysicalPosition::new(1000, 800);
         let tray_size = PhysicalSize::new(20, 30);
-        let at = |pos| tray_relative_position(pos, tray, tray_size, WINDOW);
+        let at = |pos| tray_relative_position(pos, tray, tray_size, WINDOW, 0);
 
         assert_eq!(at(Position::TrayLeft), PhysicalPosition::new(1000, 500));
         assert_eq!(at(Position::TrayRight), PhysicalPosition::new(1020, 500));
@@ -399,5 +420,38 @@ mod tests {
             at(Position::TrayBottomCenter),
             PhysicalPosition::new(810, 800)
         );
+    }
+
+    /// A tray icon at the top of a monitor that sits below the primary one: there is no room
+    /// above the icon on its monitor even though `y` stays positive.
+    #[cfg(all(feature = "tray-icon", any(target_os = "windows", target_os = "macos")))]
+    #[test]
+    fn tray_positions_flip_at_the_tray_monitor_top_edge() {
+        let monitor_top = 1080;
+        let tray = PhysicalPosition::new(1000, 1080);
+        let tray_size = PhysicalSize::new(20, 30);
+        let at = |pos| tray_relative_position(pos, tray, tray_size, WINDOW, monitor_top);
+
+        #[cfg(target_os = "windows")]
+        let below = 1110;
+        #[cfg(target_os = "macos")]
+        let below = 1080;
+        assert_eq!(at(Position::TrayLeft), PhysicalPosition::new(1000, below));
+        assert_eq!(at(Position::TrayRight), PhysicalPosition::new(1020, below));
+        assert_eq!(at(Position::TrayCenter), PhysicalPosition::new(810, below));
+    }
+
+    /// A tray icon at the bottom of a monitor above the primary one (negative origin): there is
+    /// room above the icon even though `y` is negative.
+    #[cfg(feature = "tray-icon")]
+    #[test]
+    fn tray_positions_stay_above_on_a_monitor_with_a_negative_origin() {
+        let monitor_top = -1080;
+        let tray = PhysicalPosition::new(1000, -40);
+        let tray_size = PhysicalSize::new(20, 40);
+        let at = |pos| tray_relative_position(pos, tray, tray_size, WINDOW, monitor_top);
+
+        assert_eq!(at(Position::TrayLeft), PhysicalPosition::new(1000, -340));
+        assert_eq!(at(Position::TrayCenter), PhysicalPosition::new(810, -340));
     }
 }
