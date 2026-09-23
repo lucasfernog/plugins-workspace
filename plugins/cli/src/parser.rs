@@ -106,23 +106,22 @@ pub fn get_matches(
     match matches {
         Ok(matches) => Ok(get_matches_internal(cli, &matches)),
         Err(e) => match e.kind() {
-            ErrorKind::DisplayHelp => {
+            // clap reports `--help` and `--version` as errors carrying the rendered text;
+            // the app decides what to do with it (usually print it and exit)
+            kind @ (ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+                let name = if kind == ErrorKind::DisplayHelp {
+                    "help"
+                } else {
+                    "version"
+                };
                 let mut matches = Matches::default();
-                let help_text = e.to_string();
                 matches.args.insert(
-                    "help".to_string(),
+                    name.to_string(),
                     ArgData {
-                        value: Value::String(help_text),
-                        occurrences: 0,
+                        value: Value::String(e.to_string()),
+                        occurrences: 1,
                     },
                 );
-                Ok(matches)
-            }
-            ErrorKind::DisplayVersion => {
-                let mut matches = Matches::default();
-                matches
-                    .args
-                    .insert("version".to_string(), Default::default());
                 Ok(matches)
             }
             _ => Err(e.into()),
@@ -292,4 +291,53 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    #[test]
+    fn help_and_version_carry_their_text() {
+        let config = config(serde_json::json!({ "description": "about the app" }));
+
+        let matches = parse(&config, &["--help"]).unwrap();
+        let data = arg(&matches, "help");
+        assert!(data.value.as_str().unwrap().contains("about the app"));
+        assert_eq!(data.occurrences, 1);
+
+        let matches = parse(&config, &["--version"]).unwrap();
+        let data = arg(&matches, "version");
+        assert_eq!(data.value, Value::String("app 1.2.3\n".into()));
+        assert_eq!(data.occurrences, 1);
+    }
 }
