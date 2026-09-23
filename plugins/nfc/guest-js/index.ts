@@ -283,8 +283,14 @@ export function textRecord(
   id?: string | number[],
   language: string = 'en'
 ): NFCRecord {
-  const payload = Array.from(new TextEncoder().encode(language + text))
-  payload.unshift(language.length)
+  const encoder = new TextEncoder()
+  const languageBytes = Array.from(encoder.encode(language))
+  // status byte: bit 7 = 0 for UTF-8, bits 5..0 = byte length of the language code
+  const payload = [
+    languageBytes.length & 0x3f,
+    ...languageBytes,
+    ...Array.from(encoder.encode(text))
+  ]
   return record(NFCTypeNameFormat.NfcWellKnown, RTD_TEXT, id ?? [], payload)
 }
 
