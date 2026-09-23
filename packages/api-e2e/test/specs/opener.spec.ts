@@ -35,13 +35,14 @@ describePlugin('opener', () => {
     expect(message).toMatch(/Not allowed to open path/)
   })
 
-  itDesktop('openPath rejects paths that do not exist', async () => {
+  it('openPath rejects paths that do not exist', async () => {
+    // desktop: the I/O error, mobile: the native plugin's own check
     const message = await tauriError(async (api) =>
       api.opener.openPath(
         await api.path.join(await api.path.appDataDir(), 'does-not-exist-e2e')
       )
     )
-    expect(message).toMatch(/os error 2/)
+    expect(message).toMatch(/os error 2|Path does not exist/)
   })
 
   it('revealItemInDir rejects paths that do not exist', async () => {

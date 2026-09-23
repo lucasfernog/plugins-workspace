@@ -155,7 +155,9 @@ impl<R: Runtime> Opener<R> {
     ///
     /// ## Platform-specific:
     ///
-    /// - **Android / iOS**: Always opens using default program.
+    /// - **Android**: Opens the file with the default application for its type, `with` is ignored.
+    /// - **iOS**: Previews the file with Quick Look, from which it can be shared or opened in
+    ///   another app, `with` is ignored.
     #[cfg(mobile)]
     pub fn open_path(
         &self,
@@ -163,7 +165,7 @@ impl<R: Runtime> Opener<R> {
         _with: Option<impl Into<String>>,
     ) -> Result<()> {
         self.mobile_plugin_handle
-            .run_mobile_plugin("open", path.into())
+            .run_mobile_plugin("openPath", serde_json::json!({ "path": path.into() }))
             .map_err(Into::into)
     }
 
