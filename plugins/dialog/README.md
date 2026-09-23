@@ -77,8 +77,45 @@ fn main() {
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
 ```javascript
+import { open, save, message, ask, confirm } from '@tauri-apps/plugin-dialog'
 
+// pick a single file; resolves to `null` if the user cancels
+const file = await open({
+  multiple: false,
+  filters: [{ name: 'Images', extensions: ['png', 'jpeg'] }]
+})
+
+// pick a path to save to
+const path = await save({ defaultPath: 'notes.txt' })
+
+// message dialogs
+await message('File not found', { title: 'Tauri', kind: 'error' })
+const yes = await ask('Discard the changes?', { kind: 'warning' })
+const ok = await confirm('Are you sure?')
 ```
+
+Or from Rust:
+
+```rust
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
+    .setup(|app| {
+        app.dialog()
+            .message("Continue?")
+            .buttons(MessageDialogButtons::OkCancel)
+            .show(|confirmed| println!("confirmed: {confirmed}"));
+        app.dialog().file().pick_file(|path| {
+            // `None` if the user cancelled
+            println!("{path:?}");
+        });
+        Ok(())
+    });
+```
+
+The `blocking_*` variants (for example `blocking_pick_file`) must not be called on the main thread,
+where they would freeze the app.
 
 ## Contributing
 
