@@ -4,6 +4,7 @@
 
 import { expect } from '@wdio/globals'
 import { tauri, tauriError, describePlugin } from '../helpers/index.js'
+import { FIXTURE_SERVER_URL } from '../helpers/server.js'
 
 // The example spawns an echo server on this port: it replies with the request
 // body and the request headers, and sets a `session-token` cookie on requests
@@ -127,6 +128,44 @@ describePlugin('http', () => {
       await api.http.fetch(`${url}/aborted`, { signal: controller.signal })
     }, echoServer)
     expect(message).toMatch(/abort|cancel/i)
+  })
+
+  it('fetch can be aborted through the signal of a Request', async () => {
+    const result = await tauri(
+      async (api, echoServer, fixtureServer) => {
+        const errorOf = async (request: Request) => {
+          try {
+            await api.http.fetch(request)
+            return null
+          } catch (e) {
+            return String(e)
+          }
+        }
+
+        // already aborted
+        const aborted = new AbortController()
+        aborted.abort()
+        const before = await errorOf(
+          new Request(`${echoServer}/aborted`, { signal: aborted.signal })
+        )
+
+        // aborted while waiting for the response
+        const controller = new AbortController()
+        setTimeout(() => controller.abort(), 200)
+        const start = Date.now()
+        const during = await errorOf(
+          new Request(`${fixtureServer}/slow/10000`, {
+            signal: controller.signal
+          })
+        )
+        return { before, during, elapsed: Date.now() - start }
+      },
+      echoServer,
+      FIXTURE_SERVER_URL
+    )
+    expect(result.before).toMatch(/abort|cancel/i)
+    expect(result.during).toMatch(/abort|cancel/i)
+    expect(result.elapsed).toBeLessThan(5000)
   })
 
   it('rejects URLs outside the configured scope', async () => {

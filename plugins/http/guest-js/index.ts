@@ -151,8 +151,16 @@ export async function fetch(
   input: URL | Request | string,
   init?: RequestInit & ClientOptions
 ): Promise<Response> {
+  // like `new Request(input, init)`, the signal of `init` takes precedence over
+  // the signal of a `Request` input
+  const signal =
+    init?.signal !== undefined
+      ? init.signal
+      : input instanceof Request
+        ? input.signal
+        : undefined
+
   // Optimistically check for abort signal and avoid doing any work
-  const signal = init?.signal
   if (signal?.aborted) {
     throw new Error(ERROR_REQUEST_CANCELLED)
   }
