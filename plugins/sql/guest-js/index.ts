@@ -93,8 +93,12 @@ export default class Database {
    * **get**
    *
    * A static initializer which synchronously returns an instance of
-   * the Database class while deferring the actual database connection
-   * until the first invocation or selection on the database.
+   * the Database class without connecting to the database.
+   *
+   * The database must already be connected to, either because it is listed
+   * in the plugin's `preload` configuration or because it was opened with
+   * {@link Database.load}; otherwise {@link Database.execute} and
+   * {@link Database.select} reject with a `database ... not loaded` error.
    *
    * # Sqlite
    *
