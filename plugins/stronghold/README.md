@@ -162,6 +162,30 @@ await store.remove(key)
 await stronghold.save()
 ```
 
+## Permissions
+
+By default no plugin commands are allowed. The `stronghold:default` permission set allows loading and saving strongholds, creating and loading clients, reading and writing store records, writing secrets and running procedures. Removing store records or secrets and unloading a stronghold (`Stronghold.unload()`) must be allowed explicitly:
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": [
+    "stronghold:default",
+    "stronghold:allow-remove-store-record",
+    "stronghold:allow-remove-secret",
+    "stronghold:allow-destroy"
+  ]
+}
+```
+
+## Security considerations
+
+- The password only protects the snapshot file at rest. Once a snapshot is loaded, every webview with the stronghold permissions can use it by passing its path, without knowing the password, until it is unloaded.
+- Snapshot paths come from the frontend and are not checked against any scope (including the file system plugin scope): a webview with `stronghold:default` can create or overwrite a file at any path the app can write to. Only grant the stronghold permissions to windows that load trusted content, and pass absolute paths (relative paths are resolved against the process working directory).
+- Loading a snapshot that does not exist yet accepts any password, which becomes the snapshot password on the first save.
+- Values in a client store can be read back by the frontend. Keep secrets in a vault, where they can only be used through procedures.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
