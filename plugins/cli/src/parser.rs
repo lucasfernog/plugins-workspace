@@ -274,16 +274,22 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
         required_unless_present,
         required_unless_present
     );
-    clap_arg = bind_string_slice_arg!(arg, clap_arg, required_unless_present_all);
-    clap_arg = bind_string_slice_arg!(arg, clap_arg, required_unless_present_any);
+    clap_arg = bind_string_arg!(
+        arg,
+        clap_arg,
+        required_unless_present_all,
+        required_unless_present_all
+    );
+    clap_arg = bind_string_arg!(
+        arg,
+        clap_arg,
+        required_unless_present_any,
+        required_unless_present_any
+    );
     clap_arg = bind_string_arg!(arg, clap_arg, conflicts_with, conflicts_with);
-    if let Some(value) = &arg.conflicts_with_all {
-        clap_arg = clap_arg.conflicts_with_all(value);
-    }
+    clap_arg = bind_string_arg!(arg, clap_arg, conflicts_with_all, conflicts_with_all);
     clap_arg = bind_string_arg!(arg, clap_arg, requires, requires);
-    if let Some(value) = &arg.requires_all {
-        clap_arg = clap_arg.requires_all(value);
-    }
+    clap_arg = bind_string_arg!(arg, clap_arg, requires_all, requires_all);
     clap_arg = bind_if_arg!(arg, clap_arg, requires_if);
     clap_arg = bind_if_arg!(arg, clap_arg, required_if_eq);
     clap_arg = bind_value_arg!(arg, clap_arg, require_equals);
