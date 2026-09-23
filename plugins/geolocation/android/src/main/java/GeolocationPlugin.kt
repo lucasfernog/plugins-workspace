@@ -14,7 +14,6 @@ import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.Permission
-import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
@@ -114,14 +113,6 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
                 { loc -> invoke.resolve(convertLocation(loc)) },
                 { error -> invoke.reject(error) })
         }
-    }
-
-    @PermissionCallback
-    private fun positionPermissionCallback(invoke: Invoke) {
-        val permissionsResultJSON = JSObject()
-        permissionsResultJSON.put("location", getPermissionState(ALIAS_LOCATION))
-        permissionsResultJSON.put("coarseLocation", getPermissionState(ALIAS_COARSE_LOCATION))
-        invoke.resolve(permissionsResultJSON)
     }
 
     @Command
