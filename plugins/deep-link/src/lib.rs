@@ -218,7 +218,7 @@ mod imp {
                 }
 
                 if let Some(url) = arg.and_then(|arg| arg.as_ref().parse::<url::Url>().ok()) {
-                    if config.desktop.contains_scheme(&url.scheme().to_string()) {
+                    if config.desktop.contains_scheme(url.scheme()) {
                         let mut current = self.current.lock().unwrap();
                         current.replace(vec![url.clone()]);
                         let _ = self.app.emit("deep-link://new-url", vec![url]);

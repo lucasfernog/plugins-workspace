@@ -105,13 +105,19 @@ impl Default for DesktopProtocol {
 }
 
 impl DesktopProtocol {
+    /// Whether `scheme` is one of the configured schemes. Schemes are case-insensitive
+    /// (RFC 3986), and [`url::Url`] always reports them in lowercase.
     #[allow(dead_code)]
-    pub fn contains_scheme(&self, scheme: &String) -> bool {
-        match self {
-            Self::One(protocol) => protocol.schemes.contains(scheme),
-            Self::List(protocols) => protocols
+    pub fn contains_scheme(&self, scheme: &str) -> bool {
+        let matches = |protocol: &DeepLinkProtocol| {
+            protocol
+                .schemes
                 .iter()
-                .any(|protocol| protocol.schemes.contains(scheme)),
+                .any(|s| s.eq_ignore_ascii_case(scheme))
+        };
+        match self {
+            Self::One(protocol) => matches(protocol),
+            Self::List(protocols) => protocols.iter().any(matches),
         }
     }
 
@@ -124,5 +130,25 @@ impl DesktopProtocol {
                 .flat_map(|protocol| protocol.schemes.clone())
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contains_scheme_ignores_case() {
+        let one: DesktopProtocol =
+            serde_json::from_str(r#"{ "schemes": ["MyApp", "other"] }"#).unwrap();
+        assert!(one.contains_scheme("myapp"));
+        assert!(one.contains_scheme("MYAPP"));
+        assert!(one.contains_scheme("other"));
+        assert!(!one.contains_scheme("myapp2"));
+
+        let list: DesktopProtocol =
+            serde_json::from_str(r#"[{ "schemes": ["a"] }, { "schemes": ["Web+App"] }]"#).unwrap();
+        assert!(list.contains_scheme("web+app"));
+        assert!(!list.contains_scheme("b"));
     }
 }
