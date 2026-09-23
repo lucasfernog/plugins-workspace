@@ -10,6 +10,11 @@ to gather from the frontend.
 
 All information except the host name are available.
 
+Only `allow-locale` has an effect: `platform`, `version`, `type`, `family`,
+`arch`, `exeExtension` and `eol` read values that the plugin injects into
+every webview at startup, so they are always available and their permissions
+are deprecated no-ops.
+
 """
 
 permissions = [

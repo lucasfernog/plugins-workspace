@@ -8,6 +8,11 @@ to gather from the frontend.
 
 All information except the host name are available.
 
+Only `allow-locale` has an effect: `platform`, `version`, `type`, `family`,
+`arch`, `exeExtension` and `eol` read values that the plugin injects into
+every webview at startup, so they are always available and their permissions
+are deprecated no-ops.
+
 #### This default permission set includes the following:
 
 - `allow-arch`
@@ -26,84 +31,6 @@ All information except the host name are available.
 <th>Description</th>
 </tr>
 
-
-<tr>
-<td>
-
-`os:allow-arch`
-
-</td>
-<td>
-
-Enables the arch command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:deny-arch`
-
-</td>
-<td>
-
-Denies the arch command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:allow-exe-extension`
-
-</td>
-<td>
-
-Enables the exe_extension command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:deny-exe-extension`
-
-</td>
-<td>
-
-Denies the exe_extension command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:allow-family`
-
-</td>
-<td>
-
-Enables the family command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:deny-family`
-
-</td>
-<td>
-
-Denies the family command without any pre-configured scope.
-
-</td>
-</tr>
 
 <tr>
 <td>
@@ -160,38 +87,12 @@ Denies the locale command without any pre-configured scope.
 <tr>
 <td>
 
-`os:allow-os-type`
-
-</td>
-<td>
-
-Enables the os_type command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`os:deny-os-type`
-
-</td>
-<td>
-
-Denies the os_type command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `os:allow-platform`
 
 </td>
 <td>
 
-Enables the platform command without any pre-configured scope.
+Enables the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
 
 </td>
 </tr>
@@ -204,7 +105,7 @@ Enables the platform command without any pre-configured scope.
 </td>
 <td>
 
-Denies the platform command without any pre-configured scope.
+Denies the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
 
 </td>
 </tr>
@@ -217,7 +118,7 @@ Denies the platform command without any pre-configured scope.
 </td>
 <td>
 
-Enables the version command without any pre-configured scope.
+Enables the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
 
 </td>
 </tr>
@@ -230,7 +131,111 @@ Enables the version command without any pre-configured scope.
 </td>
 <td>
 
-Denies the version command without any pre-configured scope.
+Denies the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:allow-os-type`
+
+</td>
+<td>
+
+Enables the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:deny-os-type`
+
+</td>
+<td>
+
+Denies the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:allow-family`
+
+</td>
+<td>
+
+Enables the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:deny-family`
+
+</td>
+<td>
+
+Denies the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:allow-arch`
+
+</td>
+<td>
+
+Enables the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:deny-arch`
+
+</td>
+<td>
+
+Denies the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:allow-exe-extension`
+
+</td>
+<td>
+
+Enables the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`os:deny-exe-extension`
+
+</td>
+<td>
+
+Denies the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)
 
 </td>
 </tr>

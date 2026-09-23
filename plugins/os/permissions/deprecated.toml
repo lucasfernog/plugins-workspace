@@ -1,0 +1,65 @@
+"$schema" = "schemas/schema.json"
+
+# These commands do not exist: the values they would return are injected into
+# every webview by the plugin's initialization script. The permissions are kept
+# so existing capability files keep working, and will be removed in v3.
+
+[[permission]]
+identifier = "allow-platform"
+description = "Enables the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["platform"]
+
+[[permission]]
+identifier = "deny-platform"
+description = "Denies the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["platform"]
+
+[[permission]]
+identifier = "allow-version"
+description = "Enables the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["version"]
+
+[[permission]]
+identifier = "deny-version"
+description = "Denies the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["version"]
+
+[[permission]]
+identifier = "allow-os-type"
+description = "Enables the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["os_type"]
+
+[[permission]]
+identifier = "deny-os-type"
+description = "Denies the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["os_type"]
+
+[[permission]]
+identifier = "allow-family"
+description = "Enables the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["family"]
+
+[[permission]]
+identifier = "deny-family"
+description = "Denies the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["family"]
+
+[[permission]]
+identifier = "allow-arch"
+description = "Enables the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["arch"]
+
+[[permission]]
+identifier = "deny-arch"
+description = "Denies the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["arch"]
+
+[[permission]]
+identifier = "allow-exe-extension"
+description = "Enables the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.allow = ["exe_extension"]
+
+[[permission]]
+identifier = "deny-exe-extension"
+description = "Denies the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+commands.deny = ["exe_extension"]

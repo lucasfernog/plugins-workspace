@@ -295,42 +295,6 @@
       "type": "string",
       "oneOf": [
         {
-          "description": "Enables the arch command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-arch",
-          "markdownDescription": "Enables the arch command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the arch command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-arch",
-          "markdownDescription": "Denies the arch command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the exe_extension command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-exe-extension",
-          "markdownDescription": "Enables the exe_extension command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the exe_extension command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-exe-extension",
-          "markdownDescription": "Denies the exe_extension command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the family command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-family",
-          "markdownDescription": "Enables the family command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the family command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-family",
-          "markdownDescription": "Denies the family command without any pre-configured scope."
-        },
-        {
           "description": "Enables the hostname command without any pre-configured scope.",
           "type": "string",
           "const": "allow-hostname",
@@ -355,46 +319,82 @@
           "markdownDescription": "Denies the locale command without any pre-configured scope."
         },
         {
-          "description": "Enables the os_type command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-os-type",
-          "markdownDescription": "Enables the os_type command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the os_type command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-os-type",
-          "markdownDescription": "Denies the os_type command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the platform command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-platform",
-          "markdownDescription": "Enables the platform command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the platform command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-platform",
-          "markdownDescription": "Denies the platform command without any pre-configured scope."
-        },
-        {
-          "description": "Enables the version command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-version",
-          "markdownDescription": "Enables the version command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the version command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-version",
-          "markdownDescription": "Denies the version command without any pre-configured scope."
-        },
-        {
-          "description": "This permission set configures which\noperating system information are available\nto gather from the frontend.\n\n#### Granted Permissions\n\nAll information except the host name are available.\n\n\n#### This default permission set includes:\n\n- `allow-arch`\n- `allow-exe-extension`\n- `allow-family`\n- `allow-locale`\n- `allow-os-type`\n- `allow-platform`\n- `allow-version`",
+          "description": "This permission set configures which\noperating system information are available\nto gather from the frontend.\n\n#### Granted Permissions\n\nAll information except the host name are available.\n\nOnly `allow-locale` has an effect: `platform`, `version`, `type`, `family`,\n`arch`, `exeExtension` and `eol` read values that the plugin injects into\nevery webview at startup, so they are always available and their permissions\nare deprecated no-ops.\n\n\n#### This default permission set includes:\n\n- `allow-arch`\n- `allow-exe-extension`\n- `allow-family`\n- `allow-locale`\n- `allow-os-type`\n- `allow-platform`\n- `allow-version`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "This permission set configures which\noperating system information are available\nto gather from the frontend.\n\n#### Granted Permissions\n\nAll information except the host name are available.\n\n\n#### This default permission set includes:\n\n- `allow-arch`\n- `allow-exe-extension`\n- `allow-family`\n- `allow-locale`\n- `allow-os-type`\n- `allow-platform`\n- `allow-version`"
+          "markdownDescription": "This permission set configures which\noperating system information are available\nto gather from the frontend.\n\n#### Granted Permissions\n\nAll information except the host name are available.\n\nOnly `allow-locale` has an effect: `platform`, `version`, `type`, `family`,\n`arch`, `exeExtension` and `eol` read values that the plugin injects into\nevery webview at startup, so they are always available and their permissions\nare deprecated no-ops.\n\n\n#### This default permission set includes:\n\n- `allow-arch`\n- `allow-exe-extension`\n- `allow-family`\n- `allow-locale`\n- `allow-os-type`\n- `allow-platform`\n- `allow-version`"
+        },
+        {
+          "description": "Enables the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-platform",
+          "markdownDescription": "Enables the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-platform",
+          "markdownDescription": "Denies the platform command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `platform()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Enables the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-version",
+          "markdownDescription": "Enables the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-version",
+          "markdownDescription": "Denies the version command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `version()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Enables the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-os-type",
+          "markdownDescription": "Enables the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-os-type",
+          "markdownDescription": "Denies the os_type command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `type()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Enables the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-family",
+          "markdownDescription": "Enables the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-family",
+          "markdownDescription": "Denies the family command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `family()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Enables the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-arch",
+          "markdownDescription": "Enables the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-arch",
+          "markdownDescription": "Denies the arch command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `arch()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Enables the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "allow-exe-extension",
+          "markdownDescription": "Enables the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
+        },
+        {
+          "description": "Denies the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)",
+          "type": "string",
+          "const": "deny-exe-extension",
+          "markdownDescription": "Denies the exe_extension command without any pre-configured scope. (**DEPRECATED**: this permission has no effect, `exeExtension()` reads a value injected into every webview at startup and is always available. It will be removed in v3)"
         }
       ]
     }
