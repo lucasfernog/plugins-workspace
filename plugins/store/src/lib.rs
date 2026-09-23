@@ -15,7 +15,7 @@ pub use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 pub use store::{resolve_store_path, DeserializeFn, SerializeFn, Store, StoreBuilder};
@@ -40,6 +40,8 @@ struct ChangePayload<'a> {
 #[derive(Debug)]
 struct StoreState {
     stores: Arc<RwLock<HashMap<PathBuf, ResourceId>>>,
+    /// Held while a store is being created, see `StoreBuilder::build_inner`.
+    build_lock: Mutex<()>,
     serialize_fns: HashMap<String, SerializeFn>,
     deserialize_fns: HashMap<String, DeserializeFn>,
     default_serialize: SerializeFn,
@@ -321,11 +323,16 @@ impl<R: Runtime, T: Manager<R>> StoreExt<R> for T {
     }
 
     fn get_store(&self, path: impl AsRef<Path>) -> Option<Arc<Store<R>>> {
-        let collection = self.state::<StoreState>();
-        let stores = collection.stores.read().unwrap();
-        stores
-            .get(&resolve_store_path(self.app_handle(), path.as_ref()).ok()?)
-            .and_then(|rid| self.resources_table().get(*rid).ok())
+        let path = resolve_store_path(self.app_handle(), path.as_ref()).ok()?;
+        // release the `stores` lock before locking the resources table (see `build_inner`)
+        let rid = self
+            .state::<StoreState>()
+            .stores
+            .read()
+            .unwrap()
+            .get(&path)
+            .copied()?;
+        self.resources_table().get(rid).ok()
     }
 }
 
@@ -458,6 +465,7 @@ impl Builder {
             .setup(move |app_handle, _api| {
                 app_handle.manage(StoreState {
                     stores: Arc::new(RwLock::new(HashMap::new())),
+                    build_lock: Mutex::new(()),
                     serialize_fns: self.serialize_fns,
                     deserialize_fns: self.deserialize_fns,
                     default_serialize: self.default_serialize,
@@ -467,10 +475,19 @@ impl Builder {
             })
             .on_event(|app_handle, event| {
                 if let RunEvent::Exit = event {
-                    let collection = app_handle.state::<StoreState>();
-                    let stores = collection.stores.read().unwrap();
-                    for (path, rid) in stores.iter() {
-                        if let Ok(store) = app_handle.resources_table().get::<Store<R>>(*rid) {
+                    // release the `stores` lock before locking the resources table
+                    // (see `build_inner`)
+                    let stores: Vec<(PathBuf, ResourceId)> = app_handle
+                        .state::<StoreState>()
+                        .stores
+                        .read()
+                        .unwrap()
+                        .iter()
+                        .map(|(path, rid)| (path.clone(), *rid))
+                        .collect();
+                    for (path, rid) in stores {
+                        let store = app_handle.resources_table().get::<Store<R>>(rid);
+                        if let Ok(store) = store {
                             if let Err(err) = store.save() {
                                 tracing::error!("failed to save store {path:?} with error {err:?}");
                             }
@@ -568,6 +585,39 @@ mod tests {
         );
 
         drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn concurrent_close_and_load_do_not_deadlock() {
+        let app = mock_app();
+        let dir = temp_dir("close-and-load");
+
+        let mut threads = Vec::new();
+        for thread in 0..4 {
+            let handle = app.handle().clone();
+            let path = dir.join(format!("store-{thread}.json"));
+            threads.push(move || {
+                for _ in 0..200 {
+                    let store = handle
+                        .store_builder(&path)
+                        .disable_auto_save()
+                        .build()
+                        .unwrap();
+                    let _ = handle.get_store(&path);
+                    // closes through the resources table, like `close()` from JS
+                    store.close_resource();
+                }
+            });
+        }
+
+        run_with_timeout(move || {
+            let threads: Vec<_> = threads.into_iter().map(std::thread::spawn).collect();
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        });
+
         let _ = std::fs::remove_dir_all(dir);
     }
 }

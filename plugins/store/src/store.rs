@@ -201,20 +201,29 @@ impl<R: Runtime> StoreBuilder<R> {
     }
 
     pub(crate) fn build_inner(mut self) -> crate::Result<(Arc<Store<R>>, ResourceId)> {
-        let stores = self.app.state::<StoreState>().stores.clone();
-        let mut stores = stores.write().unwrap();
+        let app = self.app.clone();
+        let state = app.state::<StoreState>();
+        // Serializes store creation so a path is never loaded twice.
+        //
+        // Lock order: the `stores` lock must never be held while locking the resources table,
+        // since the table is locked while `Resource::close` runs, which then takes `stores`.
+        let _build_guard = state.build_lock.lock().unwrap();
 
         self.path = resolve_store_path(&self.app, self.path)?;
 
         if self.create_new {
-            if let Some(rid) = stores.remove(&self.path) {
+            let rid = state.stores.write().unwrap().remove(&self.path);
+            if let Some(rid) = rid {
                 let _ = self.app.resources_table().take::<Store<R>>(rid);
             }
-        } else if let Some(rid) = stores.get(&self.path) {
-            // The resource id we stored can be invalid due to
-            // the resource table getting modified by an external source
-            // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
-            return Ok((self.app.resources_table().get(*rid)?, *rid));
+        } else {
+            let rid = state.stores.read().unwrap().get(&self.path).copied();
+            if let Some(rid) = rid {
+                // The resource id we stored can be invalid due to
+                // the resource table getting modified by an external source
+                // (e.g. `App::cleanup_before_exit` > `manager.resources_table.clear()`)
+                return Ok((self.app.resources_table().get(rid)?, rid));
+            }
         }
 
         // if stores.contains_key(&self.path) {
@@ -246,7 +255,7 @@ impl<R: Runtime> StoreBuilder<R> {
 
         let store = Arc::new(store);
         let rid = self.app.resources_table().add_arc(store.clone());
-        stores.insert(self.path, rid);
+        state.stores.write().unwrap().insert(self.path, rid);
 
         Ok((store, rid))
     }
