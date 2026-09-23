@@ -89,15 +89,25 @@ impl CommandChild {
 /// Describes the result of a process after it has terminated.
 #[derive(Debug)]
 pub struct ExitStatus {
-    // This field is intentionally left private.
+    // These fields are intentionally left private.
     // See: https://github.com/tauri-apps/plugins-workspace/pull/3115.
     code: Option<i32>,
+    signal: Option<i32>,
 }
 
 impl ExitStatus {
     /// Returns the exit code of the process, if any.
+    ///
+    /// On Unix this is `None` when the process was terminated by a signal, see [`Self::signal`].
     pub fn code(&self) -> Option<i32> {
         self.code
+    }
+
+    /// Returns the signal that terminated the process, if any.
+    ///
+    /// Always `None` on Windows.
+    pub fn signal(&self) -> Option<i32> {
+        self.signal
     }
 
     /// Returns true if exit status is zero. Signal termination is not considered a success, and success is defined as a zero exit status.
@@ -380,14 +390,20 @@ impl Command {
     /// ```
     pub async fn status(self) -> crate::Result<ExitStatus> {
         let (mut rx, _child) = self.spawn()?;
-        let mut code = None;
+        let mut status = ExitStatus {
+            code: None,
+            signal: None,
+        };
         #[allow(clippy::collapsible_match)]
         while let Some(event) = rx.recv().await {
             if let CommandEvent::Terminated(payload) = event {
-                code = payload.code;
+                status = ExitStatus {
+                    code: payload.code,
+                    signal: payload.signal,
+                };
             }
         }
-        Ok(ExitStatus { code })
+        Ok(status)
     }
 
     /// Executes the command as a child process, waiting for it to finish and collecting all of its output.
@@ -408,14 +424,20 @@ impl Command {
     pub async fn output(self) -> crate::Result<Output> {
         let (mut rx, _child) = self.spawn()?;
 
-        let mut code = None;
+        let mut status = ExitStatus {
+            code: None,
+            signal: None,
+        };
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Terminated(payload) => {
-                    code = payload.code;
+                    status = ExitStatus {
+                        code: payload.code,
+                        signal: payload.signal,
+                    };
                 }
                 CommandEvent::Stdout(line) => {
                     stdout.extend(line);
@@ -429,7 +451,7 @@ impl Command {
             }
         }
         Ok(Output {
-            status: ExitStatus { code },
+            status,
             stdout,
             stderr,
         })
@@ -654,5 +676,20 @@ mod tests {
             String::from_utf8(output.stderr).unwrap(),
             "cat: test/: Is a directory\n\n"
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_cmd_status_reports_signal() {
+        let cmd = Command::new("sh").args(["-c", "kill -9 $$"]);
+        let status = tauri::async_runtime::block_on(cmd.status()).unwrap();
+        assert_eq!(status.code(), None);
+        assert_eq!(status.signal(), Some(9));
+        assert!(!status.success());
+
+        let cmd = Command::new("sh").args(["-c", "exit 3"]);
+        let output = tauri::async_runtime::block_on(cmd.output()).unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.status.signal(), None);
     }
 }
