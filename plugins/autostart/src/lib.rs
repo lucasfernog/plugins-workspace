@@ -330,6 +330,11 @@ impl Builder {
 /// Initializes the plugin.
 ///
 /// `args` - are passed to your app on startup.
+///
+/// Prefer [`Builder`], which also accepts non-`'static` arguments and sets the entry's
+/// [name](Builder::app_name). `init(launcher, args)` is the same as
+/// `Builder::new().args(args).macos_launcher(launcher).build()`, where `launcher` is ignored
+/// on platforms other than macOS.
 pub fn init<R: Runtime>(
     #[allow(unused)] macos_launcher: MacosLauncher,
     args: Option<Vec<&'static str>>,
