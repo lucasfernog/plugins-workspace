@@ -5,6 +5,7 @@
   "windows": ["main"],
   "platforms": ["android", "iOS"],
   "permissions": [
+    "nfc:allow-is-available",
     "nfc:allow-write",
     "nfc:allow-scan",
     "biometric:allow-authenticate",
