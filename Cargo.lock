@@ -6995,8 +6995,6 @@ name = "tauri-plugin-websocket"
 version = "2.4.3"
 dependencies = [
  "futures-util",
- "http",
- "log",
  "rand 0.9.4",
  "rustls",
  "serde",

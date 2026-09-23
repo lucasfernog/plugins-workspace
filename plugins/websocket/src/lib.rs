@@ -19,7 +19,6 @@
 )]
 
 use futures_util::{stream::SplitSink, SinkExt, StreamExt};
-use http::header::{HeaderName, HeaderValue};
 use serde::{ser::Serializer, Deserialize, Serialize};
 use tauri::{
     ipc::Channel,
@@ -42,6 +41,7 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::{
     tungstenite::{
         client::IntoClientRequest,
+        http::header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue},
         protocol::{CloseFrame as ProtocolCloseFrame, WebSocketConfig},
         Message,
     },
@@ -63,9 +63,9 @@ enum Error {
     #[error("connection not found for the given id: {0}")]
     ConnectionNotFound(Id),
     #[error(transparent)]
-    InvalidHeaderValue(#[from] tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue),
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
     #[error(transparent)]
-    InvalidHeaderName(#[from] tokio_tungstenite::tungstenite::http::header::InvalidHeaderName),
+    InvalidHeaderName(#[from] InvalidHeaderName),
 }
 
 impl Serialize for Error {
@@ -85,7 +85,7 @@ struct ConnectionManager(Mutex<HashMap<Id, WebSocketWriter>>);
     feature = "rustls-tls-native-roots",
     feature = "native-tls"
 ))]
-struct TlsConnector(Mutex<Option<Connector>>);
+struct TlsConnector(Option<Connector>);
 
 #[derive(Deserialize)]
 #[serde(untagged, rename_all = "camelCase")]
@@ -184,7 +184,7 @@ async fn connect<R: Runtime>(
         feature = "native-tls"
     ))]
     let tls_connector = match window.try_state::<TlsConnector>() {
-        Some(tls_connector) => tls_connector.0.lock().await.clone(),
+        Some(tls_connector) => tls_connector.0.clone(),
         None => None,
     };
 
@@ -323,7 +323,7 @@ impl Builder {
                     feature = "rustls-tls-native-roots",
                     feature = "native-tls"
                 ))]
-                app.manage(TlsConnector(Mutex::new(self.tls_connector)));
+                app.manage(TlsConnector(self.tls_connector));
                 Ok(())
             })
             .build()
