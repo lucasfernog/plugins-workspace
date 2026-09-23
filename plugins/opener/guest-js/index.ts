@@ -3,17 +3,33 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Open files and URLs using their default application.
+ * Open files and URLs using their default application, and reveal files in the system's file explorer.
  *
  * ## Security
  *
- * This API has a scope configuration that forces you to restrict the files and urls to be opened.
+ * {@link openUrl} and {@link openPath} are restricted by the scope of the capability that allows them.
+ * Each scope entry is either a `url` or a `path` glob pattern, plus an optional `app` field that controls
+ * which program may be passed as `openWith`:
  *
- * ### Restricting access to the {@link open | `open`} API
+ * - omitted: only the default application may be used (`openWith` must not be set),
+ * - `true`: any application may be used,
+ * - `false`: the entry never matches,
+ * - `"<name>"`: only this specific application may be used.
  *
- * On the configuration object, `open: true` means that the {@link open} API can be used with any URL,
- * as the argument is validated with the `^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+` regex.
- * You can change that regex by changing the boolean value to a string, e.g. `open: ^https://github.com/`.
+ * ```json
+ * {
+ *   "permissions": [
+ *     "opener:default",
+ *     {
+ *       "identifier": "opener:allow-open-path",
+ *       "allow": [{ "path": "$APPDATA/**" }]
+ *     }
+ *   ]
+ * }
+ * ```
+ *
+ * `opener:default` allows opening `http(s)://`, `mailto:` and `tel:` URLs with their default application,
+ * and {@link revealItemInDir} for any path. {@link openPath} is not allowed by default.
  *
  * @module
  */
