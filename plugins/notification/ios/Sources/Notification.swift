@@ -30,8 +30,10 @@ enum NotificationError: LocalizedError {
 
 func makeNotificationContent(_ notification: Notification) throws -> UNNotificationContent {
   let content = UNMutableNotificationContent()
-  content.title = NSString.localizedUserNotificationString(
-    forKey: notification.title, arguments: nil)
+  if let title = notification.title {
+    content.title = NSString.localizedUserNotificationString(
+      forKey: title, arguments: nil)
+  }
   if let body = notification.body {
     content.body = NSString.localizedUserNotificationString(
       forKey: body,

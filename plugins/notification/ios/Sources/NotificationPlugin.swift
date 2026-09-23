@@ -64,7 +64,8 @@ struct NotificationAttachment: Codable {
 
 struct Notification: Decodable {
   let id: Int
-  var title: String
+  // optional: the Rust builder sends `null` when no title was set
+  var title: String?
   var body: String?
   var extra: [String: String]?
   var schedule: NotificationSchedule?
