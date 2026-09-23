@@ -133,7 +133,7 @@ public class Geolocation(private val context: Context) {
             if (tmpLoc != null) {
                 val locationAge = SystemClock.elapsedRealtimeNanos() - tmpLoc.elapsedRealtimeNanos
                 val maxAgeNano = maximumAge * 1000000L
-                if (locationAge <= maxAgeNano && (lastLoc == null || lastLoc.elapsedRealtimeNanos > tmpLoc.elapsedRealtimeNanos)) {
+                if (locationAge <= maxAgeNano && (lastLoc == null || tmpLoc.elapsedRealtimeNanos > lastLoc.elapsedRealtimeNanos)) {
                     lastLoc = tmpLoc
                 }
             }
