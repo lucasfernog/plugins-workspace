@@ -865,7 +865,8 @@ fn get_metadata<R: Runtime, F: FnOnce(&PathBuf) -> std::io::Result<std::fs::Meta
     options: Option<BaseOptions>,
 ) -> CommandResult<std::fs::Metadata> {
     match path {
-        SafeFilePath::Url(url) => {
+        // `content://` URIs can only be opened by the native layer
+        SafeFilePath::Url(url) if url.scheme() != "file" => {
             let file_handle = resolve_file(
                 permission,
                 webview,
@@ -888,13 +889,13 @@ fn get_metadata<R: Runtime, F: FnOnce(&PathBuf) -> std::io::Result<std::fs::Meta
                 .into()
             })
         }
-        SafeFilePath::Path(p) => get_fs_metadata(
+        path => get_fs_metadata(
             permission,
             metadata_fn,
             webview,
             global_scope,
             command_scope,
-            SafeFilePath::Path(p),
+            path,
             options,
         ),
     }
@@ -1451,7 +1452,10 @@ pub fn resolve_file<R: Runtime>(
     #[cfg(target_os = "ios")]
     let path_ = path.clone();
     match path {
-        SafeFilePath::Url(url) => {
+        // `file://` URLs are regular paths: resolve them through the fs scope like on desktop.
+        // Other URLs (Android `content://` URIs and `asset://localhost/` resources) can only be
+        // opened by the native layer and are not checked against the scope.
+        SafeFilePath::Url(url) if url.scheme() != "file" => {
             let resolved_path = url.as_str().into();
             let file = webview
                 .fs()
@@ -1467,12 +1471,12 @@ pub fn resolve_file<R: Runtime>(
                 app_handle,
             })
         }
-        SafeFilePath::Path(path) => resolve_file_in_fs(
+        path => resolve_file_in_fs(
             permission,
             webview,
             global_scope,
             command_scope,
-            SafeFilePath::Path(path),
+            path,
             open_options,
         ),
     }
