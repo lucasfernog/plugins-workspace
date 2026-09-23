@@ -14,6 +14,7 @@ use tauri::{
     plugin::{Builder, PluginApi, TauriPlugin},
     AppHandle, EventId, Listener, Manager, Runtime,
 };
+use url::Url;
 
 mod commands;
 mod config;
@@ -182,6 +183,15 @@ mod imp {
     #[cfg(windows)]
     use windows_registry::{CLASSES_ROOT, CURRENT_USER, LOCAL_MACHINE};
 
+    /// Name of the `.desktop` file that registers the app as a scheme handler on Linux.
+    #[cfg(target_os = "linux")]
+    fn handler_file_name(bin: &std::path::Path) -> String {
+        format!(
+            "{}-handler.desktop",
+            bin.file_name().unwrap_or_default().to_string_lossy()
+        )
+    }
+
     /// Access to the deep-link APIs.
     pub struct DeepLink<R: Runtime> {
         pub(crate) app: AppHandle<R>,
@@ -237,7 +247,7 @@ mod imp {
         ///   Note that you must manually check the arguments when registering deep link schemes dynamically with [`Self::register`].
         ///   Additionally, the deep link might have been provided as a CLI argument so you should check if its format matches what you expect.
         pub fn get_current(&self) -> crate::Result<Option<Vec<url::Url>>> {
-            return Ok(self.current.lock().unwrap().clone());
+            Ok(self.current.lock().unwrap().clone())
         }
 
         /// Registers all schemes defined in the configuration file.
@@ -291,10 +301,7 @@ mod imp {
             #[cfg(target_os = "linux")]
             {
                 let bin = tauri::utils::platform::current_exe()?;
-                let file_name = format!(
-                    "{}-handler.desktop",
-                    bin.file_name().unwrap().to_string_lossy()
-                );
+                let file_name = handler_file_name(&bin);
                 let appimage = self.app.env().appimage;
                 let exec = appimage
                     .clone()
@@ -401,13 +408,7 @@ mod imp {
 
             #[cfg(target_os = "linux")]
             {
-                let file_name = format!(
-                    "{}-handler.desktop",
-                    tauri::utils::platform::current_exe()?
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                );
+                let file_name = handler_file_name(&tauri::utils::platform::current_exe()?);
                 let mime_type = format!("x-scheme-handler/{}", _protocol.as_ref());
 
                 // stop being the default handler
@@ -492,13 +493,7 @@ mod imp {
             }
             #[cfg(target_os = "linux")]
             {
-                let file_name = format!(
-                    "{}-handler.desktop",
-                    tauri::utils::platform::current_exe()?
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                );
+                let file_name = handler_file_name(&tauri::utils::platform::current_exe()?);
 
                 let output = Command::new("xdg-mime")
                     .args([
@@ -519,7 +514,6 @@ mod imp {
 }
 
 pub use imp::DeepLink;
-use url::Url;
 
 /// Extensions to [`tauri::App`], [`tauri::AppHandle`], [`tauri::WebviewWindow`], [`tauri::Webview`] and [`tauri::Window`] to access the deep-link APIs.
 pub trait DeepLinkExt<R: Runtime> {

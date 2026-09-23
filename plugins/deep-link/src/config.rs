@@ -84,15 +84,15 @@ pub struct Config {
     #[serde(default)]
     pub mobile: Vec<AssociatedDomain>,
     /// Desktop requires urls starting with `<scheme>://`.
-    /// These urls are also active in dev mode on Android.
-    #[allow(unused)] // Used in tauri-bundler
+    /// Also read by the Tauri bundler to register the schemes at install time.
+    #[allow(unused)] // not read by build.rs
     #[serde(default)]
     pub desktop: DesktopProtocol,
 }
 
 #[derive(Deserialize, Clone)]
 #[serde(untagged)]
-#[allow(unused)] // Used in tauri-bundler
+#[allow(unused)] // not read by build.rs
 pub enum DesktopProtocol {
     One(DeepLinkProtocol),
     List(Vec<DeepLinkProtocol>),
