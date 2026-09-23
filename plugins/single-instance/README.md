@@ -68,6 +68,14 @@ pub fn run() {
 
 Note that currently, plugins run in the order they were added in to the builder, so make sure that this plugin is registered first. Register it on the builder as shown above, not with `app.handle().plugin()` inside `setup`: by then the windows from `tauri.conf.json` already exist, so a second instance would briefly show them.
 
+### Things to know
+
+- **Treat the callback arguments as untrusted input.** Any process running as the same user can send arguments to the running instance through the plugin's IPC channel (a window message on Windows, D-Bus on Linux, a Unix socket on macOS). Validate them before acting on them, and don't forward them unfiltered to your frontend.
+- The callback runs on the main thread on Windows, on a D-Bus executor thread on Linux and on an async runtime worker on macOS. Keep it short, and use `AppHandle::run_on_main_thread` for work that needs the main thread.
+- On Windows, a second instance running at a lower integrity level than the running one (for example not elevated while the running instance is elevated) can't reach it: its arguments are dropped and it exits.
+- The crate is empty on Android and iOS, so gate the registration with `#[cfg(desktop)]`.
+- If you terminate the process with `std::process::exit` or similar, which skips `RunEvent::Exit`, call `tauri_plugin_single_instance::destroy(app)` first.
+
 ## Cargo features
 
 - `semver`: lets instances whose versions are SemVer-incompatible (e.g. `1.x` and `2.x`) run side by side, while compatible versions are still limited to one instance.
