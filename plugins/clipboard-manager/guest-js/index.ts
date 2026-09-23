@@ -100,7 +100,13 @@ async function writeImage(
 }
 
 /**
- * Gets the clipboard content as Uint8Array image.
+ * Gets the clipboard content as an image.
+ *
+ * The returned {@link Image} keeps the decoded RGBA pixels alive on the Rust side until it is
+ * closed. Call `image.close()` once you are done with it, otherwise the memory is only freed
+ * when the webview is destroyed.
+ *
+ * Rejects if the clipboard does not hold an image.
  *
  * #### Platform-specific
  *
@@ -110,9 +116,18 @@ async function writeImage(
  * ```typescript
  * import { readImage } from '@tauri-apps/plugin-clipboard-manager';
  *
- * const clipboardImage = await readImage();
- * const blob = new Blob([await clipboardImage.rgba()], { type: 'image' })
- * const url = URL.createObjectURL(blob)
+ * const image = await readImage();
+ * const { width, height } = await image.size();
+ * const rgba = await image.rgba();
+ * await image.close();
+ *
+ * // `rgba` holds raw pixels, not an encoded file: draw it on a canvas to display it
+ * const canvas = document.createElement('canvas');
+ * canvas.width = width;
+ * canvas.height = height;
+ * canvas
+ *   .getContext('2d')
+ *   ?.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
  * ```
  * @returns A promise resolving to the clipboard contents as an {@link Image}.
  * @since 2.0.0
