@@ -12,6 +12,10 @@ There are no standards/requirements for vibration support on Android, so the `fe
 | Android  | ✓         |
 | iOS      | ✓         |
 
+- On desktop the plugin can still be registered, but every command is a no-op that reports success.
+- On Android the plugin adds the `android.permission.VIBRATE` permission to your app's manifest automatically.
+- On iOS the feedback depends on the device hardware and on the user's "System Haptics" setting. `vibrate` falls back to the fixed-length system vibration, ignoring the requested duration, on devices without Core Haptics support.
+
 ## Install
 
 _This plugin requires a Rust version of at least **1.77.2**_
