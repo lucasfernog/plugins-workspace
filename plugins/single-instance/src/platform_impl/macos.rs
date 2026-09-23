@@ -25,6 +25,7 @@ pub fn init<R: Runtime>(cb: Box<SingleInstanceCallback<R>>) -> TauriPlugin<R> {
             // Notify the singleton which may or may not exist.
             match notify_singleton(&socket) {
                 Ok(_) => {
+                    app.cleanup_before_exit();
                     std::process::exit(0);
                 }
                 Err(e) => {
