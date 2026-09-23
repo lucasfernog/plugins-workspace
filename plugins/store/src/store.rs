@@ -85,7 +85,11 @@ impl<R: Runtime> StoreBuilder<R> {
         }
     }
 
-    /// Inserts a default key-value pair.
+    /// Sets the default key-value pairs of the store, replacing any previously set defaults.
+    ///
+    /// The store starts with these values, the on-disk state is merged on top of them
+    /// (unless [`override_defaults`](Self::override_defaults) is set),
+    /// and [`Store::reset`] restores them.
     ///
     /// # Examples
     /// ```
@@ -106,7 +110,7 @@ impl<R: Runtime> StoreBuilder<R> {
         self
     }
 
-    /// Inserts multiple default key-value pairs.
+    /// Inserts a default key-value pair, see [`defaults`](Self::defaults).
     ///
     /// # Examples
     /// ```
@@ -189,12 +193,19 @@ impl<R: Runtime> StoreBuilder<R> {
     }
 
     /// Force create a new store with default values even if it already exists.
+    ///
+    /// The on-disk state is ignored and gets overwritten on the next save. If a store with the same
+    /// path is already loaded, it is replaced: its resource id (and so its JavaScript handles)
+    /// becomes invalid, while `Arc<Store>`s held in Rust keep working on the old instance.
     pub fn create_new(mut self) -> Self {
         self.create_new = true;
         self
     }
 
-    /// Override the store values when creating the store, ignoring defaults.
+    /// Use the on-disk state as is when loading the store, instead of merging it into the defaults.
+    ///
+    /// The defaults are only used when the store file does not exist (or cannot be loaded),
+    /// and by [`Store::reset`].
     pub fn override_defaults(mut self) -> Self {
         self.override_defaults = true;
         self
