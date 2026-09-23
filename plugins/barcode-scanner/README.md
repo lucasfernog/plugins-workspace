@@ -41,9 +41,41 @@ npm add @tauri-apps/plugin-barcode-scanner
 yarn add @tauri-apps/plugin-barcode-scanner
 ```
 
+## Setting up
+
+### iOS
+
+Apple requires a privacy description to be specified in `Info.plist` for camera access. Without it, `scan` rejects:
+
+- `NSCameraUsageDescription`
+
+The iOS Simulator has no camera, so `scan` rejects there as well.
+
+### Android
+
+This plugin automatically adds the following to your `AndroidManifest.xml` file:
+
+```xml
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-permission android:name="android.permission.VIBRATE" />
+
+<uses-feature android:name="android.hardware.camera.any" />
+```
+
+The `uses-feature` declaration is required by default, so the Google Play Store does not offer your app to devices without a camera. If scanning is optional in your app, replace it in your own `AndroidManifest.xml`:
+
+```xml
+<uses-feature
+  android:name="android.hardware.camera.any"
+  android:required="false"
+  tools:node="replace" />
+```
+
+(`tools` is the `http://schemas.android.com/tools` namespace.)
+
 ## Usage
 
-First you need to register the core plugin with Tauri:
+First you need to register the core plugin with Tauri. The plugin only exists on Android and iOS, so its registration must be gated with `#[cfg(mobile)]` for the app to build on desktop:
 
 `src-tauri/src/lib.rs`
 
@@ -51,13 +83,38 @@ First you need to register the core plugin with Tauri:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_barcode_scanner::init())
+        .setup(|app| {
+            #[cfg(mobile)]
+            app.handle().plugin(tauri_plugin_barcode_scanner::init())?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
 
-Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
+Afterwards all the plugin's APIs are available through the JavaScript guest bindings.
+
+`scan` rejects if the camera permission has not been granted, so check it and request it first:
+
+```javascript
+import {
+  checkPermissions,
+  requestPermissions,
+  openAppSettings
+} from '@tauri-apps/plugin-barcode-scanner'
+
+let permission = await checkPermissions()
+if (permission === 'prompt' || permission === 'prompt-with-rationale') {
+  permission = await requestPermissions()
+}
+if (permission !== 'granted') {
+  // the user denied the permission, only the system settings can grant it now
+  await openAppSettings()
+}
+```
+
+Then start scanning:
 
 ```javascript
 import { scan, Format } from '@tauri-apps/plugin-barcode-scanner'
