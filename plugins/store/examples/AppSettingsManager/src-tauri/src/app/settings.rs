@@ -12,13 +12,18 @@ pub struct AppSettings {
 
 impl<R: tauri::Runtime> From<&Store<R>> for AppSettings {
     fn from(store: &Store<R>) -> Self {
-        let launch_at_login = store
-            .get("appSettings.launchAtLogin")
+        // `main.rs` saves the settings as one object under the `appSettings` key
+        let app_settings = store.get("appSettings");
+
+        let launch_at_login = app_settings
+            .as_ref()
+            .and_then(|settings| settings.get("launchAtLogin"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let theme = store
-            .get("appSettings.theme")
+        let theme = app_settings
+            .as_ref()
+            .and_then(|settings| settings.get("theme"))
             .and_then(|v| v.as_str().map(String::from))
             .unwrap_or_else(|| "dark".to_owned());
 
