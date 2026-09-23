@@ -54,6 +54,14 @@ type OnRequest = Option<Box<dyn Fn(&Request, &mut Response) + Send + Sync>>;
 /// **Note: This plugin brings considerable security risks and you should only use it if you know
 /// what you are doing. Because the server has no authentication, any local process can connect to
 /// it and read the assets it serves. If in doubt, use the default custom protocol implementation.**
+///
+/// The server doesn't check the `Host` header either, so a website can use DNS rebinding to make
+/// the user's browser read the served assets too. Don't serve anything secret from it.
+///
+/// If you load the server's URL in a window and grant it a remote capability, every permission in
+/// that capability is available to whatever page is served on that address. Prefer binding to
+/// `127.0.0.1` rather than `localhost`, which binds only one address family and leaves the other
+/// one free for another process to take on the same port.
 pub struct Builder {
     port: u16,
     host: Option<String>,
