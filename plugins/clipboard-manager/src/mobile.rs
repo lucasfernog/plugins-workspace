@@ -123,6 +123,17 @@ impl<R: Runtime> Clipboard<R> {
         ))
     }
 
+    /// Not supported on mobile.
+    ///
+    /// # Errors
+    ///
+    /// Always returns [`crate::Error::Clipboard`].
+    pub fn read_html(&self) -> crate::Result<String> {
+        Err(crate::Error::Clipboard(
+            "Unsupported on this platform".to_string(),
+        ))
+    }
+
     /// Clears the system clipboard.
     ///
     /// On Android this only works on SDK 28 and above; on older versions the clipboard is

@@ -86,6 +86,7 @@
     "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-write-image",
     "clipboard-manager:allow-write-html",
+    "clipboard-manager:allow-read-html",
     "clipboard-manager:allow-clear",
     "fs:default",
     "fs:read-meta",

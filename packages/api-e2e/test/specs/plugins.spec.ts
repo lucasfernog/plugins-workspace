@@ -27,6 +27,7 @@ const commonSurface: Surface<CommonPluginApi> = {
     'writeText',
     'readText',
     'writeHtml',
+    'readHtml',
     'clear',
     'readImage',
     'writeImage'

@@ -11,8 +11,8 @@ import {
   isMobile
 } from '../helpers/index.js'
 
-// The mobile implementation only carries plain text: `write_html`, `write_image`
-// and `read_image` answer "Unsupported on this platform" there.
+// The mobile implementation only carries plain text: `write_html`, `read_html`,
+// `write_image` and `read_image` answer "Unsupported on this platform" there.
 describePlugin('clipboard-manager', () => {
   it('writeText and readText round-trip', async () => {
     const text = 'clipboard text from e2e — ✓'
@@ -44,6 +44,26 @@ describePlugin('clipboard-manager', () => {
         return api.clipboardManager.readText()
       })
     ).toBe('bold from e2e (alt)')
+  })
+
+  itDesktop('writeHtml and readHtml round-trip', async () => {
+    const html = await tauri(async (api) => {
+      await api.clipboardManager.writeHtml(
+        '<b>html from e2e</b>',
+        'html from e2e'
+      )
+      return api.clipboardManager.readHtml()
+    })
+    // macOS wraps the fragment in a full document
+    expect(html).toContain('<b>html from e2e</b>')
+  })
+
+  it('readHtml rejects when the clipboard holds no HTML', async () => {
+    const message = await tauriError(async (api) => {
+      await api.clipboardManager.writeText('plain text, no HTML')
+      await api.clipboardManager.readHtml()
+    })
+    expect(message).toMatch(isMobile ? /Unsupported on this platform/ : /./)
   })
 
   itDesktop('writeImage and readImage round-trip pixels', async () => {

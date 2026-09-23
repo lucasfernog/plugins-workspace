@@ -77,6 +77,21 @@ impl<R: Runtime> Clipboard<R> {
         self.with_clipboard(|clipboard| clipboard.set_html(html, alt_text))
     }
 
+    /// Reads the HTML content of the system clipboard.
+    ///
+    /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.
+    ///
+    /// Depending on the platform, the returned markup may be wrapped in additional markup
+    /// (for example a full `<html>` document on macOS).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Clipboard`] if the clipboard holds no HTML, could not be
+    /// initialized or the underlying [`arboard`] operation fails.
+    pub fn read_html(&self) -> crate::Result<String> {
+        self.with_clipboard(|clipboard| clipboard.get().html())
+    }
+
     /// Clears the system clipboard.
     ///
     /// # Errors

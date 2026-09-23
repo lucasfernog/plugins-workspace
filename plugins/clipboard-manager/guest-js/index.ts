@@ -139,6 +139,27 @@ async function writeHtml(html: string, altText?: string): Promise<void> {
 }
 
 /**
+ * Gets the clipboard content as HTML.
+ *
+ * #### Platform-specific
+ *
+ * - **macOS:** The markup may be wrapped in a full HTML document.
+ * - **Android / iOS:** Not supported.
+ *
+ * @example
+ * ```typescript
+ * import { writeHtml, readHtml } from '@tauri-apps/plugin-clipboard-manager';
+ * await writeHtml('<h1>Tauri is awesome!</h1>', 'Tauri is awesome!');
+ * const html = await readHtml(); // contains '<h1>Tauri is awesome!</h1>'
+ * ```
+ * @returns A promise resolving to the clipboard contents as HTML. Rejects if the clipboard holds no HTML.
+ * @since 2.4.0
+ */
+async function readHtml(): Promise<string> {
+  return await invoke('plugin:clipboard-manager|read_html')
+}
+
+/**
  * Clears the clipboard.
  *
  * #### Platform-specific
@@ -156,4 +177,12 @@ async function clear(): Promise<void> {
   await invoke('plugin:clipboard-manager|clear')
 }
 
-export { writeText, readText, writeHtml, clear, readImage, writeImage }
+export {
+  writeText,
+  readText,
+  writeHtml,
+  readHtml,
+  clear,
+  readImage,
+  writeImage
+}

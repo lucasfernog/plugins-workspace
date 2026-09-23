@@ -44,6 +44,32 @@ Denies the clear command without any pre-configured scope.
 <tr>
 <td>
 
+`clipboard-manager:allow-read-html`
+
+</td>
+<td>
+
+Enables the read_html command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`clipboard-manager:deny-read-html`
+
+</td>
+<td>
+
+Denies the read_html command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `clipboard-manager:allow-read-image`
 
 </td>

@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "write_image",
     "read_image",
     "write_html",
+    "read_html",
     "clear",
 ];
 

@@ -50,6 +50,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::read_image,
             commands::write_image,
             commands::write_html,
+            commands::read_html,
             commands::clear
         ])
         .setup(|app, api| {
