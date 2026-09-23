@@ -43,7 +43,7 @@ enum TagProcessMode {
 
 class Session {
   let nfcSession: NFCReaderSession?
-  let invoke: Invoke
+  var invoke: Invoke
   var keepAlive: Bool
   let tagProcessMode: TagProcessMode
   var tagStatus: NFCNDEFStatus?
@@ -430,6 +430,9 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
         let tag = session.tag
       {
         session.keepAlive = false
+        // the scan call that opened the session has already been resolved,
+        // so the write result settles this call instead
+        session.invoke = invoke
         self.writeNDEFTag(
           session: nfcSession, status: tagStatus, tag: tag,
           message: NFCNDEFMessage(records: ndefPayloads),
