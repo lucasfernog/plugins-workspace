@@ -385,7 +385,10 @@ pub async fn fetch<R: Runtime>(
                 .decode_to_vec()
                 .map_err(|_| Error::DataUrlDecodeError)?;
 
+            // without it, reqwest reports a placeholder URL as the response URL
+            use reqwest::ResponseBuilderExt;
             let response = http::Response::builder()
+                .url(url.clone())
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, data_url.mime_type().to_string())
                 .body(reqwest::Body::from(body))?;

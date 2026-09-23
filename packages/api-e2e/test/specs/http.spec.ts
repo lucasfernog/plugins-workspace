@@ -129,6 +129,21 @@ describePlugin('http', () => {
     expect(message).toMatch(/abort|cancel/i)
   })
 
+  it('fetch reads data: URLs and reports them as the response url', async () => {
+    const url = 'data:text/plain;charset=utf-8,hello%20data'
+    const response = await tauri(async (api, url) => {
+      const response = await api.http.fetch(url)
+      return {
+        url: response.url,
+        contentType: response.headers.get('content-type'),
+        body: await response.text()
+      }
+    }, url)
+    expect(response.url).toBe(url)
+    expect(response.contentType).toBe('text/plain;charset=utf-8')
+    expect(response.body).toBe('hello data')
+  })
+
   it('rejects URLs outside the configured scope', async () => {
     const message = await tauriError((api) =>
       api.http.fetch('http://localhost:3999/not-in-scope')
