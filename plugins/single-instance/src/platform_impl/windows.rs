@@ -6,7 +6,6 @@
 use crate::semver_compat::semver_compat_string;
 
 use crate::SingleInstanceCallback;
-use std::ffi::CStr;
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, RunEvent, Runtime,
@@ -154,16 +153,23 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
         }
 
         WM_COPYDATA => {
+            // Any process on the same desktop can send us this message, so don't trust its
+            // content: check the pointers and only read `cbData` bytes.
             let cds_ptr = lparam as *const COPYDATASTRUCT;
-            if (*cds_ptr).dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
+            if cds_ptr.is_null() {
+                return 0;
+            }
+            let cds = &*cds_ptr;
+            if cds.dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
+                let bytes: &[u8] = if cds.lpData.is_null() || cds.cbData == 0 {
+                    &[]
+                } else {
+                    std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize)
+                };
+                let (cwd, args) = crate::copydata::decode_legacy(bytes);
+
                 let userdata = UserData::<R>::from_hwnd(hwnd);
-
-                let data = CStr::from_ptr((*cds_ptr).lpData as _).to_string_lossy();
-                let mut s = data.split('|');
-                let cwd = s.next().unwrap();
-                let args = s.map(|s| s.to_string()).collect();
-
-                userdata.run_callback(args, cwd.to_string());
+                userdata.run_callback(args, cwd);
             }
             1
         }

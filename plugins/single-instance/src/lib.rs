@@ -30,6 +30,10 @@ mod platform_impl;
 #[cfg(feature = "semver")]
 mod semver_compat;
 
+#[cfg(any(target_os = "windows", test))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod copydata;
+
 pub(crate) type SingleInstanceCallback<R> =
     dyn FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static;
 
