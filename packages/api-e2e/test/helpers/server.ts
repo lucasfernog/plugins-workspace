@@ -19,6 +19,12 @@ export const UPDATER_FIXTURE_NOTES = 'Test update from the e2e fixture server'
 export const UPDATER_TARGET_NO_UPDATE = 'e2e-no-update'
 export const UPDATER_TARGET_OLDER = 'e2e-older'
 export const UPDATER_FIXTURE_OLDER_VERSION = '1.0.0'
+/**
+ * Targets answered with a static manifest whose `platforms` has no entry for
+ * the target: an older release, and a newer one.
+ */
+export const UPDATER_TARGET_STATIC_OLDER = 'e2e-static-older'
+export const UPDATER_TARGET_STATIC_NEWER = 'e2e-static-newer'
 
 /** Body served by `GET /download`. */
 export const DOWNLOAD_FIXTURE_BODY =
@@ -42,7 +48,9 @@ export interface FixtureServer {
  *   manifest in the dynamic format. Advertises {@link UPDATER_FIXTURE_VERSION},
  *   or {@link UPDATER_FIXTURE_OLDER_VERSION} when the target is
  *   {@link UPDATER_TARGET_OLDER}, and replies `204 No Content` when it is
- *   {@link UPDATER_TARGET_NO_UPDATE}.
+ *   {@link UPDATER_TARGET_NO_UPDATE}. For {@link UPDATER_TARGET_STATIC_OLDER}
+ *   and {@link UPDATER_TARGET_STATIC_NEWER} it serves a static-format
+ *   manifest with no `platforms` entry for the target.
  * - `GET /download` — {@link DOWNLOAD_FIXTURE_BODY} with a `Content-Length`.
  * - `* /echo` — a JSON description of the request (`method`, `url`, `headers`
  *   and the utf-8 `body`).
@@ -64,6 +72,24 @@ export function startFixtureServer(): Promise<FixtureServer> {
         const [target] = rest
         if (target === UPDATER_TARGET_NO_UPDATE) {
           res.writeHead(204).end()
+          return
+        }
+        if (
+          target === UPDATER_TARGET_STATIC_OLDER
+          || target === UPDATER_TARGET_STATIC_NEWER
+        ) {
+          json(res, {
+            version:
+              target === UPDATER_TARGET_STATIC_OLDER
+                ? UPDATER_FIXTURE_OLDER_VERSION
+                : UPDATER_FIXTURE_VERSION,
+            platforms: {
+              'some-other-target': {
+                url: `${FIXTURE_SERVER_URL}/download`,
+                signature: ''
+              }
+            }
+          })
           return
         }
         json(res, {

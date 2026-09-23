@@ -530,8 +530,8 @@ impl Updater {
     ///   current operating system.
     /// - [`Error::ReleaseNotFound`]: no endpoint returned a release manifest.
     /// - The last request or deserialization error when every endpoint failed.
-    /// - [`Error::TargetNotFound`] or [`Error::TargetsNotFound`]: the manifest has no entry
-    ///   for the current target.
+    /// - [`Error::TargetNotFound`] or [`Error::TargetsNotFound`]: the release is an update but the
+    ///   manifest has no entry for the current target.
     pub async fn check(&self) -> Result<Option<Update>> {
         // we want JSON only
         let mut headers = self.headers.clone();
@@ -681,10 +681,12 @@ impl Updater {
             None => release.version > self.current_version,
         };
 
-        let installer = installer_for_bundle_type(bundle_type());
-        let (download_url, signature) = self.get_urls(&release, &installer)?;
-
         let update = if should_update {
+            // only resolved for an actual update, so that a manifest without an entry for this
+            // target does not fail the check when the app is up to date
+            let installer = installer_for_bundle_type(bundle_type());
+            let (download_url, signature) = self.get_urls(&release, &installer)?;
+
             Some(Update {
                 current_version: self.current_version.to_string(),
                 target: target.to_owned(),

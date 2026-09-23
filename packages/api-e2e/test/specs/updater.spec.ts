@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauri, describePlugin } from '../helpers/index.js'
+import { tauri, tauriError, describePlugin } from '../helpers/index.js'
 import {
   UPDATER_FIXTURE_VERSION,
   UPDATER_FIXTURE_NOTES,
   UPDATER_TARGET_NO_UPDATE,
-  UPDATER_TARGET_OLDER
+  UPDATER_TARGET_OLDER,
+  UPDATER_TARGET_STATIC_OLDER,
+  UPDATER_TARGET_STATIC_NEWER
 } from '../helpers/server.js'
 
 // The e2e build points the updater endpoint at the fixture server (see
@@ -59,6 +61,25 @@ describePlugin('updater', { desktopOnly: true }, () => {
       UPDATER_TARGET_OLDER
     )
     expect(update).toBeNull()
+  })
+
+  it('check resolves null for an older release missing the target', async () => {
+    // an up-to-date app must not fail because the static manifest has no
+    // entry for its target
+    const update = await tauri(
+      (api, target) => api.updater.check({ target }),
+      UPDATER_TARGET_STATIC_OLDER
+    )
+    expect(update).toBeNull()
+  })
+
+  it('check rejects a newer release missing the target', async () => {
+    const error = await tauriError(
+      (api, target) => api.updater.check({ target }),
+      UPDATER_TARGET_STATIC_NEWER
+    )
+    expect(error).toContain(UPDATER_TARGET_STATIC_NEWER)
+    expect(error).toContain('was not found')
   })
 
   it('check forwards custom headers and honors the timeout option', async () => {
