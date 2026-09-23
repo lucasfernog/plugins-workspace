@@ -95,7 +95,7 @@ describePlugin('http', () => {
 
   it('the cookie jar stores and replays cookies across requests', async () => {
     const result = await tauri(async (api, url) => {
-      // The jar is persisted in the app data dir, so an earlier run (or the
+      // The jar is persisted in the app cache dir, so an earlier run (or the
       // requests above) may already hold the cookie: the first request then
       // replays it instead of being handed a new one.
       const first = await api.http.fetch(`${url}/cookies`)
