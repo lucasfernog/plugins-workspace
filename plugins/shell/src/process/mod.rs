@@ -18,7 +18,6 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-const NEWLINE_BYTE: u8 = b'\n';
 
 use tauri::async_runtime::{block_on as block_on_task, channel, Receiver, Sender};
 
@@ -401,7 +400,7 @@ impl Command {
     ///   .setup(|app| {
     ///     let output = tauri::async_runtime::block_on(async move { app.shell().command("echo").args(["TAURI"]).output().await.unwrap() });
     ///     assert!(output.status.success());
-    ///     assert_eq!(String::from_utf8(output.stdout).unwrap(), "TAURI");
+    ///     assert_eq!(String::from_utf8(output.stdout).unwrap(), "TAURI\n");
     ///     Ok(())
     ///   });
     /// ```
@@ -417,14 +416,10 @@ impl Command {
                 CommandEvent::Terminated(payload) => {
                     code = payload.code;
                 }
-                CommandEvent::Stdout(line) => {
-                    stdout.extend(line);
-                    stdout.push(NEWLINE_BYTE);
-                }
-                CommandEvent::Stderr(line) => {
-                    stderr.extend(line);
-                    stderr.push(NEWLINE_BYTE);
-                }
+                // lines keep their `\n` or `\r` delimiter (and raw chunks are
+                // arbitrary), so they are concatenated as they are
+                CommandEvent::Stdout(line) => stdout.extend(line),
+                CommandEvent::Stderr(line) => stderr.extend(line),
                 CommandEvent::Error(_) => {}
             }
         }
@@ -637,10 +632,23 @@ mod tests {
         let output = tauri::async_runtime::block_on(cmd.output()).unwrap();
 
         assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+        // the file has no trailing newline
         assert_eq!(
             String::from_utf8(output.stdout).unwrap(),
-            "This is a test doc!\n"
+            "This is a test doc!"
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_cmd_output_keeps_lines_as_written() {
+        let cmd = Command::new("printf").args(["one\\ntwo\\r\\nthree\\n"]);
+        let output = tauri::async_runtime::block_on(cmd.output()).unwrap();
+        assert_eq!(output.stdout, b"one\ntwo\r\nthree\n");
+
+        let cmd = Command::new("printf").args(["one\\ntwo"]).set_raw_out(true);
+        let output = tauri::async_runtime::block_on(cmd.output()).unwrap();
+        assert_eq!(output.stdout, b"one\ntwo");
     }
 
     #[cfg(not(windows))]
@@ -652,7 +660,7 @@ mod tests {
         assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
         assert_eq!(
             String::from_utf8(output.stderr).unwrap(),
-            "cat: test/: Is a directory\n\n"
+            "cat: test/: Is a directory\n"
         );
     }
 }
