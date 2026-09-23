@@ -26,7 +26,6 @@ import androidx.core.app.RemoteInput
 import app.tauri.Logger
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.PluginManager
-import com.fasterxml.jackson.databind.ObjectMapper
 import org.json.JSONException
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -460,7 +459,7 @@ class NotificationDismissReceiver : BroadcastReceiver() {
     val isRemovable =
       intent.getBooleanExtra(NOTIFICATION_IS_REMOVABLE_KEY, true)
     if (isRemovable) {
-      val notificationStorage = NotificationStorage(context, ObjectMapper())
+      val notificationStorage = NotificationStorage(context, NotificationStorage.createJsonMapper())
       notificationStorage.deleteNotification(intExtra.toString())
     }
   }
@@ -486,7 +485,7 @@ class TimedNotificationPublisher : BroadcastReceiver() {
     if (id == Int.MIN_VALUE) {
       Logger.error(Logger.tags("Notification"), "No valid id supplied", null)
     }
-    val storage = NotificationStorage(context, ObjectMapper())
+    val storage = NotificationStorage(context, NotificationStorage.createJsonMapper())
 
     val savedNotification = storage.getSavedNotification(id.toString())
     if (savedNotification != null) {
@@ -494,7 +493,9 @@ class TimedNotificationPublisher : BroadcastReceiver() {
     }
 
     notificationManager.notify(id, notification)
-    if (!rescheduleNotificationIfNeeded(context, intent, id)) {
+    // `every` and repeating `at` schedules use a repeating alarm and stay pending
+    val isRepeating = savedNotification?.schedule?.isRemovable() == false
+    if (!rescheduleNotificationIfNeeded(context, intent, id) && !isRepeating) {
       storage.deleteNotification(id.toString())
     }
   }
@@ -547,7 +548,7 @@ class LocalNotificationRestoreReceiver : BroadcastReceiver() {
       )
       if (um == null || !um.isUserUnlocked) return
     }
-    val storage = NotificationStorage(context, ObjectMapper())
+    val storage = NotificationStorage(context, NotificationStorage.createJsonMapper())
     val ids = storage.getSavedNotificationIds()
     val notifications = mutableListOf<Notification>()
     val updatedNotifications = mutableListOf<Notification>()

@@ -6,8 +6,10 @@ package app.tauri.notification
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.fasterxml.jackson.annotation.JsonAutoDetect
+import com.fasterxml.jackson.annotation.PropertyAccessor
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.json.JSONException
 import java.lang.Exception
 
 // Key for private preferences
@@ -16,13 +18,27 @@ private const val NOTIFICATION_STORE_ID = "NOTIFICATION_STORE"
 private const val ACTION_TYPES_ID = "ACTION_TYPE_STORE"
 
 class NotificationStorage(private val context: Context, private val jsonMapper: ObjectMapper) {
+  companion object {
+    /**
+     * A mapper configured like the one plugins get from Tauri, for the broadcast receivers
+     * that read the stored notifications without a plugin instance.
+     */
+    fun createJsonMapper(): ObjectMapper {
+      return ObjectMapper()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+        .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+    }
+  }
+
   fun appendNotifications(localNotifications: List<Notification>) {
     val storage = getStorage(NOTIFICATION_STORE_ID)
     val editor = storage.edit()
     for (request in localNotifications) {
-      if (request.schedule != null) {
+      val sourceJson = request.sourceJson
+      if (request.schedule != null && sourceJson != null) {
         val key: String = request.id.toString()
-        editor.putString(key, request.sourceJson.toString())
+        editor.putString(key, sourceJson)
       }
     }
     editor.apply()
@@ -42,11 +58,10 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
     if (all != null) {
       val notifications = ArrayList<Notification>()
       for (key in all.keys) {
-        val notificationString = all[key] as String?
-        try {
-          val notification = jsonMapper.readValue(notificationString, Notification::class.java)
+        val notification = readNotification(all[key] as? String)
+        if (notification != null) {
           notifications.add(notification)
-        } catch (_: Exception) { }
+        }
       }
       return notifications
     }
@@ -59,11 +74,22 @@ class NotificationStorage(private val context: Context, private val jsonMapper: 
       storage.getString(key, null)
     } catch (ex: ClassCastException) {
       return null
-    } ?: return null
+    }
 
+    return readNotification(notificationString)
+  }
+
+  private fun readNotification(notificationString: String?): Notification? {
+    if (notificationString == null) {
+      return null
+    }
     return try {
-      jsonMapper.readValue(notificationString, Notification::class.java)
-    } catch (ex: JSONException) {
+      // `null` for entries saved as the "null" string by previous versions
+      val notification: Notification? =
+        jsonMapper.readValue(notificationString, Notification::class.java)
+      notification?.sourceJson = notificationString
+      notification
+    } catch (_: Exception) {
       null
     }
   }

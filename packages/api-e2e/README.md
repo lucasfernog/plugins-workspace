@@ -75,7 +75,7 @@ skipped on desktop, and the rest run everywhere with the odd test gated.
 | `global-shortcut`   | register/unregister/isRegistered/unregisterAll and error paths. Shortcuts cannot be triggered.                                                                         | Skipped — desktop-only plugin.                                                           |
 | `http`              | `fetch` methods, headers, JSON/bytes/multipart bodies, the cookie jar, abort, scope, failures.                                                                         | Same.                                                                                    |
 | `log`               | `attachLogger`/`attachConsole` for webview and Rust records, level filtering.                                                                                          | Same.                                                                                    |
-| `notification`      | Permission model and the `window.Notification` override. Sending is fire-and-forget and display is not observable.                                                     | Action types, pending/active lists after cancel/remove, channels, listeners — see below. |
+| `notification`      | Permission model and the `window.Notification` override. Sending is fire-and-forget and display is not observable.                                                     | Scheduling, action types, the pending/active lists, channels, and listeners — see below. |
 | `opener`            | Scope enforcement only — a successful open launches an external app the suite cannot close.                                                                            | Same.                                                                                    |
 | `os`                | Every function but `version` (which has nothing to compare against), checked against what the app was built for and the host.                                          | Same, minus `hostname`.                                                                  |
 | `positioner`        | Screen and tray positions (with a tray rect handed in through `handleIconState`), `moveWindowConstrained`, the missing-tray error (WM dependent).                      | Skipped — desktop-only plugin.                                                           |
@@ -92,8 +92,10 @@ skipped on desktop, and the rest run everywhere with the odd test gated.
 
 The notification permission specs are desktop-only: a mobile app starts out ungranted and
 `requestPermission` puts up a system dialog the session would then block on. The rest of the
-notification API (action types, channels, the pending/active lists, listeners) only exists on
-mobile, and is covered there without the permission.
+notification API (scheduling, action types, channels, the pending/active lists, listeners) only
+exists on mobile, and is covered there without the permission. Scheduling is only covered on
+Android, where the alarm is set without the permission; iOS refuses to schedule a notification
+for an app that has not been granted it.
 
 The [`plugins.spec.ts`](test/specs/plugins.spec.ts) spec additionally asserts that every
 plugin the platform registers injects its global API with its documented members, and that

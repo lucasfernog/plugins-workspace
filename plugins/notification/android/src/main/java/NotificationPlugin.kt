@@ -135,6 +135,9 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   @Command
   fun show(invoke: Invoke) {
     val notification = invoke.parseArgs(Notification::class.java)
+    // the JSON is stored for scheduled notifications and attached to the notification intents
+    notification.sourceJson = invoke.getRawArgs()
+    notificationStorage.appendNotifications(listOf(notification))
     val id = manager.schedule(notification)
 
     invoke.resolveObject(id)
@@ -143,9 +146,13 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   @Command
   fun batch(invoke: Invoke) {
     val args = invoke.parseArgs(BatchArgs::class.java)
+    val notificationsJson = invoke.getArgs().getJSONArray("notifications")
+    args.notifications.forEachIndexed { i, notification ->
+      notification.sourceJson = notificationsJson.getJSONObject(i).toString()
+    }
 
-    val ids = manager.schedule(args.notifications)
     notificationStorage.appendNotifications(args.notifications)
+    val ids = manager.schedule(args.notifications)
 
     invoke.resolveObject(ids)
   }

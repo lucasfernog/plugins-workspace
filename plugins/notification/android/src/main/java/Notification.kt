@@ -11,6 +11,7 @@ import android.graphics.BitmapFactory
 import app.tauri.annotation.InvokeArg
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
+import com.fasterxml.jackson.annotation.JsonIgnore
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -35,6 +36,8 @@ class Notification {
   var attachments: List<NotificationAttachment>? = null
   var schedule: NotificationSchedule? = null
   var channelId: String? = null
+  // the JSON the notification was created from; not part of the notification payload itself
+  @JsonIgnore
   var sourceJson: String? = null
   var visibility: Int? = null
   var number: Int? = null

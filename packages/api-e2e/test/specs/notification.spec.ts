@@ -7,6 +7,7 @@ import {
   tauri,
   tauriError,
   describePlugin,
+  eventually,
   itDesktop,
   itOn
 } from '../helpers/index.js'
@@ -64,6 +65,59 @@ describePlugin('notification', () => {
         }
       })
       expect(result).toEqual({ pending: [], active: [] })
+    }
+  )
+
+  // Scheduling needs no permission on Android: the alarm is set right away and the
+  // notification is only posted when it fires, an hour after the test.
+  itOn(
+    'android',
+    'scheduled notifications are pending until cancelled',
+    async () => {
+      const id = 424243
+      await tauri(
+        (api, id) =>
+          api.notification.sendNotification({
+            id,
+            title: 'e2e scheduled',
+            body: 'scheduled by the e2e suite',
+            schedule: api.notification.Schedule.at(
+              new Date(Date.now() + 60 * 60 * 1000)
+            )
+          }),
+        id
+      )
+      // sendNotification does not wait for the command to complete
+      const scheduled = await eventually(async () => {
+        const pending = await tauri(
+          async (api, id) =>
+            (await api.notification.pending())
+              .filter((notification) => notification.id === id)
+              .map((notification) => ({
+                id: notification.id,
+                title: notification.title,
+                body: notification.body,
+                scheduledAt: typeof notification.schedule.at?.date
+              })),
+          id
+        )
+        expect(pending).toHaveLength(1)
+        return pending[0]
+      })
+      expect(scheduled).toEqual({
+        id,
+        title: 'e2e scheduled',
+        body: 'scheduled by the e2e suite',
+        scheduledAt: 'string'
+      })
+
+      const remaining = await tauri(async (api, id) => {
+        await api.notification.cancel([id])
+        return (await api.notification.pending()).some(
+          (notification) => notification.id === id
+        )
+      }, id)
+      expect(remaining).toBe(false)
     }
   )
 
