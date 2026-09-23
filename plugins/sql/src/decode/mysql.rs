@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
+use rust_decimal::prelude::ToPrimitive;
 use serde_json::Value as JsonValue;
 use sqlx::{mysql::MySqlValueRef, TypeInfo, Value, ValueRef};
 use time::{Date, OffsetDateTime, PrimitiveDateTime, Time};
@@ -86,7 +87,33 @@ pub(crate) fn to_json(v: MySqlValueRef) -> Result<JsonValue, Error> {
             }
         }
         "JSON" => ValueRef::to_owned(&v).try_decode().unwrap_or_default(),
-        "TINIYBLOB" | "MEDIUMBLOB" | "BLOB" | "LONGBLOB" => {
+        "DECIMAL" => {
+            if let Ok(v) = ValueRef::to_owned(&v).try_decode::<rust_decimal::Decimal>() {
+                if let Some(n) = v.to_f64().and_then(serde_json::Number::from_f64) {
+                    JsonValue::Number(n)
+                } else {
+                    JsonValue::String(v.to_string())
+                }
+            } else {
+                JsonValue::Null
+            }
+        }
+        "BIT" => {
+            if let Ok(v) = ValueRef::to_owned(&v).try_decode::<u64>() {
+                JsonValue::Number(v.into())
+            } else {
+                JsonValue::Null
+            }
+        }
+        // sent as a comma separated list of the set members
+        "SET" => {
+            if let Ok(v) = ValueRef::to_owned(&v).try_decode_unchecked::<String>() {
+                JsonValue::String(v)
+            } else {
+                JsonValue::Null
+            }
+        }
+        "TINYBLOB" | "MEDIUMBLOB" | "BLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" => {
             if let Ok(v) = ValueRef::to_owned(&v).try_decode::<Vec<u8>>() {
                 JsonValue::Array(v.into_iter().map(|n| JsonValue::Number(n.into())).collect())
             } else {
