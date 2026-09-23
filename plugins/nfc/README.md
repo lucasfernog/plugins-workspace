@@ -43,6 +43,38 @@ npm add @tauri-apps/plugin-nfc
 yarn add @tauri-apps/plugin-nfc
 ```
 
+## Platform setup
+
+### iOS
+
+- Add the `NFCReaderUsageDescription` key to your `src-tauri/Info.ios.plist` file, describing why the app reads or writes NFC tags. Without it `isAvailable()` resolves to `false` and `scan()`/`write()` reject.
+
+  ```xml
+  <key>NFCReaderUsageDescription</key>
+  <string>Read and write NFC tags</string>
+  ```
+
+- Add the "Near Field Communication Tag Reading" capability to the app target in Xcode ("Signing & Capabilities" tab), or add the entitlement to `src-tauri/gen/apple/<app-name>_iOS/<app-name>_iOS.entitlements`. The `TAG` format is required by the `tag` scan kind:
+
+  ```xml
+  <key>com.apple.developer.nfc.readersession.formats</key>
+  <array>
+    <string>TAG</string>
+  </array>
+  ```
+
+- The `tag` scan kind polls ISO 14443 (MIFARE, ISO 7816) and ISO 15693 tags. To detect ISO 7816 tags, also list the application identifiers your app selects under the `com.apple.developer.nfc.readersession.iso7816.select-identifiers` key of the `Info.ios.plist` file.
+
+### Android
+
+The plugin adds the `android.permission.NFC` permission to the app manifest, and adds `NDEF_DISCOVERED`, `TECH_DISCOVERED` and `TAG_DISCOVERED` intent filters to the main activity. This means that tapping an NFC tag can open the app even when it is not scanning.
+
+If the app cannot work without NFC, also declare the feature in `src-tauri/gen/android/app/src/main/AndroidManifest.xml` so that app stores hide it on devices without NFC:
+
+```xml
+<uses-feature android:name="android.hardware.nfc" android:required="true" />
+```
+
 ## Usage
 
 First you need to register the core plugin with Tauri:
