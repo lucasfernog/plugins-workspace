@@ -302,7 +302,7 @@ mod imp {
 
             let urls = NSArray::from_retained_slice(&urls);
 
-            let workspace = NSWorkspace::new();
+            let workspace = NSWorkspace::sharedWorkspace();
             workspace.activateFileViewerSelectingURLs(&urls);
         }
 
