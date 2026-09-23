@@ -8,7 +8,8 @@ import { tauriError, describePlugin } from '../helpers/index.js'
 // A successful open launches an external application (browser, file manager)
 // the suite cannot control or close, so only the scope enforcement is covered.
 // The example allows `mailto:`, `tel:`, `http(s)://` URLs (opener:default),
-// `https://` URLs specifically with `inAppBrowser`, and paths under `$APPDATA`.
+// `https://` URLs specifically with `inAppBrowser`, and paths under `$APPDATA`
+// (plus one file there with the `opener-e2e-app` app).
 
 describePlugin('opener', () => {
   it('openUrl rejects URL schemes outside the scope', async () => {
@@ -33,6 +34,18 @@ describePlugin('opener', () => {
       api.opener.openPath(await api.path.join(await api.path.homeDir(), 'e2e'))
     )
     expect(message).toMatch(/Not allowed to open path/)
+  })
+
+  it('openPath checks the path and the app against the same scope entry', async () => {
+    // `opener-e2e-app` is only allowed for `$APPDATA/opener-e2e-with.txt`,
+    // not for the rest of `$APPDATA`, which only allows the default app
+    const message = await tauriError(async (api) =>
+      api.opener.openPath(
+        await api.path.join(await api.path.appDataDir(), 'other.txt'),
+        'opener-e2e-app'
+      )
+    )
+    expect(message).toMatch(/Not allowed to open path .* with opener-e2e-app/)
   })
 
   it('revealItemInDir rejects paths that do not exist', async () => {

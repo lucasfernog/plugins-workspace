@@ -130,7 +130,11 @@
     },
     {
       "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
+      "allow": [
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" },
+        { "path": "$APPDATA/opener-e2e-with.txt", "app": "opener-e2e-app" }
+      ]
     },
     "upload:default",
     "deep-link:default",

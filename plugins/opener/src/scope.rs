@@ -84,12 +84,28 @@ impl Entry {
         }
     }
 
-    fn matches_path_program(&self, a: Option<&str>) -> bool {
+    /// Returns the path pattern of this entry if it is a path entry whose `app` allows opening with `a`.
+    fn path_for_program(&self, a: Option<&str>) -> Option<PathBuf> {
         match self {
-            Self::Url { .. } => false,
-            Self::Path { app, .. } => app.matches(a),
+            Self::Url { .. } => None,
+            Self::Path { path, app } if app.matches(a) => path.clone(),
+            Self::Path { .. } => None,
         }
     }
+}
+
+/// Collects the path patterns of the `allowed` entries that permit opening with the program `with`.
+///
+/// The path and the program must be allowed by the **same** entry, so a path allowed with the
+/// default application does not become openable with a program that only another entry allows.
+fn allowed_paths_for_program<'a>(
+    allowed: impl IntoIterator<Item = &'a Entry>,
+    with: Option<&str>,
+) -> Vec<PathBuf> {
+    allowed
+        .into_iter()
+        .filter_map(|e| e.path_for_program(with))
+        .collect()
 }
 
 #[derive(Debug)]
@@ -124,10 +140,15 @@ impl<'a, R: Runtime, M: Manager<R>> Scope<'a, R, M> {
     }
 
     pub fn is_path_allowed(&self, path: &Path, with: Option<&str>) -> crate::Result<bool> {
+        let allow = allowed_paths_for_program(self.allowed.iter().map(|e| e.as_ref()), with);
+        if allow.is_empty() {
+            return Ok(false);
+        }
+
         let fs_scope = tauri::fs::Scope::new(
             self.manager,
             &tauri::utils::config::FsScope::Scope {
-                allow: self.allowed.iter().filter_map(|e| e.path()).collect(),
+                allow,
                 deny: self.denied.iter().filter_map(|e| e.path()).collect(),
                 require_literal_leading_dot: self
                     .manager
@@ -136,6 +157,58 @@ impl<'a, R: Runtime, M: Manager<R>> Scope<'a, R, M> {
             },
         )?;
 
-        Ok(fs_scope.is_allowed(path) && self.allowed.iter().any(|e| e.matches_path_program(with)))
+        Ok(fs_scope.is_allowed(path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn path_entry(path: &str, app: Application) -> Entry {
+        Entry::Path {
+            path: Some(PathBuf::from(path)),
+            app,
+        }
+    }
+
+    #[test]
+    fn path_and_program_must_come_from_the_same_entry() {
+        let entries = [
+            path_entry("/downloads/**", Application::Default),
+            path_entry("/config/app.toml", Application::App("notepad".into())),
+            path_entry("/media/**", Application::Enable(true)),
+            Entry::Path {
+                path: None,
+                app: Application::Enable(true),
+            },
+            Entry::Url {
+                url: glob::Pattern::new("https://*").unwrap(),
+                app: Application::Enable(true),
+            },
+        ];
+
+        assert_eq!(
+            allowed_paths_for_program(&entries, None),
+            vec![PathBuf::from("/downloads/**"), PathBuf::from("/media/**")]
+        );
+        assert_eq!(
+            allowed_paths_for_program(&entries, Some("notepad")),
+            vec![
+                PathBuf::from("/config/app.toml"),
+                PathBuf::from("/media/**")
+            ]
+        );
+        assert_eq!(
+            allowed_paths_for_program(&entries, Some("powershell")),
+            vec![PathBuf::from("/media/**")]
+        );
+    }
+
+    #[test]
+    fn app_false_never_matches() {
+        let entries = [path_entry("/downloads/**", Application::Enable(false))];
+        assert!(allowed_paths_for_program(&entries, None).is_empty());
+        assert!(allowed_paths_for_program(&entries, Some("notepad")).is_empty());
     }
 }
