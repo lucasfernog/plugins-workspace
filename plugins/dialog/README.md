@@ -117,6 +117,14 @@ tauri::Builder::default()
 The `blocking_*` variants (for example `blocking_pick_file`) must not be called on the main thread,
 where they would freeze the app.
 
+### `window.alert` and `window.confirm`
+
+On every platform except Android, the plugin replaces `window.alert` and `window.confirm` with
+native dialogs, which need the `dialog:allow-message` permission. Tauri has no synchronous IPC, so
+they cannot block the page like the browser built-ins: `alert` returns before the dialog is
+closed, and `confirm` returns a `Promise` (which is always truthy) instead of a boolean. Use the
+plugin's `message` and `confirm` functions with `await` instead.
+
 ## Permissions
 
 By default no plugin commands are allowed. The `dialog:default` permission set enables the
