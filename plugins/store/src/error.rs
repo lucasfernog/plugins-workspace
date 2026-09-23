@@ -23,9 +23,6 @@ pub enum Error {
     /// IO error.
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    // /// Store already exists
-    // #[error("Store at \"{0}\" already exists")]
-    // AlreadyExists(PathBuf),
     /// Serialize function not found
     #[error("Serialize Function \"{0}\" not found")]
     SerializeFunctionNotFound(String),

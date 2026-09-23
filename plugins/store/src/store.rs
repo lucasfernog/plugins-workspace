@@ -217,10 +217,6 @@ impl<R: Runtime> StoreBuilder<R> {
             return Ok((self.app.resources_table().get(*rid)?, *rid));
         }
 
-        // if stores.contains_key(&self.path) {
-        //     return Err(crate::Error::AlreadyExists(self.path));
-        // }
-
         let mut store_inner = StoreInner::new(
             self.app.clone(),
             self.path.clone(),
@@ -274,7 +270,6 @@ enum AutoSaveMessage {
     Cancel,
 }
 
-#[derive(Clone)]
 struct StoreInner<R: Runtime> {
     app: AppHandle<R>,
     path: PathBuf,
@@ -467,13 +462,6 @@ impl<R: Runtime> Resource for Store<R> {
 }
 
 impl<R: Runtime> Store<R> {
-    // /// Do something with the inner store,
-    // /// useful for batching some work if you need higher performance
-    // pub fn with_store<T>(&self, f: impl FnOnce(&mut StoreInner<R>) -> T) -> T {
-    //     let mut store = self.store.lock().unwrap();
-    //     f(&mut store)
-    // }
-
     /// Inserts a key-value pair into the store.
     pub fn set(&self, key: impl Into<String>, value: impl Into<JsonValue>) {
         self.store.lock().unwrap().set(key.into(), value.into());
