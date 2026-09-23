@@ -371,20 +371,32 @@ impl Builder {
     }
 
     /// Sets a custom filename to use when saving and restoring window states from disk.
+    ///
+    /// The path is joined onto the app config directory
+    /// ([`PathResolver::app_config_dir`](tauri::path::PathResolver::app_config_dir)), so it
+    /// is normally a plain file name. An absolute path replaces that directory, and `..`
+    /// components are not rejected, so only pass a trusted value. Defaults to
+    /// [`DEFAULT_FILENAME`].
     pub fn with_filename(mut self, filename: impl Into<String>) -> Self {
         self.filename.replace(filename.into());
         self
     }
 
-    /// Sets a list of windows that shouldn't be tracked and managed by this plugin
-    /// For example, splash screen windows.
+    /// Sets a list of windows that shouldn't be tracked and managed by this plugin,
+    /// for example splash screen windows.
+    ///
+    /// Each call replaces the list set by a previous call.
     pub fn with_denylist(mut self, denylist: &[&str]) -> Self {
         self.denylist = denylist.iter().map(|l| l.to_string()).collect();
         self
     }
 
     /// Sets a filter callback to exclude specific windows from being tracked.
-    /// Return `true` to save the state, or `false` to skip and not save it.
+    ///
+    /// The callback receives the window label (after [`Builder::map_label`]). Return `true`
+    /// to track the window, or `false` to exclude it: like a label in
+    /// [`Builder::with_denylist`], an excluded window's state is not restored when it is
+    /// created, not updated while it moves or resizes, and not saved.
     pub fn with_filter<F>(mut self, filter_callback: F) -> Self
     where
         F: Fn(&str) -> bool + Send + Sync + 'static,
@@ -394,6 +406,9 @@ impl Builder {
     }
 
     /// Adds the given window label to a list of windows to skip initial state restore.
+    ///
+    /// The window is still tracked and saved; call [`WindowExt::restore_state`] to restore it
+    /// when you are ready.
     pub fn skip_initial_state(mut self, label: &str) -> Self {
         self.skip_initial_state.insert(label.into());
         self
