@@ -6753,7 +6753,6 @@ dependencies = [
 name = "tauri-plugin-nfc"
 version = "2.3.6"
 dependencies = [
- "log",
  "serde",
  "serde_json",
  "serde_repr",
