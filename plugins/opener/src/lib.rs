@@ -124,13 +124,15 @@ impl<R: Runtime> Opener<R> {
     /// ## Platform-specific:
     ///
     /// - **Android / iOS**: Always opens using default program.
+    ///
+    /// Returns an error if `with` is not provided and the path does not exist.
     #[cfg(desktop)]
     pub fn open_path(
         &self,
         path: impl Into<String>,
         with: Option<impl Into<String>>,
     ) -> Result<()> {
-        crate::open::open(
+        crate::open::open_path(
             path.into(),
             with.map(Into::into).filter(|with| with != "inAppBrowser"),
         )

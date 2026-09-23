@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauriError, describePlugin } from '../helpers/index.js'
+import { tauriError, describePlugin, itDesktop } from '../helpers/index.js'
 
 // A successful open launches an external application (browser, file manager)
 // the suite cannot control or close, so only the scope enforcement is covered.
@@ -33,6 +33,15 @@ describePlugin('opener', () => {
       api.opener.openPath(await api.path.join(await api.path.homeDir(), 'e2e'))
     )
     expect(message).toMatch(/Not allowed to open path/)
+  })
+
+  itDesktop('openPath rejects paths that do not exist', async () => {
+    const message = await tauriError(async (api) =>
+      api.opener.openPath(
+        await api.path.join(await api.path.appDataDir(), 'does-not-exist-e2e')
+      )
+    )
+    expect(message).toMatch(/os error 2/)
   })
 
   it('revealItemInDir rejects paths that do not exist', async () => {
