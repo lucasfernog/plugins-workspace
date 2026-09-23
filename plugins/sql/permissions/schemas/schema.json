@@ -343,10 +343,10 @@
           "markdownDescription": "Denies the select command without any pre-configured scope."
         },
         {
-          "description": "### Default Permissions\n\nThis permission set configures what kind of\ndatabase operations are available from the sql plugin.\n\n### Granted Permissions\n\nAll reading related operations are enabled.\nAlso allows to load or close a connection.\n\n\n#### This default permission set includes:\n\n- `allow-close`\n- `allow-load`\n- `allow-select`",
+          "description": "### Default Permissions\n\nThis permission set configures what kind of\ndatabase operations are available from the sql plugin.\n\n### Granted Permissions\n\nAllows to load or close a connection and to run queries\nwith `select`. Running statements with `execute` is not\nenabled by default.\n\nNote that this is not a read-only mode: `select` runs any\nSQL statement it is given, including ones that modify the\ndatabase.\n\n\n#### This default permission set includes:\n\n- `allow-close`\n- `allow-load`\n- `allow-select`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "### Default Permissions\n\nThis permission set configures what kind of\ndatabase operations are available from the sql plugin.\n\n### Granted Permissions\n\nAll reading related operations are enabled.\nAlso allows to load or close a connection.\n\n\n#### This default permission set includes:\n\n- `allow-close`\n- `allow-load`\n- `allow-select`"
+          "markdownDescription": "### Default Permissions\n\nThis permission set configures what kind of\ndatabase operations are available from the sql plugin.\n\n### Granted Permissions\n\nAllows to load or close a connection and to run queries\nwith `select`. Running statements with `execute` is not\nenabled by default.\n\nNote that this is not a read-only mode: `select` runs any\nSQL statement it is given, including ones that modify the\ndatabase.\n\n\n#### This default permission set includes:\n\n- `allow-close`\n- `allow-load`\n- `allow-select`"
         }
       ]
     }

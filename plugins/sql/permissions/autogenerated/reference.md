@@ -7,8 +7,13 @@ database operations are available from the sql plugin.
 
 ### Granted Permissions
 
-All reading related operations are enabled.
-Also allows to load or close a connection.
+Allows to load or close a connection and to run queries
+with `select`. Running statements with `execute` is not
+enabled by default.
+
+Note that this is not a read-only mode: `select` runs any
+SQL statement it is given, including ones that modify the
+database.
 
 #### This default permission set includes the following:
 
