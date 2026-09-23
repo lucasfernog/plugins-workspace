@@ -72,8 +72,8 @@ await openUrl('https://example.com', 'firefox')
 
 // Opens the path with the system's default app
 await openPath('/path/to/file')
-// Or with a specific app
-await openPath('/path/to/file', 'firefox')
+// Or with a specific app (must be allowed by the scope's `app` field)
+await openPath('/path/to/file', 'vlc')
 
 // Reveal a path with the system's default explorer
 await revealItemInDir('/path/to/file')
@@ -104,7 +104,7 @@ fn main() {
             // Opens the path with the system's default app
             opener.open_path("/path/to/file", None::<&str>)?;
             // Or with a specific app
-            opener.open_path("/path/to/file", Some("firefox"))?;
+            opener.open_path("/path/to/file", Some("vlc"))?;
 
             // Reveal a path with the system's default explorer
             opener.reveal_item_in_dir("/path/to/file")?;

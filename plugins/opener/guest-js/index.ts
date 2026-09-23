@@ -51,6 +51,7 @@ import { invoke } from '@tauri-apps/api/core'
  *
  * @param url The URL to open.
  * @param openWith The app to open the URL with. If not specified, defaults to the system default application for the specified url type.
+ * It must be allowed by the `app` field of the matching scope entry.
  * On mobile, `openWith` can be provided as `inAppBrowser` to open the URL in an in-app browser. Otherwise, it will open the URL in the system default browser.
  *
  * @since 2.0.0
@@ -75,12 +76,14 @@ export async function openUrl(
  *
  * // opens a file using the default program:
  * await openPath('/path/to/file');
- * // opens a file using `vlc` command on Windows.
- * await openPath('C:/path/to/file', 'vlc');
+ * // opens a file using `vlc` (requires a scope entry with `"app": "vlc"`):
+ * await openPath('/path/to/file', 'vlc');
  * ```
  *
  * @param path The path to open.
  * @param openWith The app to open the path with. If not specified, defaults to the system default application for the specified path type.
+ * On Linux and Windows this is a program name or path (e.g. `vlc`), on macOS an application name (e.g. `VLC` or `Visual Studio Code`).
+ * It must be allowed by the `app` field of the matching scope entry. Opening an executable file with the default program runs it.
  *
  * @since 2.0.0
  */
@@ -105,7 +108,8 @@ export async function openPath(path: string, openWith?: string): Promise<void> {
  * await revealItemInDir([ '/path/to/file', '/path/to/another/file' ]);
  * ```
  *
- * @param path The path to reveal.
+ * @param path The path to reveal, or an array of paths (since 2.5.0). The paths must exist.
+ * On Linux, if the file manager does not support revealing items, only the directory of the first path is opened.
  *
  * @since 2.0.0
  */
