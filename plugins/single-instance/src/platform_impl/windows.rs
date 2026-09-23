@@ -26,7 +26,7 @@ use windows_sys::Win32::{
     },
 };
 
-const WMCOPYDATA_SINGLE_INSTANCE_DATA: usize = 1542;
+use crate::copydata;
 
 struct MutexHandle(isize);
 
@@ -86,19 +86,17 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
 
                         let cwd = std::env::current_dir().unwrap_or_default();
                         let cwd = cwd.to_str().unwrap_or_default();
+                        let args = std::env::args().collect::<Vec<String>>();
 
-                        let args = std::env::args().collect::<Vec<String>>().join("|");
-
-                        let data = format!("{cwd}|{args}\0",);
-
-                        let bytes = data.as_bytes();
-                        let cds = COPYDATASTRUCT {
-                            dwData: WMCOPYDATA_SINGLE_INSTANCE_DATA,
-                            cbData: bytes.len() as _,
-                            lpData: bytes.as_ptr() as _,
-                        };
-
-                        SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _);
+                        // Prefer the NUL separated payload, which keeps arguments containing `|`
+                        // intact. A first instance running an older version of this plugin
+                        // doesn't acknowledge it, so fall back to the legacy format then.
+                        let data = copydata::encode(cwd, &args);
+                        let result = send_copydata(hwnd, copydata::NUL_SEPARATED_DATA, &data);
+                        if result != copydata::ACK {
+                            let data = copydata::encode_legacy(cwd, &args);
+                            send_copydata(hwnd, copydata::LEGACY_DATA, &data);
+                        }
 
                         app.cleanup_before_exit();
                         std::process::exit(0);
@@ -138,6 +136,16 @@ pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
     }
 }
 
+/// Sends `data` to `hwnd` with `WM_COPYDATA` and returns the window procedure's result.
+fn send_copydata(hwnd: HWND, kind: usize, data: &[u8]) -> isize {
+    let cds = COPYDATASTRUCT {
+        dwData: kind,
+        cbData: data.len() as _,
+        lpData: data.as_ptr() as _,
+    };
+    unsafe { SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _) }
+}
+
 unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
     hwnd: HWND,
     msg: u32,
@@ -160,18 +168,28 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
                 return 0;
             }
             let cds = &*cds_ptr;
-            if cds.dwData == WMCOPYDATA_SINGLE_INSTANCE_DATA {
-                let bytes: &[u8] = if cds.lpData.is_null() || cds.cbData == 0 {
-                    &[]
-                } else {
-                    std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize)
-                };
-                let (cwd, args) = crate::copydata::decode_legacy(bytes);
-
-                let userdata = UserData::<R>::from_hwnd(hwnd);
-                userdata.run_callback(args, cwd);
+            if cds.dwData != copydata::NUL_SEPARATED_DATA && cds.dwData != copydata::LEGACY_DATA {
+                return 1;
             }
-            1
+            let bytes: &[u8] = if cds.lpData.is_null() || cds.cbData == 0 {
+                &[]
+            } else {
+                std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize)
+            };
+            let (cwd, args) = if cds.dwData == copydata::NUL_SEPARATED_DATA {
+                copydata::decode(bytes)
+            } else {
+                copydata::decode_legacy(bytes)
+            };
+
+            let userdata = UserData::<R>::from_hwnd(hwnd);
+            userdata.run_callback(args, cwd);
+
+            if cds.dwData == copydata::NUL_SEPARATED_DATA {
+                copydata::ACK
+            } else {
+                1
+            }
         }
 
         WM_DESTROY => {
