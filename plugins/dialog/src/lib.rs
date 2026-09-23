@@ -70,7 +70,10 @@ pub enum PickerMode {
 pub enum FileAccessMode {
     /// Copy the picked file into the app's sandbox so it can be freely read, edited or deleted.
     Copy,
-    /// Keep the file at its original location and let the system manage security-scoped access to it.
+    /// Keep the file at its original location and return a security-scoped URL to it.
+    ///
+    /// The fs plugin starts and stops accessing the URL automatically. Other readers must call
+    /// `startAccessingSecurityScopedResource` on it first.
     Scoped,
 }
 
@@ -516,8 +519,14 @@ impl<R: Runtime> FileDialogBuilder<R> {
     }
 
     /// Set the file access mode of the dialog.
-    /// This is only used on iOS.
-    /// On desktop and Android, this option is ignored.
+    ///
+    /// This is only used by the iOS document picker ([`Self::pick_file`] and [`Self::pick_files`]).
+    /// It is ignored on desktop, on Android, by [`Self::save_file`] and by the iOS media picker,
+    /// which always copies the picked files.
+    ///
+    /// With [`FileAccessMode::Scoped`], the returned path is a security-scoped URL: the fs plugin
+    /// starts and stops accessing it automatically, anything else must call
+    /// `startAccessingSecurityScopedResource` on it first.
     pub fn set_file_access_mode(mut self, mode: FileAccessMode) -> Self {
         self.file_access_mode.replace(mode);
         self

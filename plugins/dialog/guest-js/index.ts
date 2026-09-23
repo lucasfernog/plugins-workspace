@@ -94,10 +94,14 @@ interface OpenDialogOptions {
    * in the app sandbox.
    *
    * If a file is opened with {@linkcode fileAccessMode: 'scoped'}, the file will remain in its original location
-   * and security-scoped access will be automatically managed by the system.
+   * and the returned URL is a security-scoped URL. The `@tauri-apps/plugin-fs` APIs start and stop accessing it
+   * automatically. Anything else that reads the file (the asset protocol, your own commands, ...) must first call
+   * `startAccessingSecurityScopedResource` from `@tauri-apps/plugin-fs`, and `stopAccessingSecurityScopedResource`
+   * when done, or the file cannot be read.
    *
    * **Note**
-   * This is specifically meant for document pickers on iOS or MacOS, in conjunction with [security scoped resources](https://developer.apple.com/documentation/foundation/nsurl/startaccessingsecurityscopedresource()).
+   * This is specifically meant for document pickers on iOS, in conjunction with [security scoped resources](https://developer.apple.com/documentation/foundation/nsurl/startaccessingsecurityscopedresource()).
+   * It is ignored on desktop, on Android, and by the save dialog.
    *
    * Why only document pickers, and not image or video pickers?
    * The image and video pickers on iOS behave differently from the document pickers, and return [NSItemProvider](https://developer.apple.com/documentation/foundation/nsitemprovider) objects instead of file URLs.
@@ -143,10 +147,10 @@ interface SaveDialogOptions {
 export type PickerMode = 'document' | 'media' | 'image' | 'video'
 
 /**
- * The file access mode of the dialog.
+ * The file access mode of the dialog. Only used by the iOS document picker.
  *
  * - `copy`: copy/move the picked file to the app sandbox; no scoped access required.
- * - `scoped`: keep file in place; security-scoped access is automatically managed.
+ * - `scoped`: keep file in place and return a security-scoped URL; see {@linkcode OpenDialogOptions.fileAccessMode}.
  *
  * **Note:** This option is only supported on iOS 14 and above. This parameter is ignored on iOS 13 and below.
  */
