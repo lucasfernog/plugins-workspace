@@ -177,7 +177,7 @@ export async function error(
  *
  * const warn_description = "Invalid Input";
  *
- * warn(`Warning! {warn_description}!`);
+ * warn(`Warning! ${warn_description}!`);
  * ```
  *
  * @param message the message to log.
@@ -200,7 +200,7 @@ export async function warn(
  *
  * const conn_info = { port: 40, speed: 3.20 };
  *
- * info(`Connected to port {conn_info.port} at {conn_info.speed} Mb/s`);
+ * info(`Connected to port ${conn_info.port} at ${conn_info.speed} Mb/s`);
  * ```
  *
  * @param message the message to log.
@@ -223,7 +223,7 @@ export async function info(
  *
  * const pos = { x: 3.234, y: -1.223 };
  *
- * debug(`New position: x: {pos.x}, y: {pos.y}`);
+ * debug(`New position: x: ${pos.x}, y: ${pos.y}`);
  * ```
  *
  * @param message the message to log.
@@ -246,7 +246,7 @@ export async function debug(
  *
  * let pos = { x: 3.234, y: -1.223 };
  *
- * trace(`Position is: x: {pos.x}, y: {pos.y}`);
+ * trace(`Position is: x: ${pos.x}, y: ${pos.y}`);
  * ```
  *
  * @param message the message to log.
