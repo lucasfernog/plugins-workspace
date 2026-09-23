@@ -25,9 +25,9 @@ type ChildId = u32;
 #[serde(tag = "event", content = "payload")]
 #[non_exhaustive]
 pub enum JSCommandEvent {
-    /// Stderr bytes until a newline (\n) or carriage return (\r) is found.
+    /// A line of stderr, including its `\n` or `\r` delimiter (or a chunk of raw bytes).
     Stderr(Buffer),
-    /// Stdout bytes until a newline (\n) or carriage return (\r) is found.
+    /// A line of stdout, including its `\n` or `\r` delimiter (or a chunk of raw bytes).
     Stdout(Buffer),
     /// An error happened waiting for the command to finish or converting the stdout/stderr bytes to an UTF-8 string.
     Error(String),

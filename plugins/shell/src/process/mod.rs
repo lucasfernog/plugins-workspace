@@ -41,13 +41,13 @@ pub struct TerminatedPayload {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum CommandEvent {
-    /// If configured for raw output, all bytes written to stderr.
-    /// Otherwise, bytes until a newline (\n) or carriage return (\r) is found.
+    /// If configured for raw output, a chunk of the bytes written to stderr.
+    /// Otherwise, the bytes up to and including a newline (\n) or carriage return (\r).
     Stderr(Vec<u8>),
-    /// If configured for raw output, all bytes written to stdout.
-    /// Otherwise, bytes until a newline (\n) or carriage return (\r) is found.
+    /// If configured for raw output, a chunk of the bytes written to stdout.
+    /// Otherwise, the bytes up to and including a newline (\n) or carriage return (\r).
     Stdout(Vec<u8>),
-    /// An error happened waiting for the command to finish or converting the stdout/stderr bytes to a UTF-8 string.
+    /// An error happened waiting for the command to finish or reading its stdout/stderr.
     Error(String),
     /// Command process terminated.
     Terminated(TerminatedPayload),

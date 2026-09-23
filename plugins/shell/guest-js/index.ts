@@ -522,7 +522,10 @@ interface CommandEvents {
  * @since 2.0.0
  */
 interface OutputEvents<O extends IOPayload> {
-  /** Emitted for each line the process wrote to the stream, or for each raw chunk when the `raw` encoding is used. */
+  /**
+   * Emitted for each line the process wrote to the stream, including its `\n` or `\r`
+   * delimiter (trim it if needed), or for each raw chunk when the `raw` encoding is used.
+   */
   data: O
 }
 
