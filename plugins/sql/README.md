@@ -65,7 +65,7 @@ Afterwards all the plugin's APIs are available through the JavaScript guest bind
 ```javascript
 import Database from '@tauri-apps/plugin-sql'
 
-// sqlite. The path is relative to `tauri::api::path::BaseDirectory::AppConfig`.
+// sqlite. The path is relative to `tauri::path::BaseDirectory::AppConfig`.
 const db = await Database.load('sqlite:test.db')
 // mysql
 const db = await Database.load('mysql://user:pass@host/database')

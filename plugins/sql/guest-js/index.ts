@@ -70,7 +70,7 @@ export default class Database {
    *
    * # Sqlite
    *
-   * The path is relative to `tauri::path::BaseDirectory::App` and must start with `sqlite:`.
+   * The path is relative to the app config directory (`tauri::path::BaseDirectory::AppConfig`) and must start with `sqlite:`.
    *
    * @example
    * ```typescript
@@ -98,7 +98,7 @@ export default class Database {
    *
    * # Sqlite
    *
-   * The path is relative to `tauri::path::BaseDirectory::App` and must start with `sqlite:`.
+   * The path is relative to the app config directory (`tauri::path::BaseDirectory::AppConfig`) and must start with `sqlite:`.
    *
    * @example
    * ```typescript
