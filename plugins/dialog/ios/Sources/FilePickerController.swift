@@ -185,69 +185,64 @@ extension FilePickerController: PHPickerViewControllerDelegate {
 			self.plugin.onFilePickerEvent(.cancelled)
 			return
 		}
-		var temporaryUrls: [URL] = []
+		// The completion handlers run concurrently on background queues, so the shared state is
+		// guarded by a lock. Each result writes to its own slot to keep the picking order.
+		let lock = NSLock()
+		var temporaryUrls = [URL?](repeating: nil, count: results.count)
 		var errorMessage: String?
+		let setError = { (message: String) in
+			lock.lock()
+			if errorMessage == nil {
+				errorMessage = message
+			}
+			lock.unlock()
+		}
 		let dispatchGroup = DispatchGroup()
-		for result in results {
-			if errorMessage != nil {
+		for (index, result) in results.enumerated() {
+			let typeIdentifier: String
+			if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+				typeIdentifier = UTType.movie.identifier
+			} else if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+				typeIdentifier = UTType.image.identifier
+			} else {
+				setError("Unsupported file type identifier")
 				break
 			}
-			if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-				dispatchGroup.enter()
-				result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier, completionHandler: { url, error in
-					defer {
-						dispatchGroup.leave()
-					}
-					if let error = error {
-						errorMessage = error.localizedDescription
-						return
-					}
-					guard let url = url else {
-						errorMessage = "Unknown error"
-						return
-					}
-					do {
-						// We have to make a copy of the file to the app sandbox here, as PHPicker returns an NSItemProvider with either an ephemeral file URL or content that is deleted after the completion handler.
-						// This is a different behavior from UIDocumentPicker, where the file can either be copied to the app sandbox or opened in place, and then accessed with `startAccessingSecurityScopedResource`.
-						let temporaryUrl = try self.saveTemporaryFile(url)
-						temporaryUrls.append(temporaryUrl)
-					} catch {
-						errorMessage = "Failed to create a temporary copy of the file"
-					}
-				})
-			} else if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-				dispatchGroup.enter()
-				result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier, completionHandler: { url, error in
-					defer {
-						dispatchGroup.leave()
-					}
-					if let error = error {
-						errorMessage = error.localizedDescription
-						return
-					}
-					guard let url = url else {
-						errorMessage = "Unknown error"
-						return
-					}
-					do {
-						// We have to make a copy of the file to the app sandbox here, as PHPicker returns an NSItemProvider with either an ephemeral file URL or content that is deleted after the completion handler.
-						// This is a different behavior from UIDocumentPicker, where the file can either be copied to the app sandbox or opened in place, and then accessed with `startAccessingSecurityScopedResource`.
-						let temporaryUrl = try self.saveTemporaryFile(url)
-						temporaryUrls.append(temporaryUrl)
-					} catch {
-						errorMessage = "Failed to create a temporary copy of the file"
-					}
-				})
-			} else {
-				errorMessage = "Unsupported file type identifier"
-			}
+			dispatchGroup.enter()
+			result.itemProvider.loadFileRepresentation(forTypeIdentifier: typeIdentifier, completionHandler: { url, error in
+				defer {
+					dispatchGroup.leave()
+				}
+				if let error = error {
+					setError(error.localizedDescription)
+					return
+				}
+				guard let url = url else {
+					setError("Unknown error")
+					return
+				}
+				do {
+					// We have to make a copy of the file to the app sandbox here, as PHPicker returns an NSItemProvider with either an ephemeral file URL or content that is deleted after the completion handler.
+					// This is a different behavior from UIDocumentPicker, where the file can either be copied to the app sandbox or opened in place, and then accessed with `startAccessingSecurityScopedResource`.
+					let temporaryUrl = try self.saveTemporaryFile(url)
+					lock.lock()
+					temporaryUrls[index] = temporaryUrl
+					lock.unlock()
+				} catch {
+					setError("Failed to create a temporary copy of the file")
+				}
+			})
 		}
 		dispatchGroup.notify(queue: .main) {
+			lock.lock()
+			let errorMessage = errorMessage
+			let urls = temporaryUrls.compactMap { $0 }
+			lock.unlock()
 			if let errorMessage = errorMessage {
 				self.plugin.onFilePickerEvent(.error(errorMessage))
 				return
 			}
-			self.plugin.onFilePickerEvent(.selected(temporaryUrls))
+			self.plugin.onFilePickerEvent(.selected(urls))
 		}
 	}
 }
