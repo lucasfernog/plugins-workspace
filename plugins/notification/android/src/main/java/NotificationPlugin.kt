@@ -22,8 +22,11 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.util.Date
 
 const val LOCAL_NOTIFICATIONS = "permissionState"
+// same message as the iOS implementation
+const val PAST_SCHEDULED_TIME_ERROR = "Scheduled time must be *after* current time"
 
 @InvokeArg
 class PluginConfig {
@@ -132,9 +135,18 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
     }
   }
 
+  private fun isScheduledInThePast(notification: Notification): Boolean {
+    val schedule = notification.schedule
+    return schedule is NotificationSchedule.At && schedule.date.time < Date().time
+  }
+
   @Command
   fun show(invoke: Invoke) {
     val notification = invoke.parseArgs(Notification::class.java)
+    if (isScheduledInThePast(notification)) {
+      invoke.reject(PAST_SCHEDULED_TIME_ERROR)
+      return
+    }
     val id = manager.schedule(notification)
 
     invoke.resolveObject(id)
@@ -143,6 +155,10 @@ class NotificationPlugin(private val activity: Activity): Plugin(activity) {
   @Command
   fun batch(invoke: Invoke) {
     val args = invoke.parseArgs(BatchArgs::class.java)
+    if (args.notifications.any { isScheduledInThePast(it) }) {
+      invoke.reject(PAST_SCHEDULED_TIME_ERROR)
+      return
+    }
 
     val ids = manager.schedule(args.notifications)
     notificationStorage.appendNotifications(args.notifications)

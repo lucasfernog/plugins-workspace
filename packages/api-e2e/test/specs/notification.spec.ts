@@ -67,6 +67,25 @@ describePlugin('notification', () => {
     }
   )
 
+  itOn(
+    'android',
+    'scheduling a notification in the past is rejected',
+    async () => {
+      // through the command, since sendNotification does not report errors
+      const error = await tauriError((api) =>
+        api.core.invoke('plugin:notification|notify', {
+          options: {
+            title: 'e2e past',
+            schedule: api.notification.Schedule.at(
+              new Date(Date.now() - 60 * 1000)
+            )
+          }
+        })
+      )
+      expect(error).toMatch(/Scheduled time must be \*after\* current time/)
+    }
+  )
+
   itOn('android', 'channels can be created, listed and removed', async () => {
     const result = await tauri(async (api) => {
       const { Importance, Visibility } = api.notification
