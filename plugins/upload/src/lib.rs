@@ -173,6 +173,11 @@ async fn upload(
         // Loop through the headers keys and values
         // and add them to the request object.
         for (key, value) in headers {
+            // `Content-Length` is always set from the file size above. `header` appends, so a
+            // user-supplied value would produce a duplicate, conflicting header.
+            if key.eq_ignore_ascii_case(reqwest::header::CONTENT_LENGTH.as_str()) {
+                continue;
+            }
             request = request.header(&key, value);
         }
 
@@ -317,6 +322,18 @@ mod tests {
         );
         let response_body = result.unwrap();
         assert_eq!(response_body, "upload successful");
+    }
+
+    #[tokio::test]
+    async fn should_ignore_user_content_length_on_upload() {
+        let mocked_server = spawn_upload_server_mocked(200, "POST").await;
+        let file_path = concat!(env!("CARGO_MANIFEST_DIR"), "/test/upload.txt").to_string();
+        let headers = HashMap::from([("Content-Length".to_string(), "999".to_string())]);
+        let sender: Channel<ProgressPayload> =
+            Channel::new(|_msg: InvokeResponseBody| -> tauri::Result<()> { Ok(()) });
+        let result = upload(mocked_server.url, file_path, headers, None, sender).await;
+        mocked_server.mocked_endpoint.assert();
+        assert_eq!(result.unwrap(), "upload successful");
     }
 
     async fn download_file(url: String) -> Result<()> {
