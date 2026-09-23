@@ -21,6 +21,10 @@ const shell =
 // every platform: `prepare_cmd` rejects before anything is executed.
 const itSpawns = platform === 'ios' ? it.skip : it
 
+// Specs whose script needs a Unix shell (`sh -c`), which `cmd` has no
+// equivalent of.
+const itSpawnsUnix = platform === 'ios' || platform === 'win32' ? it.skip : it
+
 /**
  * Puts a directory in the form the two sides of the working directory
  * assertion can be compared in: the shell may print it with a different path
@@ -209,6 +213,39 @@ describePlugin('shell', () => {
       expect(result.code).toBeNull()
       expect(result.signal).toBe(9)
     }
+  })
+
+  itSpawnsUnix('utf-16 output is split into lines once decoded', async () => {
+    const result = await tauri(
+      async (api, program, flag, script) => {
+        const options = { encoding: 'utf-16le' }
+        const executed = await api.shell.Command.create(
+          program,
+          [flag, script],
+          options
+        ).execute()
+        const spawned = await new Promise<string[]>((resolve, reject) => {
+          const lines: string[] = []
+          const command = api.shell.Command.create(
+            program,
+            [flag, script],
+            options
+          )
+          command.stdout.on('data', (line) => lines.push(line))
+          command.on('error', (error) => reject(new Error(error)))
+          command.on('close', () => resolve(lines))
+          command.spawn().catch(reject)
+          setTimeout(() => reject(new Error('command never closed')), 15000)
+        })
+        return { stdout: executed.stdout, spawned }
+      },
+      shell.program,
+      shell.flag,
+      // "one\ntwo\n" in UTF-16LE: every `\n` is followed by a zero byte
+      'printf "o\\000n\\000e\\000\\n\\000t\\000w\\000o\\000\\n\\000"'
+    )
+    expect(result.stdout).toBe('one\ntwo\n')
+    expect(result.spawned).toEqual(['one\n', 'two\n'])
   })
 
   it('rejects programs that are not in the scope', async () => {

@@ -52,6 +52,79 @@ fn get_event_buffer(line: Vec<u8>, encoding: EncodingWrapper) -> Result<Buffer, 
     }
 }
 
+/// Whether lines of this encoding cannot be split on the `\n` and `\r` bytes, because
+/// those bytes also appear inside other characters (UTF-16 encodes `\n` as two bytes).
+fn needs_line_decoder(encoding: &'static Encoding) -> bool {
+    encoding == encoding_rs::UTF_16LE || encoding == encoding_rs::UTF_16BE
+}
+
+/// Decodes a byte stream incrementally and splits the decoded text into lines, each
+/// ending with its `\n`, `\r\n` or `\r` delimiter like the lines read for UTF-8 output.
+struct LineDecoder {
+    decoder: encoding_rs::Decoder,
+    pending: String,
+}
+
+impl LineDecoder {
+    fn new(encoding: &'static Encoding) -> Self {
+        Self {
+            decoder: encoding.new_decoder_with_bom_removal(),
+            pending: String::new(),
+        }
+    }
+
+    /// Decodes the next chunk and returns the lines it completed.
+    /// With `last`, the stream ended and whatever is left is returned as the last line.
+    fn decode(&mut self, bytes: &[u8], last: bool) -> Vec<String> {
+        let mut input = bytes;
+        loop {
+            let capacity = self
+                .decoder
+                .max_utf8_buffer_length(input.len())
+                .unwrap_or(input.len() * 3)
+                .max(4);
+            self.pending.reserve(capacity);
+            let (result, read, _) = self
+                .decoder
+                .decode_to_string(input, &mut self.pending, last);
+            input = &input[read..];
+            if result == encoding_rs::CoderResult::InputEmpty {
+                break;
+            }
+        }
+
+        let mut lines = Vec::new();
+        let mut start = 0;
+        let bytes = self.pending.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            let end = match bytes[i] {
+                b'\n' => Some(i + 1),
+                b'\r' => match bytes.get(i + 1) {
+                    Some(b'\n') => Some(i + 2),
+                    Some(_) => Some(i + 1),
+                    // a `\r` at the end may still be followed by a `\n`
+                    None if last => Some(i + 1),
+                    None => None,
+                },
+                _ => None,
+            };
+            if let Some(end) = end {
+                lines.push(self.pending[start..end].to_string());
+                start = end;
+                i = end;
+            } else {
+                i += 1;
+            }
+        }
+        self.pending.drain(..start);
+        if last && !self.pending.is_empty() {
+            lines.push(std::mem::take(&mut self.pending));
+        }
+        lines
+    }
+}
+
 impl JSCommandEvent {
     pub fn new(event: CommandEvent, encoding: EncodingWrapper) -> Self {
         match event {
@@ -169,6 +242,10 @@ fn prepare_cmd<R: Runtime>(
             }
             _ => {
                 if let Some(text_encoding) = Encoding::for_label(encoding.as_bytes()) {
+                    if needs_line_decoder(text_encoding) {
+                        // read the output as it comes and split it into lines once decoded
+                        command = command.set_raw_out(true);
+                    }
                     EncodingWrapper::Text(Some(text_encoding))
                 } else {
                     return Err(crate::Error::UnknownEncoding(encoding));
@@ -264,26 +341,62 @@ pub fn spawn<R: Runtime>(
         // stop forwarding, but keep draining the events so the child does not block on
         // a full stdout/stderr pipe.
         let mut forwarding = true;
+        let mut line_decoders = match encoding {
+            EncodingWrapper::Text(Some(encoding)) if needs_line_decoder(encoding) => {
+                Some((LineDecoder::new(encoding), LineDecoder::new(encoding)))
+            }
+            _ => None,
+        };
         while let Some(event) = rx.recv().await {
-            if matches!(event, crate::process::CommandEvent::Terminated(_)) {
+            if matches!(event, CommandEvent::Terminated(_)) {
                 children.lock().unwrap().remove(&pid);
             };
             if !forwarding {
                 continue;
             }
-            let js_event = JSCommandEvent::new(event, encoding);
+            let js_events = match (&mut line_decoders, event) {
+                (Some((stdout, _)), CommandEvent::Stdout(bytes)) => stdout
+                    .decode(&bytes, false)
+                    .into_iter()
+                    .map(|line| JSCommandEvent::Stdout(Buffer::Text(line)))
+                    .collect(),
+                (Some((_, stderr)), CommandEvent::Stderr(bytes)) => stderr
+                    .decode(&bytes, false)
+                    .into_iter()
+                    .map(|line| JSCommandEvent::Stderr(Buffer::Text(line)))
+                    .collect(),
+                // both streams are closed once the process terminated
+                (Some((stdout, stderr)), event @ CommandEvent::Terminated(_)) => stdout
+                    .decode(&[], true)
+                    .into_iter()
+                    .map(|line| JSCommandEvent::Stdout(Buffer::Text(line)))
+                    .chain(
+                        stderr
+                            .decode(&[], true)
+                            .into_iter()
+                            .map(|line| JSCommandEvent::Stderr(Buffer::Text(line))),
+                    )
+                    .chain(std::iter::once(JSCommandEvent::new(event, encoding)))
+                    .collect(),
+                (_, event) => vec![JSCommandEvent::new(event, encoding)],
+            };
 
-            let mut retries = 0;
-            while on_event.send(js_event.clone()).is_err() {
-                if retries == SEND_EVENT_MAX_RETRIES {
-                    log::warn!(
-                        "failed to send the events of process {pid} to the webview, giving up"
-                    );
-                    forwarding = false;
+            for js_event in js_events {
+                let mut retries = 0;
+                while on_event.send(js_event.clone()).is_err() {
+                    if retries == SEND_EVENT_MAX_RETRIES {
+                        log::warn!(
+                            "failed to send the events of process {pid} to the webview, giving up"
+                        );
+                        forwarding = false;
+                        break;
+                    }
+                    retries += 1;
+                    tokio::time::sleep(SEND_EVENT_RETRY_DELAY).await;
+                }
+                if !forwarding {
                     break;
                 }
-                retries += 1;
-                tokio::time::sleep(SEND_EVENT_RETRY_DELAY).await;
             }
         }
     });
@@ -328,4 +441,36 @@ pub async fn open<R: Runtime>(
     with: Option<Program>,
 ) -> crate::Result<()> {
     crate::open::open(Some(&shell.open_scope), path, with)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LineDecoder;
+
+    fn utf16le(text: &str) -> Vec<u8> {
+        text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+    }
+
+    #[test]
+    fn utf16_lines_are_split_after_decoding() {
+        let mut decoder = LineDecoder::new(encoding_rs::UTF_16LE);
+        let bytes = utf16le("one\ntwo\r\nthree\rfour");
+        // split in the middle of the two bytes of the first `\n`, as the pipe may
+        let split = 7;
+        assert_eq!(decoder.decode(&bytes[..split], false), Vec::<String>::new());
+        assert_eq!(
+            decoder.decode(&bytes[split..], false),
+            vec!["one\n", "two\r\n", "three\r"]
+        );
+        assert_eq!(decoder.decode(&[], true), vec!["four"]);
+    }
+
+    #[test]
+    fn utf16_trailing_carriage_return_waits_for_a_newline() {
+        let mut decoder = LineDecoder::new(encoding_rs::UTF_16BE);
+        let bytes: Vec<u8> = "a\r\n".encode_utf16().flat_map(u16::to_be_bytes).collect();
+        assert_eq!(decoder.decode(&bytes[..4], false), Vec::<String>::new());
+        assert_eq!(decoder.decode(&bytes[4..], false), vec!["a\r\n"]);
+        assert_eq!(decoder.decode(&[], true), Vec::<String>::new());
+    }
 }
