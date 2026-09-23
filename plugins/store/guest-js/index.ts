@@ -497,7 +497,7 @@ export class Store extends Resource implements IStore {
    */
   static async get(path: string): Promise<Store | null> {
     return await invoke<number | null>('plugin:store|get_store', { path }).then(
-      (rid) => (rid ? new Store(rid) : null)
+      (rid) => (rid != null ? new Store(rid) : null)
     )
   }
 
