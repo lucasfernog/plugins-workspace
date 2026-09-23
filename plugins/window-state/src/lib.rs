@@ -87,7 +87,7 @@ struct PluginState {
     map_label: Option<Box<LabelMapperFn>>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 struct WindowState {
     width: u32,
     height: u32,
@@ -140,24 +140,44 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         let state_path = app_dir.join(&plugin_state.filename);
         let windows = self.webview_windows();
         let cache = self.state::<WindowStateCache>();
-        let mut state = cache.0.lock().unwrap();
 
-        for (label, s) in state.iter_mut() {
-            let window = if let Some(map) = &plugin_state.map_label {
-                windows
-                    .iter()
-                    .find_map(|(l, window)| (map(l) == label).then_some(window))
-            } else {
-                windows.get(label)
-            };
+        // Find the open windows to refresh while holding the cache lock, but query them
+        // only after releasing it: off the main thread, window getters block on the event
+        // loop, whose window event handlers take this same lock.
+        let tracked: Vec<(String, WebviewWindow<R>)> = {
+            let state = cache.0.lock().unwrap();
+            state
+                .keys()
+                .filter_map(|label| {
+                    let window = if let Some(map) = &plugin_state.map_label {
+                        windows
+                            .iter()
+                            .find_map(|(l, window)| (map(l) == label).then_some(window))
+                    } else {
+                        windows.get(label)
+                    };
+                    window.map(|window| (label.clone(), window.clone()))
+                })
+                .collect()
+        };
 
-            if let Some(window) = window {
-                window.update_state(s, flags)?;
-            }
+        let mut snapshots = Vec::with_capacity(tracked.len());
+        for (label, window) in tracked {
+            snapshots.push((label, window.snapshot(flags)?));
         }
 
+        let contents = {
+            let mut state = cache.0.lock().unwrap();
+            for (label, snapshot) in snapshots {
+                if let Some(s) = state.get_mut(&label) {
+                    snapshot.apply(s);
+                }
+            }
+            serde_json::to_vec_pretty(&*state)?
+        };
+
         create_dir_all(app_dir)?;
-        std::fs::write(state_path, serde_json::to_vec_pretty(&*state)?)?;
+        std::fs::write(state_path, contents)?;
 
         Ok(())
     }
@@ -191,14 +211,21 @@ impl<R: Runtime> WindowExt for Window<R> {
         let restoring_window_state = self.state::<RestoringWindowState>();
         let _restoring_window_lock = restoring_window_state.0.lock().unwrap();
         let cache = self.state::<WindowStateCache>();
-        let mut c = cache.0.lock().unwrap();
+
+        // Copy the saved state out instead of holding the cache lock while calling into the
+        // window: off the main thread, window getters block on the event loop, whose window
+        // event handlers take this same lock.
+        let saved_state = cache
+            .0
+            .lock()
+            .unwrap()
+            .get(label)
+            .filter(|state| *state != &WindowState::default())
+            .cloned();
 
         let mut should_show = true;
 
-        if let Some(state) = c
-            .get(label)
-            .filter(|state| state != &&WindowState::default())
-        {
+        if let Some(state) = saved_state {
             if flags.contains(StateFlags::DECORATIONS) {
                 self.set_decorations(state.decorated)?;
             }
@@ -273,7 +300,12 @@ impl<R: Runtime> WindowExt for Window<R> {
                 metadata.fullscreen = self.is_fullscreen()?;
             }
 
-            c.insert(label.into(), metadata);
+            let mut c = cache.0.lock().unwrap();
+            let entry = c.entry(label.into()).or_default();
+            // another thread may have cached a state for this window in the meantime
+            if *entry == WindowState::default() {
+                *entry = metadata;
+            }
         }
 
         if flags.contains(StateFlags::VISIBLE) && should_show {
@@ -285,42 +317,41 @@ impl<R: Runtime> WindowExt for Window<R> {
     }
 }
 
-trait WindowExtInternal {
-    fn update_state(&self, state: &mut WindowState, flags: StateFlags) -> tauri::Result<()>;
+/// A window's current state, as read by [`WindowExtInternal::snapshot`].
+///
+/// Reading it and applying it to a cached [`WindowState`] are split so the window getters,
+/// which block on the event loop when called off the main thread, never run while the
+/// window state cache is locked.
+#[derive(Debug, Default, Clone, Copy)]
+struct WindowSnapshot {
+    maximized: Option<bool>,
+    fullscreen: Option<bool>,
+    decorated: Option<bool>,
+    visible: Option<bool>,
+    size: Option<PhysicalSize<u32>>,
+    position: Option<PhysicalPosition<i32>>,
 }
 
-impl<R: Runtime> WindowExtInternal for WebviewWindow<R> {
-    fn update_state(&self, state: &mut WindowState, flags: StateFlags) -> tauri::Result<()> {
-        self.as_ref().window().update_state(state, flags)
-    }
-}
-
-impl<R: Runtime> WindowExtInternal for Window<R> {
-    fn update_state(&self, state: &mut WindowState, flags: StateFlags) -> tauri::Result<()> {
-        let is_maximized = flags
-            .intersects(StateFlags::MAXIMIZED | StateFlags::POSITION | StateFlags::SIZE)
-            && self.is_maximized()?;
-        let is_minimized =
-            flags.intersects(StateFlags::POSITION | StateFlags::SIZE) && self.is_minimized()?;
-
-        if flags.contains(StateFlags::MAXIMIZED) {
-            state.maximized = is_maximized;
+impl WindowSnapshot {
+    /// Writes the parts of the window state this snapshot captured into `state`.
+    fn apply(&self, state: &mut WindowState) {
+        if let Some(maximized) = self.maximized {
+            state.maximized = maximized;
         }
 
-        if flags.contains(StateFlags::FULLSCREEN) {
-            state.fullscreen = self.is_fullscreen()?;
+        if let Some(fullscreen) = self.fullscreen {
+            state.fullscreen = fullscreen;
         }
 
-        if flags.contains(StateFlags::DECORATIONS) {
-            state.decorated = self.is_decorated()?;
+        if let Some(decorated) = self.decorated {
+            state.decorated = decorated;
         }
 
-        if flags.contains(StateFlags::VISIBLE) {
-            state.visible = self.is_visible()?;
+        if let Some(visible) = self.visible {
+            state.visible = visible;
         }
 
-        if flags.contains(StateFlags::SIZE) && !is_maximized && !is_minimized {
-            let size = self.inner_size()?;
+        if let Some(size) = self.size {
             // It doesn't make sense to save a window with 0 height or width
             if size.width > 0 && size.height > 0 {
                 state.width = size.width;
@@ -328,13 +359,59 @@ impl<R: Runtime> WindowExtInternal for Window<R> {
             }
         }
 
-        if flags.contains(StateFlags::POSITION) && !is_maximized && !is_minimized {
-            let position = self.outer_position()?;
+        if let Some(position) = self.position {
             state.x = position.x;
             state.y = position.y;
         }
+    }
+}
 
-        Ok(())
+trait WindowExtInternal {
+    /// Reads the parts of the window state selected by `flags`.
+    fn snapshot(&self, flags: StateFlags) -> tauri::Result<WindowSnapshot>;
+}
+
+impl<R: Runtime> WindowExtInternal for WebviewWindow<R> {
+    fn snapshot(&self, flags: StateFlags) -> tauri::Result<WindowSnapshot> {
+        self.as_ref().window().snapshot(flags)
+    }
+}
+
+impl<R: Runtime> WindowExtInternal for Window<R> {
+    fn snapshot(&self, flags: StateFlags) -> tauri::Result<WindowSnapshot> {
+        let is_maximized = flags
+            .intersects(StateFlags::MAXIMIZED | StateFlags::POSITION | StateFlags::SIZE)
+            && self.is_maximized()?;
+        let is_minimized =
+            flags.intersects(StateFlags::POSITION | StateFlags::SIZE) && self.is_minimized()?;
+
+        let mut snapshot = WindowSnapshot::default();
+
+        if flags.contains(StateFlags::MAXIMIZED) {
+            snapshot.maximized = Some(is_maximized);
+        }
+
+        if flags.contains(StateFlags::FULLSCREEN) {
+            snapshot.fullscreen = Some(self.is_fullscreen()?);
+        }
+
+        if flags.contains(StateFlags::DECORATIONS) {
+            snapshot.decorated = Some(self.is_decorated()?);
+        }
+
+        if flags.contains(StateFlags::VISIBLE) {
+            snapshot.visible = Some(self.is_visible()?);
+        }
+
+        if flags.contains(StateFlags::SIZE) && !is_maximized && !is_minimized {
+            snapshot.size = Some(self.inner_size()?);
+        }
+
+        if flags.contains(StateFlags::POSITION) && !is_maximized && !is_minimized {
+            snapshot.position = Some(self.outer_position()?);
+        }
+
+        Ok(snapshot)
     }
 }
 
@@ -472,9 +549,11 @@ impl Builder {
 
                 window.on_window_event(move |e| match e {
                     WindowEvent::CloseRequested { .. } => {
-                        let mut c = cache.lock().unwrap();
-                        if let Some(state) = c.get_mut(&label) {
-                            let _ = window_clone.update_state(state, state_flags);
+                        if let Ok(snapshot) = window_clone.snapshot(state_flags) {
+                            let mut c = cache.lock().unwrap();
+                            if let Some(state) = c.get_mut(&label) {
+                                snapshot.apply(state);
+                            }
                         }
                     }
 
