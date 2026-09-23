@@ -26,7 +26,12 @@ const HTTP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_P
 /// configure `maxRedirections`.
 const DEFAULT_MAX_REDIRECTIONS: usize = 10;
 
-struct ReqwestResponse(reqwest::Response);
+/// A response whose body is being read by the frontend.
+///
+/// The response is behind a [`Mutex`] because reading a chunk needs a mutable reference across an
+/// `.await` while the resource is shared through the resource table: concurrent
+/// `fetch_read_body` calls for the same resource id must be serialized.
+struct ReqwestResponse(Mutex<reqwest::Response>);
 impl tauri::Resource for ReqwestResponse {}
 
 type CancelableResponseResult = Result<reqwest::Response>;
@@ -454,7 +459,7 @@ pub async fn fetch_send<R: Runtime>(
     }
 
     let mut resources_table = webview.resources_table();
-    let rid = resources_table.add(ReqwestResponse(res));
+    let rid = resources_table.add(ReqwestResponse(Mutex::new(res)));
 
     Ok(FetchResponse {
         status: status.as_u16(),
@@ -475,17 +480,13 @@ pub async fn fetch_read_body<R: Runtime>(
         resources_table.get::<ReqwestResponse>(rid)?
     };
 
-    // SAFETY: we can access the inner value mutably
-    // because we are the only ones with a reference to it
-    // and we don't want to use `Arc::into_inner` because we want to keep the value in the table
-    // for potential future calls to `fetch_cancel_body`
-    let res_ptr = Arc::as_ptr(&res) as *mut ReqwestResponse;
-    let res = unsafe { &mut *res_ptr };
-    let res = &mut res.0;
+    // the response stays in the table for later `fetch_read_body` and `fetch_cancel_body` calls,
+    // so it is only borrowed mutably through its lock
+    let chunk = res.0.lock().await.chunk().await?;
 
-    let Some(chunk) = res.chunk().await? else {
-        let mut resources_table = webview.resources_table();
-        resources_table.close(rid)?;
+    let Some(chunk) = chunk else {
+        // a concurrent call may have closed it already
+        let _ = webview.resources_table().close(rid);
 
         // return a response with a single byte to indicate that the body is empty
         return Ok(tauri::ipc::Response::new(vec![1]));
