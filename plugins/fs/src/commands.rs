@@ -190,6 +190,10 @@ pub struct PathHandle<R: Runtime> {
     path_: SafeFilePath,
     #[allow(dead_code)] // Used in Drop implementation
     app_handle: tauri::AppHandle<R>,
+    /// Whether [`resolve_path`] started accessing the security-scoped resource for this path,
+    /// in which case it must be stopped when the handle is dropped.
+    #[cfg(target_os = "ios")]
+    stop_accessing_on_drop: bool,
 }
 
 impl<R: Runtime> PathHandle<R> {
@@ -198,6 +202,8 @@ impl<R: Runtime> PathHandle<R> {
             path,
             path_,
             app_handle,
+            #[cfg(target_os = "ios")]
+            stop_accessing_on_drop: false,
         }
     }
 }
@@ -226,34 +232,20 @@ impl<R: Runtime> AsRef<PathBuf> for PathHandle<R> {
 impl<R: Runtime> Drop for PathHandle<R> {
     fn drop(&mut self) {
         use crate::{FilePath, FsExt};
-        // Convert SafeFilePath to FilePath
-        let file_path: FilePath = match &self.path_ {
-            SafeFilePath::Url(url) => FilePath::Url(url.clone()),
-            SafeFilePath::Path(safe_path) => FilePath::Path(safe_path.as_ref().to_owned()),
-        };
 
-        // Only clean up if we're tracking this resource (i.e., resolve_path started it)
-        // If start_accessing_security_scoped_resource was used, it won't be in our tracking
-        // and we shouldn't interfere
-        if let FilePath::Url(url) = file_path {
-            if url.scheme() == "file" {
-                let security_scoped_resources =
-                    self.app_handle.state::<crate::SecurityScopedResources>();
+        // Only stop accessing the resource if `resolve_path` started it for this handle.
+        // Resources started with `start_accessing_security_scoped_resource` are tracked manually
+        // and must be stopped with `stop_accessing_security_scoped_resource`.
+        if !self.stop_accessing_on_drop {
+            return;
+        }
 
-                // Only clean up if it's not tracked manually
-                if !security_scoped_resources.is_tracked_manually(url.as_str()) {
-                    log::debug!(
-                        "Stopping accessing security-scoped resource for URL: {url} on drop"
-                    );
-                    let _ = self
-                        .app_handle
-                        .fs()
-                        .stop_accessing_security_scoped_resource(FilePath::Url(url.clone()));
-                    security_scoped_resources.remove(url.as_str());
-                } else {
-                    log::debug!("Not cleaning up security-scoped resource for URL: {url} on drop (manually tracked via start_accessing_security_scoped_resource)");
-                }
-            }
+        if let SafeFilePath::Url(url) = &self.path_ {
+            log::debug!("Stopping accessing security-scoped resource for URL: {url} on drop");
+            let _ = self
+                .app_handle
+                .fs()
+                .stop_accessing_security_scoped_resource(FilePath::Url(url.clone()));
         }
     }
 }
@@ -1486,7 +1478,12 @@ pub fn resolve_path<R: Runtime>(
     path: SafeFilePath,
     base_dir: Option<BaseDirectory>,
 ) -> CommandResult<PathHandle<R>> {
-    let path_ = path.clone();
+    // The returned handle. On iOS it also stops accessing the security-scoped resource
+    // started below when dropped, including when this function returns an error.
+    #[allow(unused_mut)]
+    let mut path_handle =
+        PathHandle::new(PathBuf::new(), path.clone(), webview.app_handle().clone());
+
     // On iOS, start accessing security-scoped resource if the path is a file URL
     // Only if it hasn't been started already via start_accessing_security_scoped_resource
     #[cfg(target_os = "ios")]
@@ -1507,8 +1504,9 @@ pub fn resolve_path<R: Runtime>(
                         let success = ns_url.startAccessingSecurityScopedResource();
                         if success {
                             log::debug!("Started accessing security-scoped resource for URL: {} (via resolve_path)", url.as_str());
-                            // Track it so we know to clean it up
-                            security_scoped_resources.track_manually(url.as_str().to_string());
+                            // Balance it with a stop when the returned handle is dropped.
+                            // Do not track it as started manually, otherwise nothing would ever stop it.
+                            path_handle.stop_accessing_on_drop = true;
                         } else {
                             log::warn!(
                                 "Failed to start accessing security-scoped resource for URL: {}",
@@ -1562,8 +1560,8 @@ pub fn resolve_path<R: Runtime>(
     }
 
     if fs_scope.scope.is_allowed(&resolved_path) || scope.is_allowed(&resolved_path) {
-        let app_handle = webview.app_handle().clone();
-        Ok(PathHandle::new(resolved_path, path_, app_handle))
+        path_handle.path = resolved_path;
+        Ok(path_handle)
     } else {
         #[cfg(not(debug_assertions))]
         return Err(CommandError::Plugin(Error::PathForbidden(resolved_path)));
