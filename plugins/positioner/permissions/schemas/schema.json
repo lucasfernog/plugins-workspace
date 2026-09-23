@@ -331,10 +331,10 @@
           "markdownDescription": "Denies the set_tray_icon_state command without any pre-configured scope."
         },
         {
-          "description": "Allows the moveWindow and handleIconState APIs\n#### This default permission set includes:\n\n- `allow-move-window`\n- `allow-move-window-constrained`\n- `allow-set-tray-icon-state`",
+          "description": "Allows the moveWindow, moveWindowConstrained and handleIconState APIs\n#### This default permission set includes:\n\n- `allow-move-window`\n- `allow-move-window-constrained`\n- `allow-set-tray-icon-state`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allows the moveWindow and handleIconState APIs\n#### This default permission set includes:\n\n- `allow-move-window`\n- `allow-move-window-constrained`\n- `allow-set-tray-icon-state`"
+          "markdownDescription": "Allows the moveWindow, moveWindowConstrained and handleIconState APIs\n#### This default permission set includes:\n\n- `allow-move-window`\n- `allow-move-window-constrained`\n- `allow-set-tray-icon-state`"
         }
       ]
     }

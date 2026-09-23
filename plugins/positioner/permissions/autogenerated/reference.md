@@ -1,6 +1,6 @@
 ## Default Permission
 
-Allows the moveWindow and handleIconState APIs
+Allows the moveWindow, moveWindowConstrained and handleIconState APIs
 
 #### This default permission set includes the following:
 

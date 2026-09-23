@@ -1,6 +1,6 @@
 "$schema" = "schemas/schema.json"
 [default]
-description = "Allows the moveWindow and handleIconState APIs"
+description = "Allows the moveWindow, moveWindowConstrained and handleIconState APIs"
 permissions = [
   "allow-move-window",
   "allow-move-window-constrained",
