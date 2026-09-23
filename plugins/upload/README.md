@@ -21,7 +21,7 @@ There are three general methods of installation that we can recommend.
 2. Pull sources directly from Github using git tags / revision hashes (most secure)
 3. Git submodule install this repo in your tauri project and then use file protocol to ingest the source (most secure, but inconvenient to use)
 
-Install the Core plugin by adding the following to your `Cargo.toml` file:
+Install the plugin by adding the following to your `Cargo.toml` file:
 
 `src-tauri/Cargo.toml`
 
@@ -44,12 +44,13 @@ yarn add @tauri-apps/plugin-upload
 
 ## Usage
 
-First you need to register the core plugin with Tauri:
+First you need to register the plugin with Tauri:
 
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_upload::init())
         .run(tauri::generate_context!())
@@ -57,42 +58,65 @@ fn main() {
 }
 ```
 
-Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
+Afterwards all the plugin's APIs are available through the JavaScript guest bindings.
+
+### Upload
+
+`upload` sends the contents of a file as the request body and resolves with the response body as text:
 
 ```javascript
 import { upload, HttpMethod } from '@tauri-apps/plugin-upload'
+import { appDataDir, join } from '@tauri-apps/api/path'
 
-// Upload with default POST method
-upload(
+const filePath = await join(await appDataDir(), 'report.pdf')
+
+// Upload with the default POST method
+const response = await upload(
   'https://example.com/file-upload',
-  './path/to/my/file.txt',
+  filePath,
   ({ progressTotal, total }) =>
     console.log(`Uploaded ${progressTotal} of ${total} bytes`), // a callback that will be called with the upload progress
-  { 'Content-Type': 'text/plain' } // optional headers to send with the request
+  { Authorization: 'Bearer <token>' } // optional headers to send with the request
 )
 
-// Upload with specific HTTP method
-upload(
+// Upload with a specific HTTP method
+await upload(
   'https://example.com/file-upload',
-  './path/to/my/file.txt',
+  filePath,
   ({ progressTotal, total }) =>
     console.log(`Uploaded ${progressTotal} of ${total} bytes`),
-  { 'Content-Type': 'text/plain' },
-  HttpMethod.Put // Use HttpMethod enum - supports POST, PUT, PATCH
+  { Authorization: 'Bearer <token>' },
+  HttpMethod.Put // Use the HttpMethod enum - supports POST (default), PUT and PATCH
 )
 ```
+
+The `Content-Length` header is set from the file size. Upload progress is reported as the file is read into the request body, so it can reach 100% before the server has received everything and replied.
+
+### Download
+
+`download` streams the response body into a file:
 
 ```javascript
 import { download } from '@tauri-apps/plugin-upload'
+import { appDataDir, join } from '@tauri-apps/api/path'
 
-download(
+await download(
   'https://example.com/file-download-link',
-  './path/to/save/my/file.txt',
+  await join(await appDataDir(), 'file.zip'), // the parent directory must already exist
   ({ progressTotal, total }) =>
     console.log(`Downloaded ${progressTotal} of ${total} bytes`), // a callback that will be called with the download progress
-  { 'Content-Type': 'text/plain' } // optional headers to send with the request
+  { Authorization: 'Bearer <token>' } // optional headers to send with the request
 )
 ```
+
+The request is a `GET`, unless the optional fifth argument `body` is given: then a `POST` request with that string as its body is sent.
+`total` is `0` when the server does not send a `Content-Length` header or compresses the response.
+
+### Progress and errors
+
+The progress callback receives `progress` (the size of the last chunk, not the cumulative count), `progressTotal` (the bytes transferred so far), `total` and `transferSpeed` (bytes per second, recalculated about every 500 ms).
+
+Both functions reject when the file cannot be read or written, when the request fails, or when the server replies with a non-2xx status (`request failed with status code <code>: <response body>`). A transfer cannot be cancelled once it has started, and there is no timeout.
 
 ## Contributing
 
