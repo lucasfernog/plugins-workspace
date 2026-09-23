@@ -15,6 +15,20 @@ use crate::{
     Error, Result,
 };
 
+/// The checks `auto_launch` runs on the registered path before enabling auto start.
+fn check_app_path(app_path: &str) -> Result<()> {
+    let path = Path::new(app_path);
+    if !path.exists() {
+        return Err(Error::Anyhow(format!("app path doesn't exist: {app_path}")));
+    }
+    if !path.is_absolute() {
+        return Err(Error::Anyhow(format!(
+            "app path is not absolute: {app_path}"
+        )));
+    }
+    Ok(())
+}
+
 /// `~/Library/LaunchAgents`, the directory `auto_launch` stores Launch Agents in.
 fn launch_agents_dir() -> Result<PathBuf> {
     dirs::home_dir()
@@ -29,15 +43,7 @@ fn launch_agents_dir() -> Result<PathBuf> {
 /// The file name and content are otherwise the same, so `auto_launch` still finds it in
 /// `is_enabled` and `disable`.
 pub(crate) fn write_launch_agent(app_name: &str, app_path: &str, args: &[String]) -> Result<()> {
-    let path = Path::new(app_path);
-    if !path.exists() {
-        return Err(Error::Anyhow(format!("app path doesn't exist: {app_path}")));
-    }
-    if !path.is_absolute() {
-        return Err(Error::Anyhow(format!(
-            "app path is not absolute: {app_path}"
-        )));
-    }
+    check_app_path(app_path)?;
 
     let dir = launch_agents_dir()?;
     fs::create_dir_all(&dir)
@@ -63,6 +69,23 @@ fn run_system_events_script(command: &str) -> Result<()> {
             String::from_utf8_lossy(&output.stderr).trim()
         )))
     }
+}
+
+/// Adds a login item named `name` that opens `app_path`, hidden if `args` contains
+/// `--hidden` or `--minimized` (the only arguments a login item supports).
+///
+/// This replaces `auto_launch`'s implementation, which interpolates the name and path into
+/// the script without escaping, so a `"` in the app path broke (or injected into) the script.
+pub(crate) fn add_login_item(name: &str, app_path: &str, args: &[String]) -> Result<()> {
+    check_app_path(app_path)?;
+    let hidden = args
+        .iter()
+        .any(|arg| arg == "--hidden" || arg == "--minimized");
+    run_system_events_script(&format!(
+        "make login item at end with properties {{name:{}, path:{}, hidden:{hidden}}}",
+        applescript_string(name),
+        applescript_string(app_path),
+    ))
 }
 
 /// Removes the login item named `name`, doing nothing if there is no such login item.
