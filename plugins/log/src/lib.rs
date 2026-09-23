@@ -85,7 +85,7 @@ pub enum Error {
 /// An enum representing the available verbosity levels of the logger.
 ///
 /// It is very similar to the [`log::Level`], but serializes to unsigned ints instead of strings.
-#[derive(Debug, Clone, Deserialize_repr, Serialize_repr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize_repr, Serialize_repr)]
 #[repr(u16)]
 pub enum LogLevel {
     /// The "trace" level.
