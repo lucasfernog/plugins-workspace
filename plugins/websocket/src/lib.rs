@@ -90,6 +90,11 @@ impl ConnectionManager {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Registers `writer` under a new random id that no open connection uses.
+    fn insert(&self, writer: Arc<Mutex<WebSocketWriter>>) -> Id {
+        insert_with_unique_id(&mut self.connections(), writer, rand::random)
+    }
+
     /// Removes the connection `id` if it still refers to `writer`.
     fn remove(&self, id: Id, writer: &Arc<Mutex<WebSocketWriter>>) {
         let mut connections = self.connections();
@@ -98,6 +103,22 @@ impl ConnectionManager {
             .is_some_and(|current| Arc::ptr_eq(current, writer))
         {
             connections.remove(&id);
+        }
+    }
+}
+
+/// Inserts `value` under the first id produced by `next_id` that is not in use yet, so an
+/// existing entry is never replaced.
+fn insert_with_unique_id<T>(
+    map: &mut HashMap<Id, T>,
+    value: T,
+    mut next_id: impl FnMut() -> Id,
+) -> Id {
+    loop {
+        let id = next_id();
+        if let std::collections::hash_map::Entry::Vacant(entry) = map.entry(id) {
+            entry.insert(value);
+            return id;
         }
     }
 }
@@ -189,7 +210,6 @@ async fn connect<R: Runtime>(
     on_message: Channel<serde_json::Value>,
     config: Option<ConnectionConfig>,
 ) -> Result<Id> {
-    let id = rand::random();
     let mut request = url.into_client_request()?;
 
     if let Some(headers) = config.as_ref().and_then(|c| c.headers.as_ref()) {
@@ -228,10 +248,7 @@ async fn connect<R: Runtime>(
     // Register the writer before resolving, so a `send` issued right after `connect` finds it.
     let (write, mut read) = ws_stream.split();
     let writer = Arc::new(Mutex::new(write));
-    window
-        .state::<ConnectionManager>()
-        .connections()
-        .insert(id, writer.clone());
+    let id = window.state::<ConnectionManager>().insert(writer.clone());
 
     tauri::async_runtime::spawn(async move {
         while let Some(message) = read.next().await {
@@ -356,5 +373,21 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unique_id_skips_ids_in_use() {
+        let mut map = HashMap::from([(1, "first"), (2, "second")]);
+        let mut candidates = [1, 2, 3].into_iter();
+        let id = insert_with_unique_id(&mut map, "third", || candidates.next().unwrap());
+        assert_eq!(id, 3);
+        assert_eq!(map[&1], "first");
+        assert_eq!(map[&2], "second");
+        assert_eq!(map[&3], "third");
     }
 }
