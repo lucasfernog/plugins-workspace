@@ -52,7 +52,20 @@ async function readText(): Promise<string> {
 }
 
 /**
- * Writes image buffer to the clipboard.
+ * Writes an image to the clipboard.
+ *
+ * The image can be given as:
+ * - an {@link Image}, passed to Rust by its resource id. Use `Image.new(rgba, width, height)`
+ *   from `@tauri-apps/api/image` for raw RGBA pixels, or pass an image returned by {@link readImage};
+ * - the bytes of an encoded PNG or ICO file (`Uint8Array`, `ArrayBuffer` or `number[]`);
+ * - a string, which is the path to a PNG or ICO file.
+ *
+ * Encoded bytes and file paths are decoded by Tauri, which requires enabling the `image-png`
+ * and/or `image-ico` feature of the `tauri` crate. Without them, only {@link Image} works.
+ *
+ * **Security:** file paths are opened without any file system scope check. Granting
+ * `clipboard-manager:allow-write-image` lets the webview copy any PNG/ICO file the app can read to
+ * the system clipboard (and read its pixels back if `clipboard-manager:allow-read-image` is granted too).
  *
  * #### Platform-specific
  *
@@ -60,18 +73,20 @@ async function readText(): Promise<string> {
  *
  * @example
  * ```typescript
+ * import { Image } from '@tauri-apps/api/image';
  * import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
- * const buffer = [
- *   // A red pixel
- *   255, 0, 0, 255,
  *
- *  // A green pixel
- *   0, 255, 0, 255,
- * ];
- * await writeImage(buffer);
+ * // a 2x1 image from raw RGBA pixels: a red pixel and a green pixel
+ * const image = await Image.new([255, 0, 0, 255, 0, 255, 0, 255], 2, 1);
+ * await writeImage(image);
+ * await image.close();
+ *
+ * // the bytes of a PNG file (needs the `image-png` feature of the `tauri` crate)
+ * const png = await (await fetch('/icon.png')).arrayBuffer();
+ * await writeImage(png);
  * ```
  *
- * @param image The image to write, as a path, raw RGBA bytes, or an existing {@link Image}.
+ * @param image The image to write: an {@link Image}, the bytes of an encoded PNG/ICO file, or the path to one.
  * @returns A promise indicating the success or failure of the operation.
  *
  * @since 2.0.0
