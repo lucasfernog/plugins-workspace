@@ -142,6 +142,9 @@ pub enum RotationStrategy {
     /// Will only keep the most recent log up to its maximal size.
     KeepOne,
     /// Will keep some of the most recent logs, renaming them to include the date.
+    ///
+    /// The value is the number of archived log files to keep, in addition to the active log file.
+    /// `KeepSome(0)` keeps no archived file and behaves like [`RotationStrategy::KeepOne`].
     KeepSome(usize),
 }
 
@@ -248,13 +251,14 @@ impl RotatingFile {
                 RotationStrategy::KeepAll => {
                     self.rename_file_to_dated()?;
                 }
-                RotationStrategy::KeepSome(keep_count) => {
+                RotationStrategy::KeepSome(keep_count) if keep_count > 0 => {
                     // remove_old_files excludes the active file.
                     // So we need to keep (keep_count - 1) archived files to make room for the one we are about to archive.
                     self.remove_old_files(keep_count - 1)?;
                     self.rename_file_to_dated()?;
                 }
-                RotationStrategy::KeepOne => {
+                // `KeepSome(0)` keeps no archived file, which is what `KeepOne` does.
+                RotationStrategy::KeepOne | RotationStrategy::KeepSome(_) => {
                     fs::remove_file(&self.path)?;
                 }
             }
@@ -922,4 +926,70 @@ pub fn attach_logger(
     log::set_boxed_logger(log)?;
     log::set_max_level(max_level);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A unique, empty directory under the system temp dir, removed on drop.
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "tauri-plugin-log-{name}-{}-{}",
+                std::process::id(),
+                OffsetDateTime::now_utc().unix_timestamp_nanos()
+            ));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn files(&self) -> Vec<String> {
+            let mut files = fs::read_dir(&self.0)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            files.sort();
+            files
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn rotating_file(dir: &TestDir, file_name: &str, strategy: RotationStrategy) -> RotatingFile {
+        RotatingFile::new(
+            &dir.0,
+            file_name.into(),
+            10,
+            strategy,
+            TimezoneStrategy::UseUtc,
+            FileOpenStrategy::Append,
+        )
+        .unwrap()
+    }
+
+    fn write_record(file: &mut RotatingFile, record: &str) {
+        file.write_all(record.as_bytes()).unwrap();
+        file.flush().unwrap();
+    }
+
+    #[test]
+    fn keep_some_zero_behaves_like_keep_one() {
+        let dir = TestDir::new("keep-some-zero");
+        let mut file = rotating_file(&dir, "app", RotationStrategy::KeepSome(0));
+        write_record(&mut file, "12345678");
+        // exceeds the 10 bytes maximum, so the file is rotated
+        write_record(&mut file, "abcdefgh");
+        assert_eq!(dir.files(), vec!["app.log".to_string()]);
+        assert_eq!(
+            fs::read_to_string(dir.0.join("app.log")).unwrap(),
+            "abcdefgh"
+        );
+    }
 }
