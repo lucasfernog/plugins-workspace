@@ -18,6 +18,24 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     })
 }
 
+/// Checks that an RGBA buffer of `len` bytes holds exactly a `width` x `height` image.
+///
+/// arboard does not check this and panics (or reads out of bounds) on a mismatch.
+fn validate_rgba_len(len: usize, width: u32, height: u32) -> crate::Result<()> {
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4));
+    match expected {
+        Some(expected) if expected == len => Ok(()),
+        Some(expected) => Err(crate::Error::Clipboard(format!(
+            "invalid image: a {width}x{height} image needs {expected} bytes of RGBA data, got {len}"
+        ))),
+        None => Err(crate::Error::Clipboard(format!(
+            "invalid image: a {width}x{height} image is too large"
+        ))),
+    }
+}
+
 /// Access to the clipboard APIs.
 pub struct Clipboard<R: Runtime> {
     #[allow(dead_code)]
@@ -51,9 +69,11 @@ impl<R: Runtime> Clipboard<R> {
     ///
     /// # Errors
     ///
-    /// Returns [`crate::Error::Clipboard`] if the clipboard could not be initialized or the
+    /// Returns [`crate::Error::Clipboard`] if the image's RGBA buffer is not exactly
+    /// `width * height * 4` bytes long, the clipboard could not be initialized or the
     /// underlying [`arboard`] operation fails.
     pub fn write_image(&self, image: &Image<'_>) -> crate::Result<()> {
+        validate_rgba_len(image.rgba().len(), image.width(), image.height())?;
         match &self.clipboard {
             Ok(clipboard) => clipboard
                 .lock()
@@ -144,5 +164,35 @@ impl<R: Runtime> Clipboard<R> {
         if let Ok(clipboard) = &self.clipboard {
             clipboard.lock().unwrap().take();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_rgba_len;
+
+    #[test]
+    fn rgba_len_matches() {
+        assert!(validate_rgba_len(16, 2, 2).is_ok());
+        assert!(validate_rgba_len(4, 1, 1).is_ok());
+        assert!(validate_rgba_len(0, 0, 0).is_ok());
+    }
+
+    #[test]
+    fn rgba_len_mismatch() {
+        let err = validate_rgba_len(8, 2, 2).unwrap_err().to_string();
+        assert!(err.contains("needs 16 bytes"), "{err}");
+        assert!(validate_rgba_len(20, 2, 2).is_err());
+        assert!(validate_rgba_len(8, 0, 2).is_err());
+    }
+
+    #[test]
+    fn rgba_len_overflow() {
+        // u32::MAX * u32::MAX * 4 overflows even a 64-bit usize
+        let err = validate_rgba_len(0, u32::MAX, u32::MAX)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("too large"), "{err}");
+        assert!(validate_rgba_len(0, u32::MAX, 2).is_err());
     }
 }

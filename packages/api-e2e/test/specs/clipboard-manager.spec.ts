@@ -129,6 +129,33 @@ describePlugin('clipboard-manager', () => {
     expect(size).toEqual({ width: 1, height: 1 })
   })
 
+  itDesktop(
+    'writeImage rejects an Image whose RGBA buffer does not match its size',
+    async () => {
+      const result = await tauri(async (api) => {
+        // 2 pixels of RGBA data for a 2x2 image
+        const image = await api.image.Image.new(
+          [255, 0, 0, 255, 0, 255, 0, 255],
+          2,
+          2
+        )
+        let error = ''
+        try {
+          await api.clipboardManager.writeImage(image)
+        } catch (e) {
+          error = String(e)
+        }
+        await image.close()
+        // the clipboard must still work afterwards
+        await api.clipboardManager.writeText('still working')
+        const text = await api.clipboardManager.readText()
+        return { error, text }
+      })
+      expect(result.error).toMatch(/needs 16 bytes of RGBA data, got 8/)
+      expect(result.text).toBe('still working')
+    }
+  )
+
   it('readImage rejects when the clipboard holds text', async () => {
     const message = await tauriError(async (api) => {
       await api.clipboardManager.writeText('not an image')
