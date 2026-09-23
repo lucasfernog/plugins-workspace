@@ -164,8 +164,11 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   public func locationManager(
     _ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]
   ) {
-    // Respond to all getCurrentPosition() calls.
-    for request in self.positionRequests {
+    // Respond to all pending getCurrentPosition() calls, exactly once.
+    let requests = self.positionRequests
+    self.positionRequests.removeAll()
+
+    for request in requests {
       // The capacitor plugin uses locations.first but .last should be the most current one
       // and i don't see a reason to use old locations
       if let location = locations.last {
