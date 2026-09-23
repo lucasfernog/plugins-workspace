@@ -64,7 +64,9 @@ type Result<T> = std::result::Result<T, Error>;
 /// what operations are permitted on the open file. Build it with [`OpenOptions::new`],
 /// chain calls to the setter methods and pass it to [`Fs::open`].
 ///
-/// The `read` option defaults to `true`, every other option defaults to `false`.
+/// When deserialized (e.g. the options sent by the JavaScript API), `read` defaults to `true`
+/// and every other option to `false`. [`OpenOptions::new`] and [`Default::default`] set every
+/// option to `false`, so call [`OpenOptions::read`] to open a file for reading.
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenOptions {

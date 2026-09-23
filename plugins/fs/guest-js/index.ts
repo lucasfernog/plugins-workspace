@@ -587,6 +587,12 @@ interface OpenOptions {
  * open options. It is the callers responsibility to close the file when finished
  * with it.
  *
+ * **Security:** the `open` command is part of the read permission sets (such as
+ * `fs:read-all` or `fs:allow-appdata-read-recursive`) and accepts the write options
+ * (`write`, `append`, `truncate`, `create`, `createNew`). A webview granted one of
+ * these sets can therefore create, overwrite or truncate files in their scope with
+ * `open`.
+ *
  * @example
  * ```typescript
  * import { open, BaseDirectory } from "@tauri-apps/plugin-fs"
