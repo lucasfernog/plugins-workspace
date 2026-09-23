@@ -5,6 +5,17 @@
 /**
  * Trigger haptic feedback on Android and iOS.
  *
+ * Unlike most plugins, the functions of this module do not reject when the command fails.
+ * They resolve to a {@link Result} instead, which is `{ status: 'error', error }` on failure:
+ *
+ * ```typescript
+ * import { vibrate } from '@tauri-apps/plugin-haptics'
+ * const result = await vibrate(300)
+ * if (result.status === 'error') {
+ *   console.error(result.error)
+ * }
+ * ```
+ *
  * @module
  */
 
@@ -28,7 +39,9 @@ import type {
  * ```
  *
  * @param duration Duration of the vibration, in milliseconds.
- * @returns A promise resolving to the {@link Result} of the operation.
+ * @returns A promise resolving to `{ status: 'ok', data: null }` on success, or to
+ * `{ status: 'error', error }` on failure (for instance when the permission is missing).
+ * The promise does **not** reject on these errors, so check `status`.
  * @since 2.0.0
  */
 export async function vibrate(duration: number): Promise<Result<null, Error>> {
@@ -49,7 +62,9 @@ export async function vibrate(duration: number): Promise<Result<null, Error>> {
  * ```
  *
  * @param style The style of the impact.
- * @returns A promise resolving to the {@link Result} of the operation.
+ * @returns A promise resolving to `{ status: 'ok', data: null }` on success, or to
+ * `{ status: 'error', error }` on failure (for instance when the permission is missing).
+ * The promise does **not** reject on these errors, so check `status`.
  * @since 2.0.0
  */
 export async function impactFeedback(
@@ -72,7 +87,9 @@ export async function impactFeedback(
  * ```
  *
  * @param type The outcome to convey.
- * @returns A promise resolving to the {@link Result} of the operation.
+ * @returns A promise resolving to `{ status: 'ok', data: null }` on success, or to
+ * `{ status: 'error', error }` on failure (for instance when the permission is missing).
+ * The promise does **not** reject on these errors, so check `status`.
  * @since 2.0.0
  */
 export async function notificationFeedback(
@@ -92,7 +109,9 @@ export async function notificationFeedback(
  * await selectionFeedback()
  * ```
  *
- * @returns A promise resolving to the {@link Result} of the operation.
+ * @returns A promise resolving to `{ status: 'ok', data: null }` on success, or to
+ * `{ status: 'error', error }` on failure (for instance when the permission is missing).
+ * The promise does **not** reject on these errors, so check `status`.
  * @since 2.0.0
  */
 export async function selectionFeedback(): Promise<Result<null, Error>> {

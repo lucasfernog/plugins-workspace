@@ -72,7 +72,11 @@ export const commands = {
 
 /** user-defined types **/
 
-export type Error = never
+/**
+ * The error a command fails with: the message of the rejected IPC call, e.g. a missing
+ * permission, invalid arguments or an error reported by the Android or iOS implementation.
+ */
+export type Error = string
 /**
  * The style of an impact-feedback haptic.
  *
