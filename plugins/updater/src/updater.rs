@@ -1518,7 +1518,7 @@ fn applescript_escape(s: &str) -> String {
 ///
 /// The current app is moved to `backup` instead of being deleted, so that it can be restored if
 /// moving the new app into place fails, and it is only deleted once that succeeded.
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", all(test, unix)))]
 fn replace_app_command(current: &str, new: &str, backup: &str) -> String {
     format!(
         "mv -f {current} {backup} && {{ mv -f {new} {current} || {{ mv -f {backup} {current}; exit 1; }}; }} && rm -rf {backup}",
@@ -2090,7 +2090,7 @@ mod tests {
         assert_eq!(cases.len(), cases_escaped.len());
 
         for (orig, escaped) in cases.iter().zip(cases_escaped) {
-            assert_eq!(escape_nsis_current_exe_arg(&OsStr::new(orig)), escaped);
+            assert_eq!(escape_nsis_current_exe_arg(OsStr::new(orig)), escaped);
         }
     }
 }
