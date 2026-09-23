@@ -19,7 +19,7 @@ exclude = [
 
 [package.metadata.docs.rs]
 no-default-features = true
-features = ["zip"]
+features = ["zip", "rustls-tls"]
 
 [package.metadata.platforms.support]
 windows = { level = "full", notes = "" }
