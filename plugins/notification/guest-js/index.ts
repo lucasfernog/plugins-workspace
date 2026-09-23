@@ -636,7 +636,11 @@ async function isPermissionGranted(): Promise<boolean> {
   if (window.Notification.permission !== 'default') {
     return await Promise.resolve(window.Notification.permission === 'granted')
   }
-  return await invoke('plugin:notification|is_permission_granted')
+  // the command resolves to `null` while the user has not decided yet
+  return (
+    (await invoke<boolean | null>('plugin:notification|is_permission_granted'))
+    === true
+  )
 }
 
 /**

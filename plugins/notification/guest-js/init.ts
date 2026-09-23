@@ -41,15 +41,16 @@ import type { Options } from './index'
     permissionSettable = false
   }
 
-  async function requestPermission(): Promise<PermissionState> {
+  async function requestPermission(): Promise<NotificationPermission> {
     return await invoke<PermissionState>(
       'plugin:notification|request_permission'
-    ).then((permission) => {
-      setNotificationPermission(
-        permission === 'prompt' || permission === 'prompt-with-rationale'
+    ).then((state) => {
+      // map the plugin's permission state to the Notification Web API values
+      const permission: NotificationPermission =
+        state === 'prompt' || state === 'prompt-with-rationale'
           ? 'default'
-          : permission
-      )
+          : state
+      setNotificationPermission(permission)
       return permission
     })
   }
@@ -82,7 +83,6 @@ import type { Options } from './index'
     )
   }
 
-  // @ts-expect-error tauri does not have sync IPC :(
   window.Notification.requestPermission = requestPermission
 
   Object.defineProperty(window.Notification, 'permission', {
