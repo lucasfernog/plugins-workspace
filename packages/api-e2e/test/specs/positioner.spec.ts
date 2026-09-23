@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauri, tauriError, describePlugin, itWm } from '../helpers/index.js'
+import {
+  tauri,
+  tauriError,
+  describePlugin,
+  itOn,
+  itWm
+} from '../helpers/index.js'
 
 // Positions are computed from the window's current monitor and outer size, so
 // the specs compute the expected physical position the same way and compare
@@ -134,4 +140,41 @@ describePlugin('positioner', { desktopOnly: true }, () => {
       y: tray.y
     })
   })
+
+  // Windows only: macOS keeps titled windows below the menu bar, and Linux has
+  // no fallback below the icon.
+  itOn(
+    'win32',
+    'tray positions move below an icon at the top of its monitor',
+    async () => {
+      if (process.env.E2E_SKIP_WM) return
+      const tray = await tauri(async (api) => {
+        const monitor = await api.window.currentMonitor()
+        const rect = {
+          x: monitor!.position.x + Math.trunc(monitor!.size.width / 2),
+          y: monitor!.position.y,
+          width: 20,
+          height: 20
+        }
+        await api.positioner.handleIconState({
+          type: 'Click',
+          id: 'e2e',
+          position: new api.dpi.PhysicalPosition(rect.x, rect.y),
+          rect: {
+            position: new api.dpi.PhysicalPosition(rect.x, rect.y),
+            size: new api.dpi.PhysicalSize(rect.width, rect.height)
+          },
+          button: 'Left',
+          buttonState: 'Down'
+        })
+        return rect
+      })
+
+      const result = await moveAndMeasure('TrayCenter')
+      expect(result.position).toEqual({
+        x: tray.x + tray.width / 2 - Math.trunc(result.window.width / 2),
+        y: tray.y + tray.height
+      })
+    }
+  )
 })
