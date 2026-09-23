@@ -19,6 +19,11 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 }
 
 /// Access to the clipboard APIs.
+///
+/// # Platform-specific
+///
+/// - **Linux:** the app owns the contents it writes to the clipboard. Unless a clipboard manager
+///   is running to take them over, they are lost when the app exits.
 pub struct Clipboard<R: Runtime> {
     #[allow(dead_code)]
     app: AppHandle<R>,
@@ -70,7 +75,16 @@ impl<R: Runtime> Clipboard<R> {
         }
     }
 
-    /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.
+    /// Reads the system clipboard as plain text.
+    ///
+    /// **Warning:** do not call this method on the main thread! Otherwise the underlying libraries
+    /// may deadlock on Linux, freezing the whole app, when the clipboard holds data copied from this
+    /// app, for example if the user copied text from the webview.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Clipboard`] if the clipboard is empty, does not hold text, could not
+    /// be initialized or the underlying [`arboard`] operation fails.
     pub fn read_text(&self) -> crate::Result<String> {
         match &self.clipboard {
             Ok(clipboard) => {
@@ -124,7 +138,16 @@ impl<R: Runtime> Clipboard<R> {
         }
     }
 
-    /// Warning: This method should not be used on the main thread! Otherwise the underlying libraries may deadlock on Linux, freezing the whole app, when trying to copy data copied from this app, for example if the user copies text from the WebView.
+    /// Reads an image from the system clipboard, as RGBA data.
+    ///
+    /// **Warning:** do not call this method on the main thread! Otherwise the underlying libraries
+    /// may deadlock on Linux, freezing the whole app, when the clipboard holds data copied from this
+    /// app, for example if the user copied text from the webview.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Clipboard`] if the clipboard does not hold an image, could not be
+    /// initialized or the underlying [`arboard`] operation fails.
     pub fn read_image(&self) -> crate::Result<Image<'_>> {
         match &self.clipboard {
             Ok(clipboard) => {
