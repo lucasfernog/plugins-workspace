@@ -296,8 +296,6 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
   @objc private func scan(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(ScanOptions.self)
 
-    self.invoke = invoke
-
     let entry = Bundle.main.infoDictionary?["NSCameraUsageDescription"] as? String
 
     if entry == nil || entry?.count == 0 {
@@ -326,8 +324,12 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     }
 
     DispatchQueue.main.async { [self] in
+      // only one scan can run at a time: settle the previous one and remove its camera view
+      // before `loadCamera` replaces it
+      self.invoke?.reject("cancelled")
+      self.destroy()
       self.loadCamera()
-      self.dismantleCamera()
+      self.invoke = invoke
       self.setupCamera(
         direction: args.cameraDirection ?? "back",
         windowed: args.windowed ?? false

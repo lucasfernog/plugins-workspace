@@ -357,6 +357,12 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
             return
         }
 
+        // only one scan can run at a time: settle the previous one and restore
+        // the webview background it changed before replacing it
+        savedInvoke?.let {
+            it.reject("cancelled")
+            destroy()
+        }
         savedInvoke = invoke
         webViewBackground = null
         prepare(args.cameraDirection ?: "back", args.windowed)
