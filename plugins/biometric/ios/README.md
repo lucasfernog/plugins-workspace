@@ -1,3 +1,3 @@
-# Tauri Plugin {{ plugin_name_original }}
+# Tauri Plugin Biometric
 
-A description of this package.
+iOS implementation of the Tauri biometric plugin, using `LocalAuthentication`. See the [plugin README](../README.md).

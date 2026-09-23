@@ -5,7 +5,7 @@ biometric features are by default exposed.
 
 #### Granted Permissions
 
-It allows acccess to all biometric commands.
+It allows access to all biometric commands.
 
 #### This default permission set includes the following:
 
