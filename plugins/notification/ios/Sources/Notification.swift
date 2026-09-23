@@ -43,7 +43,7 @@ func makeNotificationContent(_ notification: Notification) throws -> UNNotificat
   var userInfo: [String: Any] = [:]
   
   if let extra = notification.extra {
-    userInfo["__EXTRA__"] = extra
+    userInfo["__EXTRA__"] = extra.compactMapValues { $0.propertyListValue }
   }
   
   if let schedule = notification.schedule {

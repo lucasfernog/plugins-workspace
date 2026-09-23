@@ -62,12 +62,51 @@ struct NotificationAttachment: Codable {
   let options: NotificationAttachmentOptions?
 }
 
+/// Any JSON value, decoded so it can be stored in the notification's `userInfo`.
+enum ExtraValue: Decodable {
+  case string(String)
+  case bool(Bool)
+  case number(Double)
+  case array([ExtraValue])
+  case object([String: ExtraValue])
+  case null
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if container.decodeNil() {
+      self = .null
+    } else if let value = try? container.decode(Bool.self) {
+      self = .bool(value)
+    } else if let value = try? container.decode(Double.self) {
+      self = .number(value)
+    } else if let value = try? container.decode(String.self) {
+      self = .string(value)
+    } else if let value = try? container.decode([ExtraValue].self) {
+      self = .array(value)
+    } else {
+      self = .object(try container.decode([String: ExtraValue].self))
+    }
+  }
+
+  /// The value as a property list object; `null` has no property list representation and is dropped.
+  var propertyListValue: Any? {
+    switch self {
+    case .string(let value): return value
+    case .bool(let value): return value
+    case .number(let value): return value
+    case .array(let values): return values.compactMap { $0.propertyListValue }
+    case .object(let values): return values.compactMapValues { $0.propertyListValue }
+    case .null: return nil
+    }
+  }
+}
+
 struct Notification: Decodable {
   let id: Int
   // optional: the Rust builder sends `null` when no title was set
   var title: String?
   var body: String?
-  var extra: [String: String]?
+  var extra: [String: ExtraValue]?
   var schedule: NotificationSchedule?
   var attachments: [NotificationAttachment]?
   var sound: String?

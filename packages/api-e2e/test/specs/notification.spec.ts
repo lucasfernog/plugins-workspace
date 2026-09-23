@@ -72,11 +72,13 @@ describePlugin('notification', () => {
     'scheduling a notification in the past is rejected',
     async () => {
       // through the command, since sendNotification does not report errors;
-      // without a title, which the Rust builder allows and mobile must accept
+      // without a title, which the Rust builder allows, and with non-string extras,
+      // both of which mobile must parse before it gets to the schedule
       const error = await tauriError((api) =>
         api.core.invoke('plugin:notification|notify', {
           options: {
             body: 'e2e past',
+            extra: { count: 1, nested: { flag: true, list: [1, 'two'] } },
             schedule: api.notification.Schedule.at(
               new Date(Date.now() - 60 * 1000)
             )
