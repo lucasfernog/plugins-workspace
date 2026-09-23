@@ -4,11 +4,13 @@ Register global shortcuts.
 
 | Platform | Supported |
 | -------- | --------- |
-| Linux    | ✓         |
+| Linux    | ✓ (X11)   |
 | Windows  | ✓         |
 | macOS    | ✓         |
 | Android  | x         |
 | iOS      | x         |
+
+On Linux, global shortcuts are only supported on X11. They do not work in native Wayland sessions.
 
 ## Install
 

@@ -18,7 +18,7 @@ exclude = [
 
 [package.metadata.platforms.support]
 windows = { level = "full", notes = "" }
-linux = { level = "full", notes = "" }
+linux = { level = "partial", notes = "X11 only, Wayland sessions are not supported" }
 macos = { level = "full", notes = "" }
 android = { level = "none", notes = "" }
 ios = { level = "none", notes = "" }

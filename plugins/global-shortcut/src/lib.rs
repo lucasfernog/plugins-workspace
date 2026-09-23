@@ -4,7 +4,7 @@
 
 //! Register global shortcuts.
 //!
-//! - Supported platforms: Windows, Linux and macOS.
+//! - Supported platforms: Windows, Linux (X11 only, Wayland sessions are not supported) and macOS.
 //! - On macOS, registering and unregistering shortcuts must happen on the main thread, so every
 //!   [`GlobalShortcut`] operation dispatches to it and blocks until it completes.
 
