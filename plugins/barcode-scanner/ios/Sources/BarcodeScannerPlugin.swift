@@ -87,6 +87,7 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
 
   var windowed = false
   var previousBackgroundColor: UIColor? = UIColor.white
+  var previousIsOpaque = true
 
   var invoke: Invoke? = nil
 
@@ -130,7 +131,8 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
 
   private func setupCamera(direction: String, windowed: Bool) {
     do {
-      var cameraDirection = direction
+      // like on Android, anything but "front" selects the back camera
+      var cameraDirection = direction == "front" ? "front" : "back"
       cameraView.backgroundColor = UIColor.clear
       if windowed {
         webView.superview?.insertSubview(cameraView, belowSubview: webView)
@@ -172,6 +174,7 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
       self.windowed = windowed
       if windowed {
         self.previousBackgroundColor = self.webView.backgroundColor
+        self.previousIsOpaque = self.webView.isOpaque
         self.webView.isOpaque = false
         self.webView.backgroundColor = UIColor.clear
         self.webView.scrollView.backgroundColor = UIColor.clear
@@ -207,9 +210,11 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     invoke = nil
     if windowed {
       let backgroundColor = previousBackgroundColor ?? UIColor.white
-      webView.isOpaque = true
+      webView.isOpaque = previousIsOpaque
       webView.backgroundColor = backgroundColor
       webView.scrollView.backgroundColor = backgroundColor
+      // restore only once, and not again when a later non-windowed scan ends
+      windowed = false
     }
   }
 
