@@ -20,6 +20,8 @@ use tauri::{
 
 use std::env::current_exe;
 
+mod escape;
+
 type Result<T> = std::result::Result<T, Error>;
 
 /// The strategy used to register the application for auto start on macOS.
@@ -219,12 +221,26 @@ impl Builder {
                     .unwrap_or_else(|| &app.package_info().name);
                 builder.set_app_name(app_name);
 
+                // auto-launch joins the path and arguments with spaces into the `Run` registry
+                // value on Windows, so quote them here.
+                #[cfg(windows)]
+                builder.set_args(
+                    &self
+                        .args
+                        .iter()
+                        .map(|arg| escape::windows_arg(arg, false))
+                        .collect::<Vec<_>>(),
+                );
+                #[cfg(not(windows))]
                 builder.set_args(&self.args);
 
                 let current_exe = current_exe()?;
 
                 #[cfg(windows)]
-                builder.set_app_path(&current_exe.display().to_string());
+                builder.set_app_path(&escape::windows_arg(
+                    &current_exe.display().to_string(),
+                    true,
+                ));
 
                 #[cfg(target_os = "macos")]
                 {
