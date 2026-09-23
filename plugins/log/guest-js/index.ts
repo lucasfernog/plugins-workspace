@@ -15,11 +15,21 @@ import { listen, type UnlistenFn, type Event } from '@tauri-apps/api/event'
  * Options to associate extra metadata with a log entry.
  */
 export interface LogOptions {
-  /** The name of the file that emitted the log entry. Included in the log record's target when set. */
+  /**
+   * The name of the file that emitted the log entry, set as the Rust log record's `file`.
+   *
+   * It is not part of the record's target, which is built from the caller's location read from the stack trace,
+   * and the default format does not print it.
+   */
   file?: string
-  /** The line number in {@linkcode LogOptions.file} that emitted the log entry. */
+  /** The line number in {@linkcode LogOptions.file} that emitted the log entry, set as the Rust log record's `line`. */
   line?: number
-  /** Additional structured key-value pairs to attach to the log entry. */
+  /**
+   * Additional structured key-value pairs to attach to the log entry.
+   *
+   * The default format does not print them: use a custom format on the Rust side (`record.key_values()`),
+   * or the `tracing` feature of the Rust crate, to make them visible.
+   */
   keyValues?: Record<string, string | undefined>
 }
 
