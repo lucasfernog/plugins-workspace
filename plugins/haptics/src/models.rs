@@ -3,15 +3,6 @@
 // SPDX-License-Identifier: MIT
 
 use serde::{Deserialize, Serialize};
-/*
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(rename_all = "camelCase")]
-pub struct HapticsOptions {
-    // TODO: support array to match web api
-    pub duration: u32,
-}
- */
 
 /// The style of an impact-feedback haptic.
 ///
