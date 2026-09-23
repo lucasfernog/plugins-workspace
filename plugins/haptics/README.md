@@ -83,10 +83,19 @@ import {
   selectionFeedback
 } from '@tauri-apps/plugin-haptics'
 
-await vibrate(1)
-await impactFeedback('medium')
-await notificationFeedback('warning')
+await vibrate(300) // milliseconds
+await impactFeedback('medium') // 'light' | 'medium' | 'heavy' | 'soft' | 'rigid'
+await notificationFeedback('warning') // 'success' | 'warning' | 'error'
 await selectionFeedback()
+```
+
+These functions do not reject when a command fails, for instance because its permission is missing. They resolve to a result object instead, `{ status: 'ok', data: null }` or `{ status: 'error', error }`, so check `status` to handle errors:
+
+```javascript
+const result = await vibrate(300)
+if (result.status === 'error') {
+  console.error(result.error)
+}
 ```
 
 ## Contributing
