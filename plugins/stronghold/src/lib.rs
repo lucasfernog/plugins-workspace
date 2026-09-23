@@ -442,6 +442,11 @@ impl Builder {
     /// The function is called with the password sent by the frontend and must return the
     /// key used to encrypt the snapshot, which must be 32 bytes long.
     ///
+    /// It runs every time the frontend calls `Stronghold.load`, not once at setup, so it
+    /// must always return the same key for the same password, otherwise snapshots saved
+    /// earlier can no longer be decrypted. When it uses a salt, generate it randomly once
+    /// per installation and store it (as [`Self::with_argon2`] does) instead of hard-coding it.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -466,6 +471,10 @@ impl Builder {
 
     /// Initializes [`Self`] with argon2 as password hash function.
     ///
+    /// The salt is read from the file at `salt_path`. When that file does not exist, a
+    /// random salt is generated and written to it the first time the frontend calls
+    /// `Stronghold.load`. The salt file must be kept: snapshots cannot be decrypted without it.
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -473,13 +482,15 @@ impl Builder {
     ///
     /// fn init<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     ///     builder.setup(|app| {
-    ///         let salt_path = app
+    ///         let salt_dir = app
     ///             .path()
     ///             .app_local_data_dir()
-    ///             .expect("could not resolve app local data path")
-    ///             .join("salt.txt");
-    ///         app.handle()
-    ///             .plugin(tauri_plugin_stronghold::Builder::with_argon2(&salt_path).build())?;
+    ///             .expect("could not resolve app local data path");
+    ///         // the salt file's directory might not exist yet on a fresh install
+    ///         std::fs::create_dir_all(&salt_dir)?;
+    ///         app.handle().plugin(
+    ///             tauri_plugin_stronghold::Builder::with_argon2(&salt_dir.join("salt.txt")).build(),
+    ///         )?;
     ///         Ok(())
     ///     })
     /// }

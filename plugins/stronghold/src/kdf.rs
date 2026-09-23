@@ -10,7 +10,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 use std::path::Path;
 
-/// NOTE: Hash supplied to Stronghold must be 32bits long.
+/// NOTE: Hash supplied to Stronghold must be 32 bytes long.
 /// This is a current limitation of Stronghold.
 const HASH_LENGTH: usize = 32;
 
