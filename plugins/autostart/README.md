@@ -43,21 +43,36 @@ yarn add @tauri-apps/plugin-autostart
 
 ## Usage
 
-First you need to register the core plugin with Tauri:
+First you need to register the core plugin with Tauri. The plugin only supports desktop platforms, so gate it with `#[cfg(desktop)]` (and add the dependency under `[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]` if you also build for mobile):
 
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_autostart::Builder::new()
-            .args(["--flag1", "--flag2"])
-            .app_name("My Custom Name")
-            .build())
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(
+                tauri_plugin_autostart::Builder::new()
+                    // arguments passed to your app when it is launched at login
+                    .args(["--autostarted"])
+                    // name of the autostart entry, defaults to the `productName`
+                    .app_name("My Custom Name")
+                    .build(),
+            )?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
+
+Things to know:
+
+- The registered program is the executable that is running when `enable()` is called, so enabling autostart from `tauri dev` registers the development binary. On Linux the AppImage is registered when the app runs as one.
+- Pass a flag such as `--autostarted` with `args` and check it with `std::env::args()` (or the CLI plugin) to tell whether your app was launched at login, for example to start minimized.
+- The entry is named after `app_name`. If you change it (or your `productName`) in a later version, the entry registered under the old name stays behind, so disable autostart before renaming. Two apps with the same name overwrite each other's entry; consider using your bundle identifier.
 
 ### macOS launchers
 
@@ -85,6 +100,20 @@ console.log(`registered for autostart? ${await isEnabled()}`)
 
 await disable()
 ```
+
+## Permissions
+
+By default the plugin's commands are blocked. The `autostart:default` permission allows `enable`, `disable` and `isEnabled`; add it (or the individual `autostart:allow-*` permissions) to your capability:
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": ["autostart:default"]
+}
+```
+
+Only grant it to windows you trust: a page allowed to call `enable()` can make your app start at every login.
 
 ## Contributing
 
