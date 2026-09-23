@@ -92,6 +92,10 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
 
   var scanFormats = [AVMetadataObject.ObjectType]()
 
+  // `AVCaptureSession.startRunning()` and `stopRunning()` block until the session has
+  // started or stopped, so they run on this serial queue instead of the main thread
+  private let sessionQueue = DispatchQueue(label: "app.tauri.barcodescanner.session")
+
   public override func load(webview: WKWebView) {
     self.webView = webview
     loadCamera()
@@ -188,8 +192,10 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
   }
 
   private func dismantleCamera() {
-    if self.captureSession != nil {
-      self.captureSession!.stopRunning()
+    if let captureSession = self.captureSession {
+      sessionQueue.async {
+        captureSession.stopRunning()
+      }
       self.cameraView.removePreviewLayer()
       self.cameraView.removeFromSuperview()
       self.captureVideoPreviewLayer = nil
@@ -286,8 +292,9 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     }
 
     self.metaOutput!.metadataObjectTypes = self.scanFormats
-    DispatchQueue.main.async {
-      self.captureSession!.startRunning()
+    let captureSession = self.captureSession!
+    sessionQueue.async {
+      captureSession.startRunning()
     }
 
     self.isScanning = true
