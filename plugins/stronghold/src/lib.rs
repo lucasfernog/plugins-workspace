@@ -17,7 +17,7 @@ use std::{
     collections::HashMap,
     fmt,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
@@ -51,6 +51,14 @@ type FalliblePasswordHashFn = dyn Fn(&str) -> std::result::Result<Vec<u8>, Strin
 
 #[derive(Default)]
 struct StrongholdCollection(Arc<Mutex<HashMap<PathBuf, Stronghold>>>);
+
+impl StrongholdCollection {
+    /// Locks the collection. A panic while the lock was held must not turn every
+    /// later command into a panic, so a poisoned lock is recovered.
+    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Stronghold>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 struct PasswordHashFunction(Box<FalliblePasswordHashFn>);
 
@@ -278,11 +286,7 @@ async fn initialize(
     let hash = hash.map_err(InitializeError::PasswordHash)?;
     let stronghold = Stronghold::new(snapshot_path.clone(), hash)?;
 
-    collection
-        .0
-        .lock()
-        .unwrap()
-        .insert(snapshot_path, stronghold);
+    collection.lock().insert(snapshot_path, stronghold);
 
     Ok(())
 }
@@ -292,7 +296,7 @@ async fn destroy(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
 ) -> Result<()> {
-    let mut collection = collection.0.lock().unwrap();
+    let mut collection = collection.lock();
     if let Some(stronghold) = collection.remove(&snapshot_path) {
         if let Err(e) = stronghold.save() {
             collection.insert(snapshot_path, stronghold);
@@ -304,7 +308,7 @@ async fn destroy(
 
 #[tauri::command]
 async fn save(collection: State<'_, StrongholdCollection>, snapshot_path: PathBuf) -> Result<()> {
-    let collection = collection.0.lock().unwrap();
+    let collection = collection.lock();
     if let Some(stronghold) = collection.get(&snapshot_path) {
         stronghold.save()?;
     }
@@ -424,7 +428,7 @@ fn get_stronghold(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
 ) -> Result<iota_stronghold::Stronghold> {
-    let collection = collection.0.lock().unwrap();
+    let collection = collection.lock();
     if let Some(stronghold) = collection.get(&snapshot_path) {
         Ok(stronghold.inner().clone())
     } else {
@@ -437,7 +441,7 @@ fn get_client(
     snapshot_path: PathBuf,
     client: BytesDto,
 ) -> Result<Client> {
-    let collection = collection.0.lock().unwrap();
+    let collection = collection.lock();
     if let Some(stronghold) = collection.get(&snapshot_path) {
         stronghold.get_client(client).map_err(Into::into)
     } else {
