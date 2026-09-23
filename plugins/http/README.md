@@ -67,6 +67,59 @@ const response = await fetch('http://localhost:3003/users/2', {
 })
 ```
 
+## Permissions and scope
+
+The `http:default` permission allows all the commands `fetch` uses, but **no URL**: every request fails with
+`url not allowed on the configured scope` until you allow the URLs your frontend may request, in the scope of
+the permission in your capability:
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": [
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://*.tauri.app" }, "http://localhost:3003"],
+      "deny": [{ "url": "https://private.tauri.app" }]
+    }
+  ]
+}
+```
+
+- Entries are [URL patterns](https://urlpattern.spec.whatwg.org/) (not globs), given as strings or as `{ "url": "..." }` objects.
+  The scheme and the port must match: `https://*.tauri.app` does not match `http://test.tauri.app`, nor `https://tauri.app`
+  itself.
+- When the path is empty or `/`, it matches any path, and the query and fragment always match when the pattern does not
+  set them: `https://tauri.app` allows `https://tauri.app/any/path?query`.
+- `deny` entries take precedence over `allow` entries.
+- `data:` URLs are not subject to the scope.
+
+### Redirects
+
+By default, only the URL requested by the frontend is checked against the scope: redirects are followed to any URL,
+so an allowed server that redirects elsewhere (an open redirect, `localhost`, an internal host, a cloud metadata
+endpoint...) gives the frontend access to URLs the scope does not allow. Set the `scopeRedirects` option (since
+2.7.0) to check every redirect target against the scope too:
+
+`src-tauri/tauri.conf.json`
+
+```json
+{
+  "plugins": {
+    "http": {
+      "scopeRedirects": true
+    }
+  }
+}
+```
+
+### Proxies
+
+The `proxy` option of `fetch` is not checked against the scope: a frontend allowed to request a single URL can route
+it through any host and port it picks. Keep this in mind when granting `http` permissions to remote or less trusted
+content.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
