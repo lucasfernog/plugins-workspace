@@ -679,8 +679,11 @@ export class Stronghold {
    * const stronghold = await Stronghold.load(`${await appDataDir()}/vault.hold`, 'password');
    * ```
    *
-   * @param path The path of the snapshot file.
-   * @param password The password used to encrypt and decrypt the snapshot.
+   * @param path The path of the snapshot file. Use an absolute path: a relative path is
+   * resolved against the working directory of the app process.
+   * @param password The password used to encrypt and decrypt the snapshot. If the snapshot
+   * file does not exist yet, any password is accepted and becomes the snapshot password
+   * when it is first saved.
    * @returns A promise resolving to the stronghold instance.
    */
   static async load(path: string, password: string): Promise<Stronghold> {
@@ -730,6 +733,10 @@ export class Stronghold {
   /**
    * Creates a new empty client on this stronghold.
    *
+   * If a client with the same name is already loaded or stored in the snapshot, it is
+   * replaced by the empty client, and its data is lost on the next save. Only create a
+   * client after {@link Stronghold.loadClient} reported that it does not exist.
+   *
    * @example
    * ```typescript
    * import { Stronghold } from '@tauri-apps/plugin-stronghold';
@@ -737,7 +744,8 @@ export class Stronghold {
    * let client;
    * try {
    *   client = await stronghold.loadClient('my-client');
-   * } catch {
+   * } catch (e) {
+   *   if (!String(e).includes('no data present')) throw e;
    *   client = await stronghold.createClient('my-client');
    * }
    * ```
