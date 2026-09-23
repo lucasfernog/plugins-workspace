@@ -455,7 +455,7 @@ impl<R: Runtime> Store<R> {
     pub fn set(&self, key: impl Into<String>, value: impl Into<JsonValue>) {
         let change = self.store.lock().unwrap().set(key.into(), value.into());
         self.emit_changes([change]);
-        let _ = self.trigger_auto_save();
+        self.trigger_auto_save();
     }
 
     /// Returns the value for the given `key` or `None` if the key does not exist.
@@ -474,7 +474,7 @@ impl<R: Runtime> Store<R> {
         let deleted = change.is_some();
         if deleted {
             self.emit_changes(change);
-            let _ = self.trigger_auto_save();
+            self.trigger_auto_save();
         }
         deleted
     }
@@ -485,7 +485,7 @@ impl<R: Runtime> Store<R> {
     pub fn clear(&self) {
         let changes = self.store.lock().unwrap().clear();
         self.emit_changes(changes);
-        let _ = self.trigger_auto_save();
+        self.trigger_auto_save();
     }
 
     /// Resets the store to its `default` value.
@@ -494,7 +494,7 @@ impl<R: Runtime> Store<R> {
     pub fn reset(&self) {
         let changes = self.store.lock().unwrap().reset();
         self.emit_changes(changes);
-        let _ = self.trigger_auto_save();
+        self.trigger_auto_save();
     }
 
     /// Emits a `store://change` event for each change.
@@ -590,23 +590,27 @@ impl<R: Runtime> Store<R> {
         }
     }
 
-    fn trigger_auto_save(&self) -> crate::Result<()> {
+    fn trigger_auto_save(&self) {
         let Some(auto_save_delay) = self.auto_save else {
-            return Ok(());
+            return;
         };
         if auto_save_delay.is_zero() {
-            return self.save();
+            if let Err(error) = self.save() {
+                log_auto_save_error(&self.path, &error);
+            }
+            return;
         }
         let mut auto_save_debounce_sender = self.auto_save_debounce_sender.lock().unwrap();
         if let Some(ref sender) = *auto_save_debounce_sender {
             let _ = sender.send(AutoSaveMessage::Reset);
-            return Ok(());
+            return;
         }
         let (sender, mut receiver) = unbounded_channel();
         auto_save_debounce_sender.replace(sender);
         drop(auto_save_debounce_sender);
         let store = self.store.clone();
         let auto_save_debounce_sender = self.auto_save_debounce_sender.clone();
+        let path = self.path.clone();
         tauri::async_runtime::spawn(async move {
             loop {
                 select! {
@@ -617,13 +621,14 @@ impl<R: Runtime> Store<R> {
                     }
                     _ = sleep(auto_save_delay) => {
                         auto_save_debounce_sender.lock().unwrap().take();
-                        let _ = store.lock().unwrap().save();
+                        if let Err(error) = store.lock().unwrap().save() {
+                            log_auto_save_error(&path, &error);
+                        }
                         return;
                     }
                 };
             }
         });
-        Ok(())
     }
 
     fn apply_pending_auto_save(&self) {
@@ -631,9 +636,15 @@ impl<R: Runtime> Store<R> {
         let auto_save_debounce_sender = self.auto_save_debounce_sender.lock().unwrap().take();
         if let Some(sender) = auto_save_debounce_sender {
             let _ = sender.send(AutoSaveMessage::Cancel);
-            let _ = self.save();
+            if let Err(error) = self.save() {
+                log_auto_save_error(&self.path, &error);
+            }
         };
     }
+}
+
+fn log_auto_save_error(path: &Path, error: &crate::Error) {
+    tracing::error!("failed to auto save store {path:?}: {error}");
 }
 
 impl<R: Runtime> Drop for Store<R> {
