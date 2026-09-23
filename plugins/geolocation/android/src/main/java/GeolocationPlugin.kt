@@ -78,7 +78,14 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
         super.onResume()
         // resume watchers
         for ((watcher, args) in watchers.values) {
-            startWatch(watcher, args)
+            try {
+                startWatch(watcher, args)
+            } catch (e: Exception) {
+                // e.g. a SecurityException when the location permission was revoked while
+                // the app was in the background; throwing here would crash the app.
+                Logger.error("Failed to resume location watcher: ${e.message}")
+                args.channel.sendObject(e.message ?: e.toString())
+            }
         }
     }
 
