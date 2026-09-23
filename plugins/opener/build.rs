@@ -17,7 +17,9 @@ enum Application {
     /// Open in default application.
     #[default]
     Default,
-    /// If true, allow open with any application.
+    /// If true, allow open with any application. This lets the webview run any program installed on the system.
+    ///
+    /// If false, the entry never matches.
     Enable(bool),
     /// Allow specific application to open with.
     App(String),
@@ -31,15 +33,19 @@ enum OpenerScopeEntry {
     Url {
         /// A URL that can be opened by the webview when using the Opener APIs.
         ///
-        /// Wildcards can be used following the UNIX glob pattern.
+        /// Wildcards can be used following the UNIX glob pattern, matched against the whole URL string.
+        /// Note that `*` also matches `/`, `?`, `#` and `@`, and that `?` and `[` are glob metacharacters,
+        /// so a wildcard before the path does not restrict the host.
         ///
         /// Examples:
         ///
-        /// - "https://*" : allows all HTTPS origin
+        /// - "https://*" : allows all HTTPS URLs
         ///
-        /// - "https://*.github.com/tauri-apps/tauri": allows any subdomain of "github.com" with the "tauri-apps/api" path
+        /// - "https://github.com/tauri-apps/*": allows any URL that begins with "https://github.com/tauri-apps/"
         ///
         /// - "https://myapi.service.com/users/*": allows access to any URLs that begins with "https://myapi.service.com/users/"
+        ///
+        /// A pattern like "https://*.github.com/*" does not restrict the host: it also matches "https://evil.com/?.github.com/".
         url: String,
         /// An application to open this url with, for example: firefox.
         #[serde(default)]
