@@ -129,11 +129,18 @@ impl Builder {
                     let server =
                         Server::http(format!("{host}:{port}")).expect("Unable to spawn server");
                     for req in server.incoming_requests() {
-                        let path = req
+                        let path: String = req
                             .url()
                             .parse::<Uri>()
                             .map(|uri| uri.path().into())
                             .unwrap_or_else(|_| req.url().into());
+
+                        // In dev mode the asset resolver reads `frontendDist` from disk and does
+                        // not reject `..`, so never hand it a path that could escape that folder.
+                        if has_parent_dir_segment(&path) {
+                            respond(req, HttpResponse::empty(404));
+                            continue;
+                        }
 
                         #[allow(unused_mut)]
                         if let Some(mut asset) = asset_resolver.get(path) {
@@ -178,5 +185,35 @@ impl Builder {
 fn respond<D: std::io::Read>(req: tiny_http::Request, response: HttpResponse<D>) {
     if let Err(e) = req.respond(response) {
         log::warn!("localhost server failed to send a response: {e}");
+    }
+}
+
+/// Whether the request path has a `..` segment, using both `/` and `\` as separators so it
+/// also covers Windows paths.
+fn has_parent_dir_segment(path: &str) -> bool {
+    path.split(['/', '\\']).any(|segment| segment == "..")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_parent_dir_segment;
+
+    #[test]
+    fn rejects_parent_dir_segments() {
+        assert!(has_parent_dir_segment("/../../etc/passwd"));
+        assert!(has_parent_dir_segment("/assets/../../secret"));
+        assert!(has_parent_dir_segment(".."));
+        assert!(has_parent_dir_segment("/.."));
+        assert!(has_parent_dir_segment("/assets/..\\..\\secret"));
+        assert!(has_parent_dir_segment("\\..\\windows"));
+    }
+
+    #[test]
+    fn accepts_regular_paths() {
+        assert!(!has_parent_dir_segment("/"));
+        assert!(!has_parent_dir_segment("/index.html"));
+        assert!(!has_parent_dir_segment("/assets/app.js"));
+        assert!(!has_parent_dir_segment("/..foo/bar..baz/..."));
+        assert!(!has_parent_dir_segment("/./index.html"));
     }
 }
