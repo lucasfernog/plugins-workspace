@@ -9,7 +9,10 @@
 //!
 //! - **tray-icon**: Enables tray-icon-relative positions.
 //!
-//!   Note: This requires attaching the Tauri plugin, *even* when using the trait extension only.
+//!   Note: The tray-relative positions require attaching the Tauri plugin, *even* when using
+//!   the trait extension only, since the plugin stores the tray icon's position. Without it,
+//!   moving a window to a `Tray*` position returns an error. Screen positions work without
+//!   registering the plugin.
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
@@ -59,10 +62,15 @@ pub fn on_tray_event<R: Runtime>(app: &AppHandle<R>, event: &TrayIconEvent) {
         }
     };
 
-    app.state::<Tray>()
-        .0
+    let Some(tray) = app.try_state::<Tray>() else {
+        log::warn!(
+            "`tauri_plugin_positioner::on_tray_event` was called but the positioner plugin is not registered; register it with `tauri_plugin_positioner::init()` to use tray positions"
+        );
+        return;
+    };
+    tray.0
         .lock()
-        .unwrap()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .replace((position, size));
 }
 

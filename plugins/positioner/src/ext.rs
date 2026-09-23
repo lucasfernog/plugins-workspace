@@ -64,6 +64,21 @@ pub enum Position {
     TrayBottomCenter,
 }
 
+#[cfg(feature = "tray-icon")]
+impl Position {
+    fn is_tray(&self) -> bool {
+        matches!(
+            self,
+            Position::TrayLeft
+                | Position::TrayBottomLeft
+                | Position::TrayRight
+                | Position::TrayBottomRight
+                | Position::TrayCenter
+                | Position::TrayBottomCenter
+        )
+    }
+}
+
 /// A [`Window`] extension that provides extra methods related to positioning.
 pub trait WindowExt {
     /// Moves the [`Window`] to the given [`Position`]
@@ -95,15 +110,7 @@ impl<R: Runtime> WindowExt for Window<R> {
     #[cfg(feature = "tray-icon")]
     fn move_window_constrained(&self, position: Position) -> Result<()> {
         // Diverge to basic move_window, if the position is not a tray position
-        if !matches!(
-            position,
-            Position::TrayLeft
-                | Position::TrayBottomLeft
-                | Position::TrayRight
-                | Position::TrayBottomRight
-                | Position::TrayCenter
-                | Position::TrayBottomCenter
-        ) {
+        if !position.is_tray() {
             return self.move_window(position);
         }
 
@@ -155,16 +162,30 @@ impl<R: Runtime> WindowExt for Window<R> {
     }
 }
 
+/// Reads the tray icon rect recorded by `on_tray_event` / `set_tray_icon_state`.
+///
+/// Returns an error instead of panicking when the plugin was not registered, since the tray
+/// state is managed by the plugin's setup hook.
+#[cfg(feature = "tray-icon")]
+fn tray_rect<R: Runtime>(
+    window: &Window<R>,
+) -> Result<Option<(PhysicalPosition<f64>, PhysicalSize<f64>)>> {
+    let tray = window.try_state::<Tray>().ok_or_else(|| {
+        tauri::Error::Io(std::io::Error::other(
+            "The positioner plugin must be registered (`tauri_plugin_positioner::init()`) to use tray positions",
+        ))
+    })?;
+    let rect = *tray
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    Ok(rect)
+}
+
 #[cfg(feature = "tray-icon")]
 /// Retrieve the monitor, where the tray icon is located on.
 fn get_monitor_for_tray_icon<R: Runtime>(window: &Window<R>) -> Result<Option<Monitor>> {
-    let tray_position = window
-        .state::<Tray>()
-        .0
-        .lock()
-        .unwrap()
-        .map(|(pos, _)| pos)
-        .unwrap_or_default();
+    let tray_position = tray_rect(window)?.map(|(pos, _)| pos).unwrap_or_default();
 
     window.monitor_from_point(tray_position.x, tray_position.y)
 }
@@ -191,19 +212,21 @@ fn calculate_position<R: Runtime>(
         width: window.outer_size()?.width as i32,
         height: window.outer_size()?.height as i32,
     };
+    // Only read the tray state for tray positions, so screen positions keep working when the
+    // plugin is not registered.
     #[cfg(feature = "tray-icon")]
-    let (tray_position, tray_size) = window
-        .state::<Tray>()
-        .0
-        .lock()
-        .unwrap()
-        .map(|(pos, size)| {
-            (
-                Some((pos.x as i32, pos.y as i32)),
-                Some((size.width as i32, size.height as i32)),
-            )
-        })
-        .unwrap_or_default();
+    let (tray_position, tray_size) = if pos.is_tray() {
+        tray_rect(window)?
+    } else {
+        None
+    }
+    .map(|(pos, size)| {
+        (
+            Some((pos.x as i32, pos.y as i32)),
+            Some((size.width as i32, size.height as i32)),
+        )
+    })
+    .unwrap_or_default();
 
     let physical_pos = match pos {
         TopLeft => *screen_position,
