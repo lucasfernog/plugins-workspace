@@ -45,10 +45,32 @@ pub mod stronghold;
 
 type PasswordHashFn = dyn Fn(&str) -> Vec<u8> + Send + Sync;
 
+/// A password hash function that reports failures (such as an unreadable salt file)
+/// instead of panicking inside a command handler.
+type FalliblePasswordHashFn = dyn Fn(&str) -> std::result::Result<Vec<u8>, String> + Send + Sync;
+
 #[derive(Default)]
 struct StrongholdCollection(Arc<Mutex<HashMap<PathBuf, Stronghold>>>);
 
-struct PasswordHashFunction(Box<PasswordHashFn>);
+struct PasswordHashFunction(Box<FalliblePasswordHashFn>);
+
+/// Errors of the `initialize` command.
+#[derive(Debug, thiserror::Error)]
+enum InitializeError {
+    #[error(transparent)]
+    Stronghold(#[from] Error),
+    #[error("{0}")]
+    PasswordHash(String),
+}
+
+impl serde::Serialize for InitializeError {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_str())
+    }
+}
 
 #[derive(Deserialize, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(untagged)]
@@ -250,9 +272,10 @@ async fn initialize(
     hash_function: State<'_, PasswordHashFunction>,
     snapshot_path: PathBuf,
     mut password: String,
-) -> Result<()> {
+) -> std::result::Result<(), InitializeError> {
     let hash = (hash_function.0)(&password);
     password.zeroize();
+    let hash = hash.map_err(InitializeError::PasswordHash)?;
     let stronghold = Stronghold::new(snapshot_path.clone(), hash)?;
 
     collection
@@ -501,9 +524,9 @@ impl Builder {
             app.manage(PasswordHashFunction(match password_hash_function {
                 #[cfg(feature = "kdf")]
                 PasswordHashFunctionKind::Argon2(path) => {
-                    Box::new(move |p| kdf::KeyDerivation::argon2(p, &path))
+                    Box::new(move |p| kdf::try_argon2(p, &path).map_err(|e| e.to_string()))
                 }
-                PasswordHashFunctionKind::Custom(f) => f,
+                PasswordHashFunctionKind::Custom(f) => Box::new(move |p| Ok(f(p))),
             }));
             Ok(())
         });
