@@ -53,7 +53,9 @@ interface CliMatches {
 }
 
 /**
- * Parse the arguments provided to the current process and get the matches using the configuration defined [`tauri.cli`](https://tauri.app/v1/api/config/#tauriconfig.cli) in `tauri.conf.json`
+ * Parse the arguments provided to the current process and get the matches using the configuration defined under [`plugins > cli`](https://v2.tauri.app/plugin/cli/) in `tauri.conf.json`.
+ *
+ * Rejects with the parse error if the arguments do not satisfy the configuration.
  *
  * @example
  * ```typescript
