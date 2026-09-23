@@ -268,13 +268,13 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
 
     scanFormats = [AVMetadataObject.ObjectType]()
 
-    (args.formats ?? []).forEach { format in
-      if let formatValue = format.value {
-        scanFormats.append(formatValue)
-      } else {
+    for format in args.formats ?? [] {
+      guard let formatValue = format.value else {
+        destroy()
         invoke.reject("Unsupported barcode format on this iOS version: \(format)")
         return
       }
+      scanFormats.append(formatValue)
     }
 
     if scanFormats.isEmpty {
