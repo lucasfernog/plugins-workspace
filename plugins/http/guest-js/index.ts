@@ -96,6 +96,14 @@ export interface ClientOptions {
   /** Timeout in milliseconds */
   connectTimeout?: number
   /**
+   * Total timeout of the request in milliseconds, from sending it until the
+   * response body is fully read. When it elapses, the request, or the read of
+   * the body, fails. There is no timeout by default.
+   *
+   * @since 2.7.0
+   */
+  timeout?: number
+  /**
    * Configuration of a proxy that a Client should pass requests to.
    */
   proxy?: Proxy
@@ -141,7 +149,7 @@ const ERROR_REQUEST_CANCELLED = 'Request cancelled'
  *
  * @param input The resource to fetch, as a URL, a string or a `Request` object.
  * @param init The standard `fetch` request options, extended with the Rust client options from
- * {@linkcode ClientOptions}: `maxRedirections`, `connectTimeout`, `proxy` and `danger`. The
+ * {@linkcode ClientOptions}: `maxRedirections`, `connectTimeout`, `timeout`, `proxy` and `danger`. The
  * `signal` option can be used to abort the request.
  * @returns A promise resolving to the `Response` of the request.
  *
@@ -159,6 +167,7 @@ export async function fetch(
 
   const maxRedirections = init?.maxRedirections
   const connectTimeout = init?.connectTimeout
+  const timeout = init?.timeout
   const proxy = init?.proxy
   const danger = init?.danger
 
@@ -166,6 +175,7 @@ export async function fetch(
   if (init) {
     delete init.maxRedirections
     delete init.connectTimeout
+    delete init.timeout
     delete init.proxy
     delete init.danger
   }
@@ -219,6 +229,7 @@ export async function fetch(
       data,
       maxRedirections,
       connectTimeout,
+      timeout,
       proxy,
       danger
     }

@@ -4,6 +4,7 @@
 
 import { expect } from '@wdio/globals'
 import { tauri, tauriError, describePlugin } from '../helpers/index.js'
+import { FIXTURE_SERVER_URL } from '../helpers/server.js'
 
 // The example spawns an echo server on this port: it replies with the request
 // body and the request headers, and sets a `session-token` cookie on requests
@@ -127,6 +128,27 @@ describePlugin('http', () => {
       await api.http.fetch(`${url}/aborted`, { signal: controller.signal })
     }, echoServer)
     expect(message).toMatch(/abort|cancel/i)
+  })
+
+  it('fetch fails once the timeout elapses', async () => {
+    const result = await tauri(async (api, url) => {
+      const start = Date.now()
+      let error: string | null = null
+      try {
+        await api.http.fetch(`${url}/slow/10000`, { timeout: 500 })
+      } catch (e) {
+        error = String(e)
+      }
+      const elapsed = Date.now() - start
+      // a timeout larger than the delay does not fail the request
+      const response = await api.http.fetch(`${url}/slow/100`, {
+        timeout: 10000
+      })
+      return { error, elapsed, body: await response.text() }
+    }, FIXTURE_SERVER_URL)
+    expect(result.error).not.toBeNull()
+    expect(result.elapsed).toBeLessThan(5000)
+    expect(result.body).toBe('slow')
   })
 
   it('rejects URLs outside the configured scope', async () => {

@@ -95,6 +95,9 @@ pub struct ClientConfig {
     headers: Vec<(String, String)>,
     data: Option<Vec<u8>>,
     connect_timeout: Option<u64>,
+    /// Total timeout of the request in milliseconds, from sending it to reading the whole body.
+    #[serde(default)]
+    timeout: Option<u64>,
     max_redirections: Option<usize>,
     proxy: Option<Proxy>,
     danger: Option<DangerousSettings>,
@@ -242,6 +245,7 @@ pub async fn fetch<R: Runtime>(
         headers: headers_raw,
         data,
         connect_timeout,
+        timeout,
         max_redirections,
         proxy,
         danger,
@@ -309,6 +313,10 @@ pub async fn fetch<R: Runtime>(
 
             if let Some(timeout) = connect_timeout {
                 builder = builder.connect_timeout(Duration::from_millis(timeout));
+            }
+
+            if let Some(timeout) = timeout {
+                builder = builder.timeout(Duration::from_millis(timeout));
             }
 
             let scope = state.config.scope_redirects.then_some(scope);
