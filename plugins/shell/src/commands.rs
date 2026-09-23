@@ -250,13 +250,25 @@ pub fn spawn<R: Runtime>(
     let (mut rx, child) = command.spawn()?;
 
     let pid = child.pid();
+    let process = child.process();
     shell.children.lock().unwrap().insert(pid, child);
     let children = shell.children.clone();
+    // Once the child was reaped its pid can be reused by a new child, which replaces it
+    // in the map: only remove the entry while it is still this child.
+    let remove_child = move || {
+        let mut children = children.lock().unwrap();
+        if children
+            .get(&pid)
+            .is_some_and(|child| child.is_process(&process))
+        {
+            children.remove(&pid);
+        }
+    };
 
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             if matches!(event, crate::process::CommandEvent::Terminated(_)) {
-                children.lock().unwrap().remove(&pid);
+                remove_child();
             };
             let js_event = JSCommandEvent::new(event, encoding);
 
@@ -275,6 +287,8 @@ pub fn spawn<R: Runtime>(
                 send(&on_event, &js_event).await;
             }
         }
+        // The events end without `Terminated` when waiting for the child failed.
+        remove_child();
     });
 
     Ok(pid)

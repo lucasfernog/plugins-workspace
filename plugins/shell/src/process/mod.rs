@@ -74,6 +74,16 @@ impl CommandChild {
         Ok(())
     }
 
+    /// A handle to the process, to tell this child apart from a later one that reuses its pid.
+    pub(crate) fn process(&self) -> Arc<SharedChild> {
+        self.inner.clone()
+    }
+
+    /// Whether this child is the given process.
+    pub(crate) fn is_process(&self, process: &Arc<SharedChild>) -> bool {
+        Arc::ptr_eq(&self.inner, process)
+    }
+
     /// Sends a kill signal to the child.
     pub fn kill(self) -> crate::Result<()> {
         self.inner.kill()?;
