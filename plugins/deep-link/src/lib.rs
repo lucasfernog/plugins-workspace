@@ -208,6 +208,12 @@ mod imp {
     #[cfg(windows)]
     use windows_registry::{CLASSES_ROOT, CURRENT_USER, LOCAL_MACHINE};
 
+    /// Whether a `Software\Classes\{name}` key describes a URL protocol.
+    #[cfg(windows)]
+    fn is_url_protocol_key(key: &windows_registry::Key) -> bool {
+        key.get_value("URL Protocol").is_ok()
+    }
+
     /// Access to the deep-link APIs.
     pub struct DeepLink<R: Runtime> {
         pub(crate) app: AppHandle<R>,
@@ -296,6 +302,17 @@ mod imp {
                 let protocol = _protocol.as_ref();
                 crate::validate_scheme(protocol)?;
                 let key_base = format!("Software\\Classes\\{protocol}");
+
+                // Never take over a class that is not a URL protocol (e.g. a ProgID like
+                // `exefile`), that would hijack the user's file associations.
+                if let Ok(existing) = CLASSES_ROOT.open(protocol) {
+                    if !is_url_protocol_key(&existing) {
+                        return Err(crate::Error::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("`{protocol}` is registered as a non URL protocol class"),
+                        )));
+                    }
+                }
 
                 let exe = dunce::simplified(&tauri::utils::platform::current_exe()?)
                     .display()
@@ -419,10 +436,17 @@ mod imp {
                 let protocol = _protocol.as_ref();
                 crate::validate_scheme(protocol)?;
                 let path = format!("Software\\Classes\\{protocol}");
-                if LOCAL_MACHINE.open(&path).is_ok() {
+                // Only delete keys that are URL protocols, never other classes (e.g. `exefile`).
+                if LOCAL_MACHINE
+                    .open(&path)
+                    .is_ok_and(|key| is_url_protocol_key(&key))
+                {
                     LOCAL_MACHINE.remove_tree(&path)?;
                 }
-                if CURRENT_USER.open(&path).is_ok() {
+                if CURRENT_USER
+                    .open(&path)
+                    .is_ok_and(|key| is_url_protocol_key(&key))
+                {
                     CURRENT_USER.remove_tree(&path)?;
                 }
                 Ok(())
