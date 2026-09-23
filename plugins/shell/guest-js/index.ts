@@ -71,10 +71,20 @@ import { invoke, Channel } from '@tauri-apps/api/core'
  * @since 2.0.0
  */
 interface SpawnOptions {
-  /** Current working directory. */
+  /**
+   * Current working directory. Defaults to the working directory of the app.
+   *
+   * A shell scope entry with `"cwd": false` does not allow setting it.
+   */
   cwd?: string
-  /** Environment variables. set to `null` to clear the process env. */
-  env?: Record<string, string>
+  /**
+   * Environment variables to set in addition to the ones the process inherits
+   * from the app. Set to `null` to clear the inherited environment instead.
+   *
+   * A shell scope entry with `"env": false` does not allow setting any variable,
+   * and one with a list of names (`"env": ["RUST_LOG"]`) only allows those.
+   */
+  env?: Record<string, string> | null
   /**
    * Character encoding for stdout/stderr
    *
