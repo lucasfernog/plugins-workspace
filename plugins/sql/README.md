@@ -25,13 +25,14 @@ Install the Core plugin by adding the following to your `Cargo.toml` file:
 `src-tauri/Cargo.toml`
 
 ```toml
-[dependencies.tauri-plugin-sql]
-features = ["sqlite"] # or "postgres", or "mysql"
-version = "2.0.0"
-# alternatively with Git
-git = "https://github.com/tauri-apps/plugins-workspace"
-branch = "v2"
+[dependencies]
+# enable one or more of the "sqlite", "mysql" and "postgres" features
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+# alternatively with Git:
+tauri-plugin-sql = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2", features = ["sqlite"] }
 ```
+
+No database driver is enabled by default, so at least one feature is required. Several drivers can be enabled at the same time.
 
 You can install the JavaScript Guest bindings using your preferred JavaScript package manager:
 
@@ -50,9 +51,10 @@ First you need to register the core plugin with Tauri:
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_sql::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
