@@ -6,16 +6,20 @@
 use crate::semver_compat::semver_compat_string;
 
 use crate::SingleInstanceCallback;
+use std::time::{Duration, Instant};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, RunEvent, Runtime,
 };
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM},
+    Foundation::{
+        CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WAIT_ABANDONED,
+        WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
+    },
     System::{
         DataExchange::COPYDATASTRUCT,
         LibraryLoader::GetModuleHandleW,
-        Threading::{CreateMutexW, ReleaseMutex},
+        Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject},
     },
     UI::WindowsAndMessaging::{
         self as w32wm, AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DestroyWindow,
@@ -27,6 +31,10 @@ use windows_sys::Win32::{
 };
 
 use crate::copydata;
+
+/// How long a starting instance waits for the instance holding the mutex to either create its
+/// message window or release the mutex.
+const FIND_FIRST_INSTANCE_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct MutexHandle(isize);
 
@@ -70,49 +78,50 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                 unsafe { CreateMutexW(std::ptr::null(), true.into(), mutex_name.as_ptr()) };
 
             if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
-                unsafe {
-                    let hwnd = FindWindowW(class_name.as_ptr(), window_name.as_ptr());
-
+                // Another instance owns the mutex. Its message window may not exist yet (it is
+                // still starting up) or anymore (it is shutting down), so keep looking for the
+                // window while waiting for the mutex to be released, instead of giving up right
+                // away and ending up with two primary instances.
+                let deadline = Instant::now() + FIND_FIRST_INSTANCE_TIMEOUT;
+                let mut acquired = false;
+                loop {
+                    let hwnd = unsafe { FindWindowW(class_name.as_ptr(), window_name.as_ptr()) };
                     if !hwnd.is_null() {
-                        // Windows lets us bring a window to the front, but not the first
-                        // instance. Hand that right over before we exit, so focusing a window
-                        // from the callback works. Windows takes it back if the user switches
-                        // to another app in the meantime.
-                        let mut pid = 0;
-                        GetWindowThreadProcessId(hwnd, &mut pid);
-                        if pid != 0 {
-                            AllowSetForegroundWindow(pid);
-                        }
-
-                        let cwd = std::env::current_dir().unwrap_or_default();
-                        let cwd = cwd.to_str().unwrap_or_default();
-                        let args = std::env::args().collect::<Vec<String>>();
-
-                        // Prefer the NUL separated payload, which keeps arguments containing `|`
-                        // intact. A first instance running an older version of this plugin
-                        // doesn't acknowledge it, so fall back to the legacy format then.
-                        let data = copydata::encode(cwd, &args);
-                        let result = send_copydata(hwnd, copydata::NUL_SEPARATED_DATA, &data);
-                        if result != copydata::ACK {
-                            let data = copydata::encode_legacy(cwd, &args);
-                            send_copydata(hwnd, copydata::LEGACY_DATA, &data);
-                        }
-
+                        forward_to_first_instance(hwnd);
                         app.cleanup_before_exit();
                         std::process::exit(0);
                     }
-                }
-            } else {
-                app.manage(MutexHandle(hmutex as _));
 
-                let userdata = UserData {
-                    app: app.clone(),
-                    callback,
-                };
-                let userdata = Box::into_raw(Box::new(userdata));
-                let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
-                app.manage(TargetWindowHandle(hwnd as _));
+                    match unsafe { WaitForSingleObject(hmutex, 50) } {
+                        // The other instance released the mutex (or exited without releasing
+                        // it); we now own it and become the first instance.
+                        WAIT_OBJECT_0 | WAIT_ABANDONED => {
+                            acquired = true;
+                            break;
+                        }
+                        WAIT_TIMEOUT if Instant::now() < deadline => {}
+                        _ => break,
+                    }
+                }
+
+                if !acquired {
+                    tracing::warn!(
+                        "single_instance: another instance holds the mutex but its window was not found, launching normally"
+                    );
+                    unsafe { CloseHandle(hmutex) };
+                    return Ok(());
+                }
             }
+
+            app.manage(MutexHandle(hmutex as _));
+
+            let userdata = UserData {
+                app: app.clone(),
+                callback,
+            };
+            let userdata = Box::into_raw(Box::new(userdata));
+            let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
+            app.manage(TargetWindowHandle(hwnd as _));
 
             Ok(())
         })
@@ -124,15 +133,44 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
         .build()
 }
 
+/// Hands the current process' arguments and working directory to the first instance's message
+/// window.
+fn forward_to_first_instance(hwnd: HWND) {
+    // Windows lets us bring a window to the front, but not the first instance. Hand that right
+    // over before we exit, so focusing a window from the callback works. Windows takes it back if
+    // the user switches to another app in the meantime.
+    let mut pid = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+    if pid != 0 {
+        unsafe { AllowSetForegroundWindow(pid) };
+    }
+
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let cwd = cwd.to_str().unwrap_or_default();
+    let args = std::env::args().collect::<Vec<String>>();
+
+    // Prefer the NUL separated payload, which keeps arguments containing `|` intact. A first
+    // instance running an older version of this plugin doesn't acknowledge it, so fall back to
+    // the legacy format then.
+    let data = copydata::encode(cwd, &args);
+    let result = send_copydata(hwnd, copydata::NUL_SEPARATED_DATA, &data);
+    if result != copydata::ACK {
+        let data = copydata::encode_legacy(cwd, &args);
+        send_copydata(hwnd, copydata::LEGACY_DATA, &data);
+    }
+}
+
 pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
+    // Destroy the window before releasing the mutex: a starting instance that finds the mutex
+    // taken looks for the window, and must not find one that is about to go away.
+    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
+        unsafe { DestroyWindow(hwnd.0 as _) };
+    }
     if let Some(hmutex) = manager.try_state::<MutexHandle>() {
         unsafe {
             ReleaseMutex(hmutex.0 as _);
             CloseHandle(hmutex.0 as _);
         }
-    }
-    if let Some(hwnd) = manager.try_state::<TargetWindowHandle>() {
-        unsafe { DestroyWindow(hwnd.0 as _) };
     }
 }
 
