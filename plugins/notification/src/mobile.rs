@@ -136,7 +136,8 @@ impl<R: Runtime> Notification<R> {
     /// Removes all delivered notifications from the notification center.
     pub fn remove_all_active(&self) -> crate::Result<()> {
         self.0
-            .run_mobile_plugin("removeActive", ())
+            // an empty object rather than `()`, which is sent as `null` and fails to parse
+            .run_mobile_plugin("removeActive", serde_json::json!({}))
             .map_err(Into::into)
     }
 
@@ -156,7 +157,10 @@ impl<R: Runtime> Notification<R> {
 
     /// Cancel all pending notifications.
     pub fn cancel_all(&self) -> crate::Result<()> {
-        self.0.run_mobile_plugin("cancel", ()).map_err(Into::into)
+        // an empty object rather than `()`, which is sent as `null` and fails to parse
+        self.0
+            .run_mobile_plugin("cancel", serde_json::json!({}))
+            .map_err(Into::into)
     }
 
     /// Creates a notification channel, which notifications can target
