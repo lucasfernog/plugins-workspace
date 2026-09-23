@@ -14,7 +14,12 @@ import { invoke, Channel } from '@tauri-apps/api/core'
  * Payload sent to a shortcut handler when a registered shortcut is pressed or released.
  */
 export interface ShortcutEvent {
-  /** The shortcut definition that triggered this event, e.g. `CommandOrControl+Shift+C`. */
+  /**
+   * The shortcut that triggered this event, in the plugin's normalized form rather than the
+   * string it was registered with: lowercase modifiers in a fixed order followed by the key code,
+   * e.g. `shift+super+KeyC` for `CommandOrControl+Shift+C` on macOS
+   * (`shift+control+KeyC` on Windows and Linux).
+   */
   shortcut: string
   /** Numeric identifier derived from the shortcut's modifiers and key. */
   id: number
@@ -51,7 +56,8 @@ export type ShortcutHandler = (event: ShortcutEvent) => void
  * ```
  *
  * @param shortcuts A shortcut definition, or a list of shortcut definitions, with modifiers and key separated by "+" e.g. CmdOrControl+Q
- * @param handler Shortcut handler callback - takes the triggered shortcut as argument
+ * @param handler Shortcut handler callback - takes a {@link ShortcutEvent} as argument. It is called
+ * twice per key press, once with `state: 'Pressed'` and once with `state: 'Released'`.
  *
  * @since 2.0.0
  */
@@ -114,7 +120,7 @@ async function unregisterAll(): Promise<void> {
  * @example
  * ```typescript
  * import { isRegistered } from '@tauri-apps/plugin-global-shortcut';
- * const isRegistered = await isRegistered('CommandOrControl+P');
+ * const registered = await isRegistered('CommandOrControl+P');
  * ```
  *
  * @param shortcut shortcut definition, modifiers and key separated by "+" e.g. CmdOrControl+Q
