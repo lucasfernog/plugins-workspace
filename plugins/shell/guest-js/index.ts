@@ -907,17 +907,17 @@ type CommandEvent<O extends IOPayload> =
  * await open('https://github.com/tauri-apps/tauri');
  * // opens the given URL using `firefox`:
  * await open('https://github.com/tauri-apps/tauri', 'firefox');
- * // opens a file using the default program:
- * await open('/path/to/file');
  * ```
  *
  * @param path The path or URL to open.
  * This value is matched against the string regex defined on `tauri.conf.json > plugins > shell > open`,
- * which defaults to `^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+`.
+ * which defaults to `^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+`, so only `http(s)`, `mailto` and `tel`
+ * URLs can be opened unless you configure another regex (or `false` to disable this API).
  * @param openWith The app to open the file or URL with.
  * Defaults to the system default application for the specified path type.
  *
  * @since 2.0.0
+ * @deprecated Use `openUrl` or `openPath` from `@tauri-apps/plugin-opener` instead.
  */
 async function open(path: string, openWith?: string): Promise<void> {
   await invoke('plugin:shell|open', {
