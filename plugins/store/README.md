@@ -84,11 +84,17 @@ You can manually save a store with:
 await store.save()
 ```
 
-Stores are loaded automatically when used from the JavaScript bindings.  
-However, you can also load them manually later like so:
+A `Store` is loaded when it is created with `Store.load(path)` (or `load(path)`), and a `LazyStore` is loaded the first time one of its methods is called.
+You can also load a `LazyStore` ahead of time with:
 
 ```javascript
-await store.load()
+await store.init()
+```
+
+To re-read a store's file after it was changed on disk, use:
+
+```javascript
+await store.reload()
 ```
 
 ### LazyStore
