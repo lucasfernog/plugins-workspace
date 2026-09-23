@@ -6684,9 +6684,7 @@ dependencies = [
 name = "tauri-plugin-haptics"
 version = "2.3.3"
 dependencies = [
- "log",
  "serde",
- "serde_json",
  "specta",
  "tauri",
  "tauri-plugin",
