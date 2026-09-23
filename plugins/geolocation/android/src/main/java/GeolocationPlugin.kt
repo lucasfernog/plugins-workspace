@@ -126,6 +126,9 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
     fun watchPosition(invoke: Invoke) {
         val args = invoke.parseArgs(WatchArgs::class.java)
         startWatch(invoke, args)
+        // Positions are delivered through the channel, so the invoke itself must be
+        // resolved right away or the caller (and the Rust command) waits forever.
+        invoke.resolve()
     }
 
     private fun startWatch(invoke: Invoke, args: WatchArgs) {
