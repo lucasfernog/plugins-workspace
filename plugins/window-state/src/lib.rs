@@ -552,24 +552,96 @@ trait MonitorExt {
 
 impl MonitorExt for Monitor {
     fn intersects(&self, position: PhysicalPosition<i32>, size: PhysicalSize<u32>) -> bool {
-        let PhysicalPosition { x, y } = *self.position();
-        let PhysicalSize { width, height } = *self.size();
+        rects_intersect(*self.position(), *self.size(), position, size)
+    }
+}
 
-        let left = x;
-        let right = x + width as i32;
-        let top = y;
-        let bottom = y + height as i32;
+/// Whether the window rectangle (`position`, `size`) overlaps the monitor rectangle
+/// (`monitor_position`, `monitor_size`).
+///
+/// This is an overlap test rather than a check of the window's corners, so a window larger
+/// than the monitor still counts. A window with a zero width or height (when its size was not
+/// saved) is treated as 1px wide or high, so its position alone is checked. The arithmetic is
+/// done in `i64` so extreme values read from a corrupt state file can't overflow.
+fn rects_intersect(
+    monitor_position: PhysicalPosition<i32>,
+    monitor_size: PhysicalSize<u32>,
+    position: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> bool {
+    let monitor_left = i64::from(monitor_position.x);
+    let monitor_top = i64::from(monitor_position.y);
+    let monitor_right = monitor_left + i64::from(monitor_size.width);
+    let monitor_bottom = monitor_top + i64::from(monitor_size.height);
 
-        [
-            (position.x, position.y),
-            (position.x + size.width as i32, position.y),
-            (position.x, position.y + size.height as i32),
-            (
-                position.x + size.width as i32,
-                position.y + size.height as i32,
-            ),
-        ]
-        .into_iter()
-        .any(|(x, y)| x >= left && x < right && y >= top && y < bottom)
+    let left = i64::from(position.x);
+    let top = i64::from(position.y);
+    let right = left + i64::from(size.width.max(1));
+    let bottom = top + i64::from(size.height.max(1));
+
+    left < monitor_right && monitor_left < right && top < monitor_bottom && monitor_top < bottom
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn intersects(monitor: (i32, i32, u32, u32), window: (i32, i32, u32, u32)) -> bool {
+        rects_intersect(
+            PhysicalPosition::new(monitor.0, monitor.1),
+            PhysicalSize::new(monitor.2, monitor.3),
+            PhysicalPosition::new(window.0, window.1),
+            PhysicalSize::new(window.2, window.3),
+        )
+    }
+
+    #[test]
+    fn window_on_monitor_intersects() {
+        let monitor = (0, 0, 1920, 1080);
+        assert!(intersects(monitor, (100, 100, 800, 600)));
+        // partially off-screen
+        assert!(intersects(monitor, (-400, -300, 800, 600)));
+        assert!(intersects(monitor, (1900, 1000, 800, 600)));
+        // on a monitor to the left of the primary one
+        assert!(intersects((-1920, 0, 1920, 1080), (-1000, 100, 800, 600)));
+    }
+
+    #[test]
+    fn window_off_monitor_does_not_intersect() {
+        let monitor = (0, 0, 1920, 1080);
+        assert!(!intersects(monitor, (1920, 0, 800, 600)));
+        assert!(!intersects(monitor, (-800, 0, 800, 600)));
+        assert!(!intersects(monitor, (0, 1080, 800, 600)));
+        assert!(!intersects(monitor, (3000, 3000, 800, 600)));
+    }
+
+    #[test]
+    fn window_larger_than_monitor_intersects() {
+        // none of the window's corners are on the monitor, but it covers it
+        assert!(intersects((0, 0, 1920, 1080), (-10, -10, 4000, 3000)));
+    }
+
+    #[test]
+    fn window_without_saved_size_checks_its_position() {
+        let monitor = (0, 0, 1920, 1080);
+        assert!(intersects(monitor, (0, 0, 0, 0)));
+        assert!(intersects(monitor, (100, 100, 0, 0)));
+        assert!(!intersects(monitor, (1920, 1080, 0, 0)));
+    }
+
+    #[test]
+    fn extreme_values_do_not_overflow() {
+        assert!(!intersects(
+            (0, 0, 1920, 1080),
+            (i32::MAX, i32::MAX, u32::MAX, u32::MAX)
+        ));
+        assert!(intersects(
+            (i32::MAX - 10, 0, u32::MAX, 1080),
+            (i32::MAX - 5, 0, u32::MAX, 10)
+        ));
+        assert!(intersects(
+            (0, 0, 1920, 1080),
+            (i32::MIN, i32::MIN, u32::MAX, u32::MAX)
+        ));
     }
 }
