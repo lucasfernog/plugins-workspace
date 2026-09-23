@@ -7,7 +7,16 @@
 //! ## Cargo features
 //!
 //! - **gtk3** *(enabled by default)*: Uses GTK for dialogs on Linux & BSDs; has no effect on Windows and macOS
-//! - **xdg-portal**:  Uses XDG Desktop Portal instead of GTK on Linux & BSDs
+//! - **xdg-portal**: Uses XDG Desktop Portal instead of GTK on Linux & BSDs.
+//!   Requires [`zenity`](https://gitlab.gnome.org/GNOME/zenity) (used for message dialogs) and an
+//!   [XDG Desktop Portal backend](https://flatpak.github.io/xdg-desktop-portal/) at runtime.
+//!
+//! The two features are mutually exclusive: the build fails on Linux & BSDs if both are enabled,
+//! so enabling `xdg-portal` requires `default-features = false`:
+//!
+//! ```toml
+//! tauri-plugin-dialog = { version = "2", default-features = false, features = ["xdg-portal"] }
+//! ```
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
