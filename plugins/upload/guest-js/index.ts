@@ -93,17 +93,12 @@ async function upload(
   headers?: Map<string, string>,
   method?: HttpMethod
 ): Promise<string> {
-  const ids = new Uint32Array(1)
-  window.crypto.getRandomValues(ids)
-  const id = ids[0]
-
   const onProgress = new Channel<ProgressPayload>()
   if (progressHandler) {
     onProgress.onmessage = progressHandler
   }
 
   return await invoke('plugin:upload|upload', {
-    id,
     url,
     filePath,
     headers: headers ?? {},
@@ -145,17 +140,12 @@ async function download(
   headers?: Map<string, string>,
   body?: string
 ): Promise<void> {
-  const ids = new Uint32Array(1)
-  window.crypto.getRandomValues(ids)
-  const id = ids[0]
-
   const onProgress = new Channel<ProgressPayload>()
   if (progressHandler) {
     onProgress.onmessage = progressHandler
   }
 
   await invoke('plugin:upload|download', {
-    id,
     url,
     filePath,
     headers: headers ?? {},
