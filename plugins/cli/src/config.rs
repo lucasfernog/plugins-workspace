@@ -47,7 +47,8 @@ pub struct Arg {
     /// `multiple_occurrences = true` would allow `-f <file> <file> <file> -f <file> <file> <file>` where
     /// as *not* setting it would only allow one occurrence of this argument.
     ///
-    /// **NOTE:** implicitly sets `takes_value = true` and `multiple_values = true`.
+    /// **NOTE:** implicitly sets `takes_value = true`. Without `multiple = true`, the matches
+    /// only contain the first value.
     #[serde(alias = "number-of-values")]
     pub number_of_values: Option<usize>,
     /// Specifies a list of possible values for this argument.
@@ -57,11 +58,17 @@ pub struct Arg {
     /// Specifies the minimum number of values for this argument.
     /// For example, if you had a -f `<file>` argument where you wanted at least 2 'files',
     /// you would set `minValues: 2`, and this argument would be satisfied if the user provided, 2 or more values.
+    ///
+    /// **NOTE:** implicitly sets `takes_value = true`. Without `multiple = true`, the matches
+    /// only contain the first value.
     #[serde(alias = "min-values")]
     pub min_values: Option<usize>,
     /// Specifies the maximum number of values are for this argument.
     /// For example, if you had a -f `<file>` argument where you wanted up to 3 'files',
-    /// you would set .max_values(3), and this argument would be satisfied if the user provided, 1, 2, or 3 values.
+    /// you would set `maxValues: 3`, and this argument would be satisfied if the user provided, 1, 2, or 3 values.
+    ///
+    /// **NOTE:** implicitly sets `takes_value = true`. Without `multiple = true`, the matches
+    /// only contain the first value.
     #[serde(alias = "max-values")]
     pub max_values: Option<usize>,
     /// Sets whether or not the argument is required by default.
