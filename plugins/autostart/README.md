@@ -59,6 +59,21 @@ fn main() {
 }
 ```
 
+### macOS launchers
+
+On macOS the plugin can register the app in two ways, chosen with `Builder::macos_launcher` (only available on macOS, so gate the call with `#[cfg(target_os = "macos")]`):
+
+- `MacosLauncher::LaunchAgent` (the default) writes `~/Library/LaunchAgents/<app name>.plist`, which starts the app's executable with the configured arguments. macOS 13+ shows a "Background Items Added" notification when it is enabled.
+- `MacosLauncher::AppleScript` adds a login item through the "System Events" application. The login item opens the `.app` bundle and is named after it, so `app_name` is ignored, and only the `--hidden` and `--minimized` arguments have an effect (either one hides the app). macOS asks the user for the Automation permission the first time; set `NSAppleEventsUsageDescription` in your `Info.plist` to explain why.
+
+```rust
+let mut autostart = tauri_plugin_autostart::Builder::new();
+#[cfg(target_os = "macos")]
+{
+    autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::AppleScript);
+}
+```
+
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
 ```javascript
