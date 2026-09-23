@@ -109,7 +109,11 @@ export interface ScanOptions {
    */
   formats?: Format[]
   /**
-   * Whether to show the camera in a small window instead of taking over the whole screen. Defaults to `false`.
+   * Whether to show the camera preview behind the webview instead of on top of it. Defaults to `false`.
+   *
+   * When `true`, the webview is made transparent while scanning so the app can draw its own UI
+   * over the camera preview. The page must use a transparent background (e.g. on `html` and `body`)
+   * where the camera should be visible. The webview background is restored when the scan ends.
    */
   windowed?: boolean
 }

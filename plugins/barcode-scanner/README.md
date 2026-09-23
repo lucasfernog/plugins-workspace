@@ -119,14 +119,22 @@ Then start scanning:
 ```javascript
 import { scan, Format } from '@tauri-apps/plugin-barcode-scanner'
 
-// `windowed: true` actually sets the webview to transparent
-// instead of opening a separate view for the camera
-// make sure your user interface is ready to show what is underneath with a transparent element
 const { content, format } = await scan({
   windowed: true,
   formats: [Format.QRCode]
 })
 ```
+
+By default the camera preview is shown full screen on top of the webview, so your UI is hidden until the scan completes or is cancelled. With `windowed: true` the preview is placed _behind_ the webview instead, and the webview is made transparent, so you can draw your own UI (a viewfinder frame, a cancel button) over the camera. For the camera to be visible, the page itself must be transparent where the camera should show through, for example:
+
+```css
+html,
+body {
+  background: transparent;
+}
+```
+
+The webview background is restored when the scan ends. On Android, if the webview had no background of its own, it is set to white.
 
 ## Permissions
 
