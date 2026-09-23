@@ -78,6 +78,35 @@ describePlugin('upload', () => {
     )
   })
 
+  it('download and upload accept headers as a plain object', async () => {
+    const result = await tauri(
+      async (api, url, relativePath) => {
+        const baseDir = api.fs.BaseDirectory.AppData
+        const path = await api.path.join(
+          await api.path.appDataDir(),
+          relativePath
+        )
+        await api.upload.download(url, path, undefined, {
+          'x-e2e-download': 'object'
+        })
+        const downloaded = await api.fs.readTextFile(relativePath, { baseDir })
+        const uploaded = await api.upload.upload(url, path, undefined, {
+          'x-e2e-upload': 'object'
+        })
+        return {
+          download: JSON.parse(downloaded) as {
+            headers: Record<string, string>
+          },
+          upload: JSON.parse(uploaded) as { headers: Record<string, string> }
+        }
+      },
+      `${FIXTURE_SERVER_URL}/echo`,
+      `${dir}/object-headers.json`
+    )
+    expect(result.download.headers['x-e2e-download']).toBe('object')
+    expect(result.upload.headers['x-e2e-upload']).toBe('object')
+  })
+
   it('download rejects on a non-success status', async () => {
     const message = await tauriError(
       async (api, url, relativePath) =>

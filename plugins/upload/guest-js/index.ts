@@ -61,6 +61,15 @@ enum HttpMethod {
   Patch = 'PATCH'
 }
 
+function headersToRecord(
+  headers?: Record<string, string> | Map<string, string>
+): Record<string, string> {
+  if (headers instanceof Map) {
+    return Object.fromEntries(headers)
+  }
+  return headers ?? {}
+}
+
 /**
  * Uploads a file at the given path to a URL, using the file's contents as the request body.
  *
@@ -90,7 +99,7 @@ async function upload(
   filePath: string,
   progressHandler?: ProgressHandler,
   // TODO: V3 - Combine headers and methods into one `options` object
-  headers?: Map<string, string>,
+  headers?: Record<string, string> | Map<string, string>,
   method?: HttpMethod
 ): Promise<string> {
   const ids = new Uint32Array(1)
@@ -106,7 +115,7 @@ async function upload(
     id,
     url,
     filePath,
-    headers: headers ?? {},
+    headers: headersToRecord(headers),
     method: method ?? HttpMethod.Post,
     onProgress
   })
@@ -142,7 +151,7 @@ async function download(
   url: string,
   filePath: string,
   progressHandler?: ProgressHandler,
-  headers?: Map<string, string>,
+  headers?: Record<string, string> | Map<string, string>,
   body?: string
 ): Promise<void> {
   const ids = new Uint32Array(1)
@@ -158,7 +167,7 @@ async function download(
     id,
     url,
     filePath,
-    headers: headers ?? {},
+    headers: headersToRecord(headers),
     onProgress,
     body
   })
