@@ -15,10 +15,29 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
     _api: PluginApi<R, C>,
 ) -> crate::Result<Clipboard<R>> {
+    let clipboard = match arboard::Clipboard::new() {
+        Ok(clipboard) => Some(clipboard),
+        Err(e) => {
+            // e.g. the display server connection is not ready yet on Linux;
+            // retried the next time the clipboard is used
+            log::warn!("failed to initialize the clipboard, retrying on first use: {e}");
+            None
+        }
+    };
     Ok(Clipboard {
         app: app.clone(),
-        clipboard: arboard::Clipboard::new().map(|c| Mutex::new(Some(c))),
+        clipboard: Mutex::new(ClipboardState {
+            clipboard,
+            closed: false,
+        }),
     })
+}
+
+struct ClipboardState {
+    /// `None` until initialized successfully, and again once closed.
+    clipboard: Option<arboard::Clipboard>,
+    /// Set on `RunEvent::Exit`, after which the clipboard is never re-created.
+    closed: bool,
 }
 
 /// Access to the clipboard APIs.
@@ -27,7 +46,7 @@ pub struct Clipboard<R: Runtime> {
     app: AppHandle<R>,
     // According to arboard docs the clipboard must be dropped before exit.
     // Since tauri doesn't call drop on exit we'll use an Option to take() on RunEvent::Exit.
-    clipboard: Result<Mutex<Option<arboard::Clipboard>>, arboard::Error>,
+    clipboard: Mutex<ClipboardState>,
 }
 
 impl<R: Runtime> Clipboard<R> {
@@ -101,28 +120,33 @@ impl<R: Runtime> Clipboard<R> {
     ///
     /// Never panics: a poisoned lock is recovered (the clipboard holds no invariant a panic could
     /// break), and using the clipboard after [`Self::cleanup`] returns an error.
+    /// If the clipboard failed to initialize, initializing it is retried.
     fn with_clipboard<T>(
         &self,
         f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>,
     ) -> crate::Result<T> {
-        match &self.clipboard {
-            Ok(clipboard) => {
-                let mut clipboard = clipboard.lock().unwrap_or_else(PoisonError::into_inner);
-                let clipboard = clipboard.as_mut().ok_or_else(|| {
-                    crate::Error::Clipboard("the clipboard has already been closed".into())
-                })?;
-                f(clipboard).map_err(Into::into)
-            }
-            Err(e) => Err(crate::Error::Clipboard(e.to_string())),
+        let mut state = self
+            .clipboard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if state.closed {
+            return Err(crate::Error::Clipboard(
+                "the clipboard has already been closed".into(),
+            ));
         }
+        let clipboard = match &mut state.clipboard {
+            Some(clipboard) => clipboard,
+            clipboard @ None => clipboard.insert(arboard::Clipboard::new()?),
+        };
+        f(clipboard).map_err(Into::into)
     }
 
     pub(crate) fn cleanup(&self) {
-        if let Ok(clipboard) = &self.clipboard {
-            clipboard
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take();
-        }
+        let mut state = self
+            .clipboard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.closed = true;
+        state.clipboard.take();
     }
 }
