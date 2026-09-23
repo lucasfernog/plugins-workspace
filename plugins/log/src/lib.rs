@@ -378,16 +378,22 @@ pub enum TargetKind {
     /// |Platform   | Value                                                                                     | Example                                                     |
     /// | --------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
     /// | Linux     | `$XDG_DATA_HOME/{bundleIdentifier}/logs` or `$HOME/.local/share/{bundleIdentifier}/logs`  | `/home/alice/.local/share/com.tauri.dev/logs`               |
-    /// | macOS/iOS | `{homeDir}/Library/Logs/{bundleIdentifier}`                                               | `/Users/Alice/Library/Logs/com.tauri.dev`                   |
+    /// | macOS     | `{homeDir}/Library/Logs/{bundleIdentifier}`                                               | `/Users/Alice/Library/Logs/com.tauri.dev`                   |
+    /// | iOS       | `{homeDir}/Library/Logs/{bundleIdentifier}`, inside the app's sandbox container           | `<app container>/Library/Logs/com.tauri.dev`                |
     /// | Windows   | `{FOLDERID_LocalAppData}/{bundleIdentifier}/logs`                                         | `C:\Users\Alice\AppData\Local\com.tauri.dev\logs`           |
-    /// | Android   | `{ConfigDir}/logs`                                                                        | `/data/data/com.tauri.dev/files/logs`                       |
+    /// | Android   | `{ConfigDir}/logs`, in the app's internal storage                                         | `/data/data/com.tauri.dev/files/logs`                       |
     LogDir {
         /// Name of the log file, without extension. Defaults to the app's package name when `None`.
         file_name: Option<String>,
     },
     /// Forward logs to the webview (via the `log://log` event).
     ///
-    /// This requires the webview to subscribe to log events, via this plugins `attachConsole` function.
+    /// This requires the webview to subscribe to log events, via this plugin's `attachLogger` or `attachConsole`
+    /// JavaScript functions.
+    ///
+    /// Every record sent to this target, including the records of third-party crates, is emitted to every webview
+    /// of the app, and listening to it only requires the permission to listen to events. Do not use this target
+    /// if the app loads remote or untrusted content, or add a [`Target::filter`] to limit what is forwarded.
     Webview,
     /// Send logs to a [`fern::Dispatch`]
     ///
@@ -738,6 +744,21 @@ impl Builder {
         self
     }
 
+    /// Replaces the format with `[date][time][level][target] message`, where the level is colored with ANSI escape
+    /// codes according to `colors`.
+    ///
+    /// The timestamp uses the [`TimezoneStrategy`] set when this method is called, and a later call to
+    /// [`Self::timezone_strategy`], [`Self::format`] or [`Self::clear_format`] replaces this format. The escape codes are
+    /// written to every target, including log files, unless the target sets its own [`Target::format`].
+    ///
+    /// Requires the `colored` feature.
+    ///
+    /// ```rust
+    /// use tauri_plugin_log::fern::colors::{Color, ColoredLevelConfig};
+    ///
+    /// tauri_plugin_log::Builder::new()
+    ///     .with_colors(ColoredLevelConfig::default().info(Color::Green));
+    /// ```
     #[cfg(feature = "colored")]
     pub fn with_colors(self, colors: fern::colors::ColoredLevelConfig) -> Self {
         let format = format_description!("[[[year]-[month]-[day]][[[hour]:[minute]:[second]]");
