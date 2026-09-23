@@ -109,22 +109,25 @@ class ClipboardPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun readText(invoke: Invoke) {
-    val data = if (manager.hasPrimaryClip()) {
-      if (manager.primaryClipDescription?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true) {
-        val item: ClipData.Item = manager.primaryClip!!.getItemAt(0)
-        val data = ReadClipData.PlainText()
-        data.text = item.text.toString()
-        data
+    // read the clip once: it can change between `hasPrimaryClip()` and `primaryClip`
+    val clip = manager.primaryClip
+    if (clip == null || clip.itemCount == 0) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        invoke.reject("Clipboard is empty or cannot be read: since Android 10 the clipboard can only be read while the app has input focus")
       } else {
-        // TODO
-        invoke.reject("Clipboard content reader not implemented")
-        return
+        invoke.reject("Clipboard is empty")
       }
-    } else {
-      invoke.reject("Clipboard is empty")
-        return
+      return
     }
 
+    if (clip.description?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) != true) {
+      // TODO
+      invoke.reject("Clipboard content reader not implemented")
+      return
+    }
+
+    val data = ReadClipData.PlainText()
+    data.text = clip.getItemAt(0).text.toString()
     invoke.resolveObject(data)
   }
 
