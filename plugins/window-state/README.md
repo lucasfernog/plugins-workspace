@@ -97,6 +97,20 @@ import {
 await restoreStateCurrent(StateFlags.ALL)
 ```
 
+### Permissions
+
+The JavaScript API needs the plugin's permissions in one of your [capabilities](https://v2.tauri.app/security/capabilities/). `window-state:default` allows all of its commands (`save_window_state`, `restore_state` and `filename`):
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": ["window-state:default"]
+}
+```
+
+`restore_state` accepts the label of any window in the app, not only the calling one, and restoring with `StateFlags.VISIBLE` shows and focuses that window. Grant the individual `window-state:allow-*` permissions instead of the default set if a webview should not be able to do that.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
