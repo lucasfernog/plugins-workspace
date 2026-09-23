@@ -156,13 +156,15 @@ fn map_matches(config: &Config, matches: &ArgMatches, cli_matches: &mut Matches)
             let (occurrences, value) = if arg.takes_value {
                 if arg.multiple {
                     matches
-                        .get_many::<String>(&arg.name)
-                        .map(|v| {
+                        .get_occurrences::<String>(&arg.name)
+                        .map(|occurrences| {
+                            let mut count = 0usize;
                             let mut values = Vec::new();
-                            for value in v {
-                                values.push(Value::String(value.into()));
+                            for occurrence in occurrences {
+                                count += 1;
+                                values.extend(occurrence.map(|v| Value::String(v.clone())));
                             }
-                            (values.len() as u8, Value::Array(values))
+                            (u8::try_from(count).unwrap_or(u8::MAX), Value::Array(values))
                         })
                         .unwrap_or((0, Value::Null))
                 } else {
@@ -292,4 +294,70 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    #[test]
+    fn occurrences_count_occurrences_not_values() {
+        let config = config(serde_json::json!({
+            "args": [{ "name": "arg", "takesValue": true, "multiple": true, "minValues": 1 }]
+        }));
+
+        let matches = parse(
+            &config,
+            &["--arg", "1", "--arg", "2", "--arg", "2", "3", "4"],
+        )
+        .unwrap();
+        let data = arg(&matches, "arg");
+        assert_eq!(data.value, serde_json::json!(["1", "2", "2", "3", "4"]));
+        assert_eq!(data.occurrences, 3);
+    }
+
+    #[test]
+    fn occurrences_saturate() {
+        let config = config(serde_json::json!({
+            "args": [{ "name": "arg", "short": "a", "takesValue": true, "multiple": true }]
+        }));
+
+        let args = std::iter::repeat(["-a", "x"])
+            .take(300)
+            .flatten()
+            .collect::<Vec<_>>();
+        let matches = parse(&config, &args).unwrap();
+        let data = arg(&matches, "arg");
+        assert_eq!(data.value.as_array().unwrap().len(), 300);
+        assert_eq!(data.occurrences, u8::MAX);
+    }
 }
