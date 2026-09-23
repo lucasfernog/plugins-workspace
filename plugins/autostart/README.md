@@ -68,7 +68,7 @@ await enable()
 
 console.log(`registered for autostart? ${await isEnabled()}`)
 
-disable()
+await disable()
 ```
 
 ## Contributing
