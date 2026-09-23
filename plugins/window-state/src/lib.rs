@@ -169,7 +169,15 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
 
 /// Extension trait for [`Window`] and [`WebviewWindow`] exposing window state APIs.
 pub trait WindowExt {
-    /// Restores this window state from disk
+    /// Restores the parts of this window's state selected by `flags` from the plugin's
+    /// in-memory cache.
+    ///
+    /// The cache is loaded from the state file once, when the plugin is set up, and is kept up
+    /// to date as tracked windows move, resize and close; the file is not read again here.
+    ///
+    /// If nothing is cached for the window yet, its current state is cached instead. With
+    /// [`StateFlags::VISIBLE`], the window is also shown and focused, unless it was saved as
+    /// hidden.
     fn restore_state(&self, flags: StateFlags) -> tauri::Result<()>;
 }
 

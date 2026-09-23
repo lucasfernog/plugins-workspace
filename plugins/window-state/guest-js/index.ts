@@ -50,7 +50,15 @@ async function saveWindowState(flags?: StateFlags): Promise<void> {
 }
 
 /**
- *  Restore the state for the specified window from disk.
+ *  Restore the state for the specified window.
+ *
+ * The state comes from the plugin's in-memory cache, which is loaded from the
+ * state file when the app starts and kept up to date while it runs; the file is
+ * not read again. If nothing is cached for the window yet, its current state is
+ * cached instead. With {@linkcode StateFlags.VISIBLE}, the window is also shown
+ * and focused, unless it was saved as hidden.
+ *
+ * Rejects if there is no window with the given label.
  *
  * @example
  * ```typescript
@@ -71,7 +79,7 @@ async function restoreState(
 }
 
 /**
- *  Restore the state for the current window from disk.
+ *  Restore the state for the current window. See {@linkcode restoreState}.
  *
  * @example
  * ```typescript
