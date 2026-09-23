@@ -589,12 +589,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R, Option<config::Config>> {
             if let tauri::RunEvent::Opened { urls } = _event {
                 use tauri::Emitter;
 
-                let _ = _app.emit("deep-link://new-url", urls);
+                // update `current` first so listeners calling `get_current` see the new URLs
                 _app.state::<DeepLink<R>>()
                     .current
                     .lock()
                     .unwrap()
                     .replace(urls.clone());
+                let _ = _app.emit("deep-link://new-url", urls);
             }
         })
         .build()
