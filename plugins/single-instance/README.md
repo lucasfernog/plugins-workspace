@@ -68,6 +68,16 @@ pub fn run() {
 
 Note that currently, plugins run in the order they were added in to the builder, so make sure that this plugin is registered first. Register it on the builder as shown above, not with `app.handle().plugin()` inside `setup`: by then the windows from `tauri.conf.json` already exist, so a second instance would briefly show them.
 
+## Cargo features
+
+- `semver`: lets instances whose versions are SemVer-incompatible (e.g. `1.x` and `2.x`) run side by side, while compatible versions are still limited to one instance.
+- `deep-link`: forwards the second instance's arguments to [`tauri-plugin-deep-link`](../deep-link) before your callback runs, so deep links opened while the app is running reach the running instance. Register the deep-link plugin as well.
+
+```toml
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+```
+
 ## Usage with Flatpak/Snap
 
 If you use Flatpak/Snap to publish your package and your Tauri identifier doesn't match the package id, set the `DBUS_ID` variable using the builder for the plugin, look at example.
