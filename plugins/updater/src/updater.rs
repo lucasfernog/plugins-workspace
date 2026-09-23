@@ -636,7 +636,16 @@ impl Updater {
                             return Ok(None);
                         };
 
-                        let update_response: serde_json::Value = res.json().await?;
+                        // a body that is not JSON (e.g. an HTML error page) moves on to the next
+                        // endpoint, just like an invalid release manifest does
+                        let update_response: serde_json::Value = match res.json().await {
+                            Ok(update_response) => update_response,
+                            Err(err) => {
+                                log::error!("failed to read the update response as JSON: {err}");
+                                last_error = Some(err.into());
+                                continue;
+                            }
+                        };
                         log::debug!("update response: {update_response:?}");
                         raw_json = Some(update_response.clone());
                         match serde_json::from_value::<RemoteRelease>(update_response)
@@ -656,7 +665,9 @@ impl Updater {
                         }
                     } else {
                         log::error!(
-                            "update endpoint did not respond with a successful status code"
+                            "update endpoint {} did not respond with a successful status code: {}",
+                            res.url(),
+                            res.status()
                         );
                     }
                 }
@@ -1818,6 +1829,148 @@ fn escape_msi_property_arg(arg: impl AsRef<OsStr>) -> String {
         }
     } else {
         format!("\"\"{arg}\"\"")
+    }
+}
+
+/// Tests for [`Updater::check`] against a local HTTP server.
+#[cfg(test)]
+mod check_tests {
+    use super::*;
+    use std::{
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+    };
+
+    const TARGET: &str = "test-target";
+
+    /// Serves `routes` (path, status, body) on a random local port, returning its base URL.
+    fn serve(routes: Vec<(&'static str, u16, String)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                reader.read_line(&mut request_line).unwrap();
+                // skip the headers
+                let mut line = String::new();
+                while reader.read_line(&mut line).unwrap() > 2 {
+                    line.clear();
+                }
+                let path = request_line.split(' ').nth(1).unwrap_or_default();
+                let (status, body) = routes
+                    .iter()
+                    .find(|(p, ..)| *p == path)
+                    .map(|(_, status, body)| (*status, body.as_str()))
+                    .unwrap_or((404, ""));
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        base
+    }
+
+    fn updater(endpoints: Vec<String>) -> Updater {
+        Updater {
+            current_version: Version::new(1, 0, 0),
+            version_comparator: None,
+            timeout: Some(Duration::from_secs(10)),
+            proxy: None,
+            no_proxy: true,
+            endpoints: endpoints.iter().map(|e| e.parse().unwrap()).collect(),
+            arch: "x86_64",
+            target: Some(TARGET.into()),
+            headers: HeaderMap::new(),
+            extract_path: PathBuf::new(),
+            context: UpdaterContext {
+                config: Config::default(),
+                configure_client: None,
+                #[cfg(target_os = "macos")]
+                run_on_main_thread: Arc::new(|f| {
+                    f();
+                    Ok(())
+                }),
+                #[cfg(windows)]
+                app_name: "test".into(),
+                #[cfg(windows)]
+                installer_args: Vec::new(),
+                #[cfg(windows)]
+                current_exe_args: Vec::new(),
+                #[cfg(windows)]
+                on_before_exit: None,
+                #[cfg(windows)]
+                restart_after_install: true,
+            },
+        }
+    }
+
+    fn dynamic_release(version: &str) -> String {
+        serde_json::json!({
+            "version": version,
+            "url": "https://example.com/app.tar.gz",
+            "signature": "sig",
+        })
+        .to_string()
+    }
+
+    fn static_release(version: &str) -> String {
+        serde_json::json!({
+            "version": version,
+            "platforms": {
+                "other-target": { "url": "https://example.com/app.tar.gz", "signature": "sig" }
+            },
+        })
+        .to_string()
+    }
+
+    fn check(updater: &Updater) -> Result<Option<Update>> {
+        tauri::async_runtime::block_on(updater.check())
+    }
+
+    #[test]
+    fn finds_an_update() {
+        let base = serve(vec![("/latest", 200, dynamic_release("2.0.0"))]);
+        let update = check(&updater(vec![format!("{base}/latest")]))
+            .unwrap()
+            .unwrap();
+        assert_eq!(update.version, "2.0.0");
+    }
+
+    #[test]
+    fn falls_back_to_the_next_endpoint_on_a_non_json_body() {
+        let base = serve(vec![
+            ("/html", 200, "<html>captive portal</html>".into()),
+            ("/latest", 200, dynamic_release("2.0.0")),
+        ]);
+        let update = check(&updater(vec![
+            format!("{base}/html"),
+            format!("{base}/latest"),
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(update.version, "2.0.0");
+
+        // the error is still reported when no endpoint returns a release
+        assert!(check(&updater(vec![format!("{base}/html")])).is_err());
+    }
+
+    #[test]
+    fn ignores_a_missing_target_when_there_is_no_update() {
+        let base = serve(vec![
+            ("/older", 200, static_release("0.9.0")),
+            ("/newer", 200, static_release("2.0.0")),
+        ]);
+        assert!(check(&updater(vec![format!("{base}/older")]))
+            .unwrap()
+            .is_none());
+        assert!(matches!(
+            check(&updater(vec![format!("{base}/newer")])),
+            Err(Error::TargetNotFound(target)) if target == TARGET
+        ));
     }
 }
 
