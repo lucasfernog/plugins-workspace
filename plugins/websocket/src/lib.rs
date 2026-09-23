@@ -296,8 +296,12 @@ impl Builder {
     /// Sets the TLS [`Connector`] used to establish `wss://` connections.
     ///
     /// When this is not called (or is called with [`Connector::Plain`]) and a `rustls-tls` or
-    /// `rustls-tls-native-roots` feature is enabled, [`Builder::build`] installs `rustls`'s `ring`
-    /// crypto provider as the process default if none is installed yet.
+    /// `rustls-tls-native-roots` feature is enabled, the plugin's setup (which runs when the Tauri
+    /// app is built) installs `rustls`'s `ring` crypto provider as the process default if none is
+    /// installed yet.
+    ///
+    /// If your app uses a different default provider (e.g. `aws-lc-rs`), install it before the
+    /// Tauri app is built: installing it afterwards fails because `ring` is already the default.
     pub fn tls_connector(mut self, connector: Connector) -> Self {
         self.tls_connector.replace(connector);
         self
