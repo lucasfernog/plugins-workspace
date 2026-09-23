@@ -40,6 +40,8 @@ struct Tray(std::sync::Mutex<Option<(PhysicalPosition<f64>, PhysicalSize<f64>)>>
 /// icon's position and update the tracked value; other events are ignored. Until this has been
 /// called at least once, moving a window to a `Tray*` position fails.
 ///
+/// Tauri does not emit tray icon events on Linux, so the `Tray*` positions can't be used there.
+///
 /// Requires the `tray-icon` feature.
 #[cfg(feature = "tray-icon")]
 pub fn on_tray_event<R: Runtime>(app: &AppHandle<R>, event: &TrayIconEvent) {
