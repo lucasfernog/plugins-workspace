@@ -12,7 +12,7 @@
       title: "Tauri API Auth",
       subtitle: "Please authenticate :)",
       confirmationRequired: false,
-      maxAttemps: 1,
+      maxAttempts: 1,
     })
       .then(onMessage)
       .catch(onMessage);
@@ -22,9 +22,9 @@
 <div>
   <input
     type="checkbox"
-    id="dllowDeviceCredential"
+    id="allowDeviceCredential"
     bind:checked={allowDeviceCredential}
   />
-  <label for="allowDeviceCredentiale">Allow device credential</label>
+  <label for="allowDeviceCredential">Allow device credential</label>
 </div>
 <button class="btn" id="cli-matches" on:click={auth}> Authenticate </button>
