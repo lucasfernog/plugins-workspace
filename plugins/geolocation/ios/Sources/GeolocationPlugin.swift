@@ -24,6 +24,8 @@ class ClearWatchArgs: Decodable {
 class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   private let locationManager = CLLocationManager()
   private var isUpdatingLocation: Bool = false
+  // The state below is only read and written on the main thread, where the location manager
+  // delivers its delegate callbacks; commands (called on another thread) dispatch to it.
   private var permissionRequests: [Invoke] = []
   private var positionRequests: [Invoke] = []
   private var watcherChannels: [Channel] = []
@@ -40,9 +42,9 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   @objc public func getCurrentPosition(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(GetPositionArgs.self)
 
-    self.positionRequests.append(invoke)
-
     DispatchQueue.main.async {
+      self.positionRequests.append(invoke)
+
       if args.enableHighAccuracy == true {
         self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
       } else {
@@ -61,9 +63,9 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   @objc public func watchPosition(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(WatchPositionArgs.self)
 
-    self.watcherChannels.append(args.channel)
-
     DispatchQueue.main.async {
+      self.watcherChannels.append(args.channel)
+
       if args.options.enableHighAccuracy == true {
         self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
       } else {
@@ -85,13 +87,17 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   @objc public func clearWatch(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(ClearWatchArgs.self)
 
-    self.watcherChannels = self.watcherChannels.filter { $0.id != args.channelId }
+    DispatchQueue.main.async {
+      self.watcherChannels = self.watcherChannels.filter { $0.id != args.channelId }
 
-    // TODO: capacitor plugin calls stopUpdating unconditionally
-    if self.watcherChannels.isEmpty {
-      self.stopUpdating()
+      // TODO: capacitor plugin calls stopUpdating unconditionally
+      if self.watcherChannels.isEmpty {
+        self.stopUpdating()
+      }
     }
 
+    // Resolved right away (not from the main queue) so a blocking Rust caller on the main thread
+    // does not deadlock.
     invoke.resolve()
   }
 
@@ -124,9 +130,8 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
     if CLLocationManager.locationServicesEnabled() {
       // TODO: Use the authorizationStatus instance property with locationManagerDidChangeAuthorization(_:) instead.
       if CLLocationManager.authorizationStatus() == .notDetermined {
-        self.permissionRequests.append(invoke)
-
         DispatchQueue.main.async {
+          self.permissionRequests.append(invoke)
           self.locationManager.requestWhenInUseAuthorization()
         }
       } else {
