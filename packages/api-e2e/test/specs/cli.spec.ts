@@ -86,4 +86,38 @@ describePlugin('cli', { desktopOnly: true }, () => {
       )
     ).toMatch(/unexpected argument/)
   })
+
+  it('getMatchesFrom collects multiple values and counts occurrences', async () => {
+    const open = await tauri(
+      async (api, args) => (await api.cli.getMatchesFrom(args)).subcommand,
+      ['api', 'open', 'a', 'b', 'c', '-g', 'x', 'y', '-g', 'z']
+    )
+    expect(open?.name).toBe('open')
+    // a positional argument (`index`) takes a value without `takesValue`, and
+    // `maxValues: 3` accepts three values
+    expect(open?.matches.args.files).toEqual({
+      value: ['a', 'b', 'c'],
+      occurrences: 1
+    })
+    // two occurrences, three values
+    expect(open?.matches.args.tag).toEqual({
+      value: ['x', 'y', 'z'],
+      occurrences: 2
+    })
+
+    expect(
+      await tauriError(
+        (api, args) => api.cli.getMatchesFrom(args),
+        ['api', 'open', 'a', 'b', 'c', 'd']
+      )
+    ).toMatch(/unexpected value/)
+  })
+
+  it('getMatchesFrom shows the long description in --help', async () => {
+    const help = await tauri(
+      async (api, args) => (await api.cli.getMatchesFrom(args)).args.help,
+      ['api', 'open', '--help']
+    )
+    expect(help.value).toContain('Opens up to three files in the app')
+  })
 })

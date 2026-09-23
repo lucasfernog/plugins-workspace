@@ -60,6 +60,27 @@
         }
       ],
       "subcommands": {
+        "open": {
+          "description": "Opens files",
+          "longDescription": "Opens up to three files in the app",
+          "args": [
+            {
+              "name": "files",
+              "index": 1,
+              "multiple": true,
+              "maxValues": 3,
+              "description": "Files to open"
+            },
+            {
+              "short": "g",
+              "name": "tag",
+              "takesValue": true,
+              "multiple": true,
+              "minValues": 1,
+              "description": "Tags to apply"
+            }
+          ]
+        },
         "update": {
           "description": "Updates the app",
           "args": [
