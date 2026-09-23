@@ -1,6 +1,6 @@
 ![plugin-deep-link](https://github.com/tauri-apps/plugins-workspace/raw/v2/plugins/deep-link/banner.png)
 
-Set your Tauri application as the default handler for an URL.
+Set your Tauri application as the default handler for a URL.
 
 | Platform | Supported |
 | -------- | --------- |
@@ -26,7 +26,7 @@ Install the Core plugin by adding the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-tauri-plugin-deep-link = "2.0.0"
+tauri-plugin-deep-link = "2"
 # alternatively with Git:
 tauri-plugin-deep-link = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
 ```
@@ -45,7 +45,7 @@ yarn add @tauri-apps/plugin-deep-link
 
 ### Android
 
-For [app links](https://developer.android.com/training/app-links#android-app-links), you need a server with a `.well-known/assetlinks.json` endpoint that must return a text response in the given format:
+For [app links](https://developer.android.com/training/app-links#android-app-links), you need a server with a `.well-known/assetlinks.json` endpoint that must return a JSON response in the given format:
 
 ```
 [
@@ -66,7 +66,7 @@ Where `$APP_BUNDLE_ID` is the value defined on `tauri.conf.json > identifier` wi
 
 ### iOS
 
-For [universal links](https://developer.apple.com/documentation/xcode/allowing-apps-and-websites-to-link-to-your-content?language=objc), you need a server with a `.well-known/apple-app-site-association` endpoint that must return a text response in the given format:
+For [universal links](https://developer.apple.com/documentation/xcode/allowing-apps-and-websites-to-link-to-your-content?language=objc), you need a server with a `.well-known/apple-app-site-association` endpoint that must return a JSON response in the given format:
 
 ```
 {
