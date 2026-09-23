@@ -11,8 +11,7 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Arg {
     /// The short version of the argument, without the preceding -.
-    ///
-    /// NOTE: Any leading `-` characters will be stripped, and only the first non-character will be used as the short version.
+    /// It must be a single character, e.g. `"v"` for `-v`.
     pub short: Option<char>,
     /// The unique argument name
     pub name: String,
@@ -43,8 +42,8 @@ pub struct Arg {
     /// `number_of_values = 3`, and this argument wouldn't be satisfied unless the user provided
     /// 3 and only 3 values.
     ///
-    /// **NOTE:** Does *not* require `multiple_occurrences = true` to be set. Setting
-    /// `multiple_occurrences = true` would allow `-f <file> <file> <file> -f <file> <file> <file>` where
+    /// **NOTE:** Does *not* require `multiple = true` to be set. Setting
+    /// `multiple = true` would allow `-f <file> <file> <file> -f <file> <file> <file>` where
     /// as *not* setting it would only allow one occurrence of this argument.
     ///
     /// **NOTE:** implicitly sets `takes_value = true` and `multiple_values = true`.
@@ -89,10 +88,10 @@ pub struct Arg {
     /// The same as conflictsWith but allows specifying multiple two-way conflicts per argument.
     #[serde(alias = "conflicts-with-all")]
     pub conflicts_with_all: Option<Vec<String>>,
-    /// Tets an argument by name that is required when this one is present
+    /// Sets an argument by name that is required when this one is present
     /// i.e. when using this argument, the following argument must be present.
     pub requires: Option<String>,
-    /// Sts multiple arguments by names that are required when this one is present
+    /// Sets multiple arguments by names that are required when this one is present
     /// i.e. when using this argument, the following arguments must be present.
     #[serde(alias = "requires-all")]
     pub requires_all: Option<Vec<String>>,
