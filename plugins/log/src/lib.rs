@@ -301,6 +301,24 @@ impl RotatingFile {
         Ok(())
     }
 
+    /// Writes a complete record to the active log file, rotating it first if the record does not fit.
+    fn write_buffer(&mut self, buffer: &[u8]) -> std::io::Result<()> {
+        if self.inner.is_none() {
+            self.open_file().map_err(std::io::Error::other)?;
+        }
+
+        if self.current_size != 0 && self.current_size + (buffer.len() as u64) > self.max_size {
+            self.rotate().map_err(std::io::Error::other)?;
+        }
+
+        if let Some(file) = self.inner.as_mut() {
+            file.write_all(buffer)?;
+            self.current_size += buffer.len() as u64;
+            file.flush()?;
+        }
+        Ok(())
+    }
+
     fn rename_file_to_dated(&self) -> Result<(), Error> {
         let to = self.dir.join(format!(
             "{}_{}.log",
@@ -335,22 +353,14 @@ impl Write for RotatingFile {
         if self.buffer.is_empty() {
             return Ok(());
         }
-        if self.inner.is_none() {
-            self.open_file().map_err(std::io::Error::other)?;
-        }
-
-        if self.current_size != 0 && self.current_size + (self.buffer.len() as u64) > self.max_size
-        {
-            self.rotate().map_err(std::io::Error::other)?;
-        }
-
-        if let Some(file) = self.inner.as_mut() {
-            file.write_all(&self.buffer)?;
-            self.current_size += self.buffer.len() as u64;
-            file.flush()?;
-        }
-        self.buffer.clear();
-        Ok(())
+        // Take the pending record out of the buffer so it is dropped if writing it fails, instead of being
+        // prepended to every following record while the error persists.
+        let mut buffer = std::mem::take(&mut self.buffer);
+        let result = self.write_buffer(&buffer);
+        // reuse the allocation for the next record
+        buffer.clear();
+        self.buffer = buffer;
+        result
     }
 }
 
@@ -991,5 +1001,23 @@ mod tests {
             fs::read_to_string(dir.0.join("app.log")).unwrap(),
             "abcdefgh"
         );
+    }
+
+    // Windows cannot remove the directory of the open log file.
+    #[cfg(unix)]
+    #[test]
+    fn failed_record_is_not_prepended_to_the_next_one() {
+        let dir = TestDir::new("failed-flush");
+        let mut file = rotating_file(&dir, "app", RotationStrategy::KeepOne);
+        write_record(&mut file, "12345678");
+
+        // rotating needs to reopen the file, which fails while its directory is gone
+        fs::remove_dir_all(&dir.0).unwrap();
+        file.write_all(b"abcdefgh").unwrap();
+        assert!(file.flush().is_err());
+
+        fs::create_dir_all(&dir.0).unwrap();
+        write_record(&mut file, "xyz");
+        assert_eq!(fs::read_to_string(dir.0.join("app.log")).unwrap(), "xyz");
     }
 }
