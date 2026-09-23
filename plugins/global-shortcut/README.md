@@ -88,10 +88,26 @@ Afterwards all the plugin's APIs are available through the JavaScript bindings:
 ```javascript
 import { register } from '@tauri-apps/plugin-global-shortcut'
 await register('CommandOrControl+Shift+C', (event) => {
+  // the handler is called both when the shortcut is pressed and when it is released
   if (event.state === 'Pressed') {
     console.log('Shortcut triggered')
   }
 })
+```
+
+The JavaScript APIs need permissions: the plugin's default permission set grants nothing, so every
+call fails until you allow the commands your frontend uses in a capability file, for instance
+`src-tauri/capabilities/default.json`:
+
+```json
+{
+  "permissions": [
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all",
+    "global-shortcut:allow-is-registered"
+  ]
+}
 ```
 
 ## Contributing
