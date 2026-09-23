@@ -302,13 +302,19 @@ impl<R: Runtime> WindowExtInternal for Window<R> {
             && self.is_maximized()?;
         let is_minimized =
             flags.intersects(StateFlags::POSITION | StateFlags::SIZE) && self.is_minimized()?;
+        let is_fullscreen = flags
+            .intersects(StateFlags::FULLSCREEN | StateFlags::POSITION | StateFlags::SIZE)
+            && self.is_fullscreen()?;
+        // the size and position of a maximized, minimized or fullscreen window are not the
+        // ones to restore it to
+        let is_normal = !is_maximized && !is_minimized && !is_fullscreen;
 
         if flags.contains(StateFlags::MAXIMIZED) {
             state.maximized = is_maximized;
         }
 
         if flags.contains(StateFlags::FULLSCREEN) {
-            state.fullscreen = self.is_fullscreen()?;
+            state.fullscreen = is_fullscreen;
         }
 
         if flags.contains(StateFlags::DECORATIONS) {
@@ -319,7 +325,7 @@ impl<R: Runtime> WindowExtInternal for Window<R> {
             state.visible = self.is_visible()?;
         }
 
-        if flags.contains(StateFlags::SIZE) && !is_maximized && !is_minimized {
+        if flags.contains(StateFlags::SIZE) && is_normal {
             let size = self.inner_size()?;
             // It doesn't make sense to save a window with 0 height or width
             if size.width > 0 && size.height > 0 {
@@ -328,7 +334,7 @@ impl<R: Runtime> WindowExtInternal for Window<R> {
             }
         }
 
-        if flags.contains(StateFlags::POSITION) && !is_maximized && !is_minimized {
+        if flags.contains(StateFlags::POSITION) && is_normal {
             let position = self.outer_position()?;
             state.x = position.x;
             state.y = position.y;
@@ -485,7 +491,8 @@ impl Builder {
                                 .0
                                 .try_lock()
                                 .is_ok()
-                            && !window_clone.is_minimized().unwrap_or_default() =>
+                            && !window_clone.is_minimized().unwrap_or_default()
+                            && !window_clone.is_fullscreen().unwrap_or_default() =>
                     {
                         let mut c = cache.lock().unwrap();
                         if let Some(state) = c.get_mut(&label) {
@@ -514,7 +521,10 @@ impl Builder {
                             window_clone.is_maximized().unwrap_or_default()
                         };
 
-                        if !window_clone.is_minimized().unwrap_or_default() && !is_maximized {
+                        if !window_clone.is_minimized().unwrap_or_default()
+                            && !is_maximized
+                            && !window_clone.is_fullscreen().unwrap_or_default()
+                        {
                             let mut c = cache.lock().unwrap();
                             if let Some(state) = c.get_mut(&label) {
                                 state.width = size.width;
