@@ -7,23 +7,11 @@ use tauri::{command, image::JsImage, AppHandle, Manager, ResourceId, Runtime, St
 use crate::{Clipboard, Result};
 
 #[command]
-#[cfg(desktop)]
 pub(crate) async fn write_text<R: Runtime>(
     _app: AppHandle<R>,
     clipboard: State<'_, Clipboard<R>>,
     text: &str,
-    #[allow(unused)] label: Option<String>,
-) -> Result<()> {
-    clipboard.write_text(text)
-}
-
-#[command]
-#[cfg(not(desktop))]
-pub(crate) async fn write_text<R: Runtime>(
-    _app: AppHandle<R>,
-    clipboard: State<'_, Clipboard<R>>,
-    text: &str,
-    #[allow(unused)] label: Option<&str>,
+    label: Option<&str>,
 ) -> Result<()> {
     match label {
         Some(label) => clipboard.write_text_with_label(text, label),

@@ -47,6 +47,24 @@ impl<R: Runtime> Clipboard<R> {
         }
     }
 
+    /// Writes plain text to the system clipboard along with a label describing the content.
+    ///
+    /// The label is only used on Android (it becomes the `ClipData` label). On desktop it is
+    /// ignored and this behaves like [`Self::write_text`]; it exists so the same code compiles on
+    /// every platform.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::Clipboard`] if the clipboard could not be initialized or the
+    /// underlying [`arboard`] operation fails.
+    pub fn write_text_with_label<'a, T: Into<Cow<'a, str>>>(
+        &self,
+        text: T,
+        _label: T,
+    ) -> crate::Result<()> {
+        self.write_text(text)
+    }
+
     /// Writes an image to the system clipboard as RGBA data.
     ///
     /// # Errors
