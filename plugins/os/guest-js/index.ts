@@ -99,6 +99,13 @@ function platform(): Platform {
 
 /**
  * Returns the current operating system version.
+ *
+ * The value is read once, when the plugin is initialized, and is not updated while the app runs.
+ * Versions that look like `major.minor[.patch]` are normalized to three numbers (`14.5` becomes `14.5.0`).
+ * On Linux this is the version of the distribution, not the kernel version;
+ * rolling-release distributions report `Rolling Release`, optionally followed by a release date in parentheses,
+ * and `Unknown` is returned when the version cannot be detected.
+ *
  * @example
  * ```typescript
  * import { version } from '@tauri-apps/plugin-os';

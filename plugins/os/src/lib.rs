@@ -55,6 +55,13 @@ pub fn platform() -> &'static str {
 }
 
 /// Returns the current operating system version.
+///
+/// On Linux this is the version of the distribution, not the kernel version;
+/// rolling-release distributions return [`Version::Rolling`], and
+/// [`Version::Unknown`] is returned when the version cannot be detected.
+///
+/// The JavaScript `version()` function returns the [`Display`] form of this value,
+/// computed once when the plugin is initialized.
 pub fn version() -> Version {
     os_info::get().version().clone()
 }
