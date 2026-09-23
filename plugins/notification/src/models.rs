@@ -325,7 +325,7 @@ pub struct ActiveNotification {
     group: Option<String>,
     #[serde(default)]
     group_summary: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_map")]
     data: HashMap<String, String>,
     #[serde(default)]
     extra: HashMap<String, serde_json::Value>,
@@ -334,6 +334,25 @@ pub struct ActiveNotification {
     action_type_id: Option<String>,
     schedule: Option<Schedule>,
     sound: Option<String>,
+}
+
+/// Deserializes a map of strings, skipping the entries that are not strings.
+///
+/// Android reports every key of the notification extras bundle, with a `null` value for the
+/// ones that do not hold a string (e.g. `android.showWhen`).
+fn deserialize_string_map<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map = Option::<HashMap<String, serde_json::Value>>::deserialize(deserializer)?;
+    Ok(map
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(key, value)| match value {
+            serde_json::Value::String(value) => Some((key, value)),
+            _ => None,
+        })
+        .collect())
 }
 
 impl ActiveNotification {
@@ -910,5 +929,35 @@ mod android {
         pub fn build(self) -> Channel {
             self.0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_notification_skips_non_string_data() {
+        // shape of an Android `getActive` entry
+        let notification: ActiveNotification = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "tag": null,
+            "title": "title",
+            "body": null,
+            "group": null,
+            "groupSummary": false,
+            "data": {
+                "android.title": "title",
+                "android.showWhen": null,
+                "android.icon": null
+            }
+        }))
+        .unwrap();
+        assert_eq!(notification.data().len(), 1);
+        assert_eq!(notification.data()["android.title"], "title");
+
+        let notification: ActiveNotification =
+            serde_json::from_value(serde_json::json!({ "id": 1, "data": null })).unwrap();
+        assert!(notification.data().is_empty());
     }
 }
