@@ -52,7 +52,7 @@ public class Geolocation(private val context: Context) {
                 LocationServices
                     .getFusedLocationProviderClient(context)
                     .getCurrentLocation(prio, null)
-                    .addOnFailureListener { e -> e.message?.let { errorCallback(it) } }
+                    .addOnFailureListener { e -> errorCallback(e.message ?: e.toString()) }
                     .addOnSuccessListener { location ->
                         if (location == null) {
                             errorCallback("Location unavailable.")
