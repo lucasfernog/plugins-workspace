@@ -197,6 +197,14 @@ export interface Tag {
   kind: string[]
   /** The NDEF records stored on the tag. Empty when the tag holds no NDEF message. */
   records: TagRecord[]
+  /**
+   * Whether the NDEF tag is read-only.
+   *
+   * **iOS only**, and only set when the tag supports NDEF. Android does not report it.
+   *
+   * @since 2.4.0
+   */
+  readOnly?: boolean
 }
 
 /**
