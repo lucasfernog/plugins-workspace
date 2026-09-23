@@ -97,6 +97,33 @@ import {
 await restoreStateCurrent(StateFlags.ALL)
 ```
 
+### Configuration
+
+The plugin `Builder` controls what is saved and for which windows:
+
+```rust
+use tauri_plugin_window_state::StateFlags;
+
+tauri_plugin_window_state::Builder::new()
+    // what to save and restore (default: `StateFlags::all()`)
+    .with_state_flags(StateFlags::SIZE | StateFlags::POSITION)
+    // file name, relative to the app config directory (default: `.window-state.json`)
+    .with_filename("window-state.json")
+    // windows the plugin ignores entirely, e.g. a splash screen
+    .with_denylist(&["splashscreen"])
+    // or decide per label: return `false` to ignore the window
+    .with_filter(|label| !label.starts_with("popup-"))
+    // track "editor" but don't restore it on creation; call `restore_state` yourself
+    .skip_initial_state("editor")
+    // share one saved state between windows, e.g. "editor-1" and "editor-2"
+    .map_label(|label| if label.starts_with("editor-") { "editor" } else { label })
+    .build()
+```
+
+`with_denylist` replaces the list set by a previous call. A label excluded by `with_denylist` or `with_filter` is not restored, tracked or saved.
+
+To avoid a window flashing at its default size and position before its state is restored, create it hidden (`"visible": false` in `tauri.conf.json`, or `.visible(false)` on the window builder). With `StateFlags::VISIBLE` (included in the default flags) the plugin shows and focuses every window it restores, unless it was saved as hidden, including one that has no saved state yet. Windows you want to keep hidden should therefore be excluded, or use flags without `VISIBLE`.
+
 ### Permissions
 
 The JavaScript API needs the plugin's permissions in one of your [capabilities](https://v2.tauri.app/security/capabilities/). `window-state:default` allows all of its commands (`save_window_state`, `restore_state` and `filename`):
