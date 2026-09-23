@@ -1436,10 +1436,8 @@ impl Update {
         }
 
         // Try to move the current app to backup
-        let move_result = std::fs::rename(
-            &self.extract_path,
-            tmp_backup_dir.path().join("current_app"),
-        );
+        let backup_path = tmp_backup_dir.path().join("current_app");
+        let move_result = std::fs::rename(&self.extract_path, &backup_path);
         let need_authorization = if let Err(err) = move_result {
             if err.kind() == std::io::ErrorKind::PermissionDenied {
                 true
@@ -1454,10 +1452,10 @@ impl Update {
         if need_authorization {
             log::debug!("app installation needs admin privileges");
             // Use AppleScript to perform moves with admin privileges
-            let shell_command = format!(
-                "rm -rf {src} && mv -f {new} {src}",
-                src = shell_quote(path_to_str(&self.extract_path)?),
-                new = shell_quote(path_to_str(tmp_extract_dir.path())?),
+            let shell_command = replace_app_command(
+                path_to_str(&self.extract_path)?,
+                path_to_str(tmp_extract_dir.path())?,
+                path_to_str(&backup_path)?,
             );
             let apple_script = format!(
                 "do shell script \"{}\" with administrator privileges",
@@ -1481,13 +1479,18 @@ impl Update {
                     "Failed to move the new app into place",
                 )));
             }
-        } else {
-            // Remove existing directory if it exists
-            if self.extract_path.exists() {
-                std::fs::remove_dir_all(&self.extract_path)?;
+        } else if let Err(err) = std::fs::rename(tmp_extract_dir.path(), &self.extract_path) {
+            // Move the new app to the target path, restoring the current app if that fails:
+            // the backup lives in a temporary directory that is deleted when it is dropped
+            log::error!("failed to move the new app into place: {err}");
+            if let Err(restore_err) = std::fs::rename(&backup_path, &self.extract_path) {
+                let backup_dir = tmp_backup_dir.keep();
+                log::error!(
+                    "failed to restore the previous app bundle: {restore_err}, it was kept at {}",
+                    backup_dir.join("current_app").display()
+                );
             }
-            // Move the new app to the target path
-            std::fs::rename(tmp_extract_dir.path(), &self.extract_path)?;
+            return Err(err.into());
         }
 
         let _ = std::process::Command::new("touch")
@@ -1509,6 +1512,20 @@ fn shell_quote(s: &str) -> String {
 #[cfg(any(target_os = "macos", test))]
 fn applescript_escape(s: &str) -> String {
     s.replace('\\', r"\\").replace('"', "\\\"")
+}
+
+/// Shell command replacing the app at `current` with the one at `new`.
+///
+/// The current app is moved to `backup` instead of being deleted, so that it can be restored if
+/// moving the new app into place fails, and it is only deleted once that succeeded.
+#[cfg(any(target_os = "macos", test))]
+fn replace_app_command(current: &str, new: &str, backup: &str) -> String {
+    format!(
+        "mv -f {current} {backup} && {{ mv -f {new} {current} || {{ mv -f {backup} {current}; exit 1; }}; }} && rm -rf {backup}",
+        current = shell_quote(current),
+        new = shell_quote(new),
+        backup = shell_quote(backup),
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -1930,6 +1947,48 @@ mod tests {
             applescript_escape(&word),
             r#"'/Users/x/My \"Apps\"\\App.app'"#
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn replaces_the_app_and_restores_it_on_failure() {
+        use super::replace_app_command;
+        use std::{fs, process::Command};
+
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Bob's \"App\".app");
+        let new = dir.path().join("new $(app)");
+        let backup_dir = dir.path().join("backup dir");
+        let backup = backup_dir.join("current_app");
+        let run = |new: &std::path::Path| {
+            let command = replace_app_command(
+                app.to_str().unwrap(),
+                new.to_str().unwrap(),
+                backup.to_str().unwrap(),
+            );
+            Command::new("sh")
+                .arg("-c")
+                .arg(command)
+                .status()
+                .unwrap()
+                .success()
+        };
+
+        fs::create_dir_all(&app).unwrap();
+        fs::write(app.join("version"), "old").unwrap();
+        fs::create_dir_all(&new).unwrap();
+        fs::write(new.join("version"), "new").unwrap();
+        fs::create_dir_all(&backup_dir).unwrap();
+
+        // moving the new app into place fails: the current app is restored
+        assert!(!run(&dir.path().join("missing")));
+        assert_eq!(fs::read_to_string(app.join("version")).unwrap(), "old");
+        assert!(!backup.exists());
+
+        assert!(run(&new));
+        assert_eq!(fs::read_to_string(app.join("version")).unwrap(), "new");
+        assert!(!new.exists());
+        assert!(!backup.exists());
     }
 
     #[test]
