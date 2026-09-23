@@ -186,23 +186,36 @@ pub enum Schedule {
     },
 }
 
-// custom ISO-8601 serialization that does not use 6 digits for years.
+// Custom ISO-8601 serialization matching the format the mobile implementations parse,
+// `yyyy-MM-ddTHH:mm:ss.SSSZ`: a four digit year, UTC, and exactly three fractional digits
+// (the format of JavaScript's `Date.prototype.toISOString`).
 mod iso8601 {
+    use std::num::NonZeroU8;
+
     use serde::{ser::Error as _, Serialize, Serializer};
     use time::{
-        format_description::well_known::iso8601::{Config, EncodedConfig},
+        format_description::well_known::iso8601::{Config, EncodedConfig, TimePrecision},
         format_description::well_known::Iso8601,
-        OffsetDateTime,
+        OffsetDateTime, UtcOffset,
     };
 
-    const SERDE_CONFIG: EncodedConfig = Config::DEFAULT.encode();
+    const SERDE_CONFIG: EncodedConfig = Config::DEFAULT
+        .set_time_precision(TimePrecision::Second {
+            decimal_digits: NonZeroU8::new(3),
+        })
+        .encode();
+
+    pub fn format(datetime: &OffsetDateTime) -> Result<String, time::error::Format> {
+        datetime
+            .to_offset(UtcOffset::UTC)
+            .format(&Iso8601::<SERDE_CONFIG>)
+    }
 
     pub fn serialize<S: Serializer>(
         datetime: &OffsetDateTime,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        datetime
-            .format(&Iso8601::<SERDE_CONFIG>)
+        format(datetime)
             .map_err(S::Error::custom)?
             .serialize(serializer)
     }
@@ -910,5 +923,39 @@ mod android {
         pub fn build(self) -> Channel {
             self.0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+    fn parse(date: &str) -> OffsetDateTime {
+        OffsetDateTime::parse(date, &Rfc3339).unwrap()
+    }
+
+    #[test]
+    fn schedule_at_is_serialized_in_utc_with_milliseconds() {
+        // what `JSON.stringify(new Date(...))` sends from the webview
+        let schedule: Schedule = serde_json::from_value(serde_json::json!({
+            "at": { "date": "2026-09-23T10:20:30.123Z", "repeating": false, "allowWhileIdle": false }
+        }))
+        .unwrap();
+        let value = serde_json::to_value(&schedule).unwrap();
+        assert_eq!(value["at"]["date"], "2026-09-23T10:20:30.123Z");
+
+        assert_eq!(
+            iso8601::format(&parse("2026-09-23T12:20:30.5+02:00")).unwrap(),
+            "2026-09-23T10:20:30.500Z"
+        );
+        assert_eq!(
+            iso8601::format(&parse("2026-09-23T10:20:30.123456789Z")).unwrap(),
+            "2026-09-23T10:20:30.123Z"
+        );
+        assert_eq!(
+            iso8601::format(&parse("2026-09-23T10:20:30Z")).unwrap(),
+            "2026-09-23T10:20:30.000Z"
+        );
     }
 }
