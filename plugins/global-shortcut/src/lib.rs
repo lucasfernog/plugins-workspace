@@ -446,6 +446,14 @@ impl<R: Runtime> Builder<R> {
     /// configured with [`Builder::with_handler`] (if any) is called for every hotkey event, in
     /// addition to any handler passed to [`GlobalShortcut::on_shortcut`] /
     /// [`GlobalShortcut::on_shortcuts`] for that specific shortcut.
+    ///
+    /// # Note
+    ///
+    /// The plugin receives hotkey events through `global_hotkey`'s process-wide event handler,
+    /// which can only be installed once per process. If the plugin is set up more than once (for
+    /// instance by several [`tauri::App`]s in the same process), only the first instance receives
+    /// events, and if other code installs that handler (`GlobalHotKeyEvent::set_event_handler`)
+    /// before the plugin is set up, the plugin's handlers never run.
     pub fn build(self) -> TauriPlugin<R> {
         let handler = self.handler;
         let shortcuts = self.shortcuts;
