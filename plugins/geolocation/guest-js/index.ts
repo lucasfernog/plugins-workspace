@@ -5,6 +5,10 @@
 /**
  * Get and track the device's current position, mirroring the W3C Geolocation API.
  *
+ * Only Android and iOS are supported. On desktop, {@link getCurrentPosition} resolves to a zeroed
+ * position, {@link watchPosition} never calls its callback and the permission functions always
+ * report `prompt`.
+ *
  * @module
  */
 

@@ -10,6 +10,8 @@ This plugin provides APIs for getting and tracking the device's current position
 | Android  | ✓         |
 | iOS      | ✓         |
 
+On desktop the plugin can be registered, but it does not read any location: `getCurrentPosition` resolves to a zeroed position (latitude and longitude `0`), `watchPosition` never calls its callback, and `checkPermissions`/`requestPermissions` always report `prompt` without asking the user. Only register it on mobile (for instance behind `#[cfg(mobile)]`) if your app also runs on desktop.
+
 ## Install
 
 _This plugin requires a Rust version of at least **1.77.2**_
