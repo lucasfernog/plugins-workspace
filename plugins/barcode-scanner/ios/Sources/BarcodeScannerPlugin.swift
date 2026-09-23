@@ -315,16 +315,21 @@ class BarcodeScannerPlugin: Plugin, AVCaptureMetadataOutputObjectsDelegate {
     var iOS14min: Bool = false
     if #available(iOS 14.0, *) { iOS14min = true }
     if !iOS14min && self.getPermissionState() != "granted" {
-      var authorized = false
-      AVCaptureDevice.requestAccess(for: .video) { (isAuthorized) in
-        authorized = isAuthorized
+      // `requestAccess` calls back asynchronously, on an arbitrary queue
+      AVCaptureDevice.requestAccess(for: .video) { (authorized) in
+        if authorized {
+          self.startScan(invoke, args: args)
+        } else {
+          invoke.reject("denied by the user")
+        }
       }
-      if !authorized {
-        invoke.reject("denied by the user")
-        return
-      }
+      return
     }
 
+    startScan(invoke, args: args)
+  }
+
+  private func startScan(_ invoke: Invoke, args: ScanOptions) {
     DispatchQueue.main.async { [self] in
       self.loadCamera()
       self.dismantleCamera()
