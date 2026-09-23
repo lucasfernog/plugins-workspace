@@ -73,6 +73,16 @@
               "validator": ".+"
             }
           ]
+        },
+        {
+          "name": "e2e-denied",
+          "cmd": "e2e-denied"
+        }
+      ],
+      "deny": [
+        {
+          "name": "e2e-denied",
+          "cmd": "e2e-denied"
         }
       ]
     },

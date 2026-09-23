@@ -110,6 +110,11 @@ fn prepare_cmd<R: Runtime>(
             .iter()
             .chain(global_scope.allows())
             .collect(),
+        denied: command_scope
+            .denies()
+            .iter()
+            .chain(global_scope.denies())
+            .collect(),
     };
 
     let mut command = if options.sidecar {

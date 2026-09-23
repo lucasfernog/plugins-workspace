@@ -151,6 +151,9 @@ pub struct OpenScope {
 pub struct ShellScope<'a> {
     /// All allowed commands, using their unique command name as the keys.
     pub scopes: Vec<&'a Arc<ScopeAllowedCommand>>,
+    /// All denied commands. A command whose name matches a denied entry is rejected,
+    /// even if it is also allowed.
+    pub denied: Vec<&'a Arc<ScopeAllowedCommand>>,
 }
 
 /// All errors that can happen while validating a scoped command.
@@ -169,6 +172,10 @@ pub enum Error {
     /// The named command was not found in the scoped config.
     #[error("Scoped command {0} not found")]
     NotFound(String),
+
+    /// The named command is denied by the scoped config.
+    #[error("Scoped command {0} is denied")]
+    Denied(String),
 
     /// A command variable has no value set in the arguments.
     #[error(
@@ -254,6 +261,10 @@ impl ShellScope<'_> {
         args: ExecuteArgs,
         sidecar: Option<&str>,
     ) -> Result<Command, Error> {
+        if self.denied.iter().any(|s| s.name == command_name) {
+            return Err(Error::Denied(command_name.into()));
+        }
+
         let command = match self.scopes.iter().find(|s| s.name == command_name) {
             Some(command) => command,
             None => return Err(Error::NotFound(command_name.into())),
@@ -318,5 +329,41 @@ impl ShellScope<'_> {
         };
 
         Ok(command.args(args))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::{Error, ExecuteArgs, ScopeAllowedArg, ScopeAllowedCommand, ShellScope};
+
+    fn entry(
+        name: &str,
+        cmd: &str,
+        args: Option<Vec<ScopeAllowedArg>>,
+    ) -> Arc<ScopeAllowedCommand> {
+        Arc::new(ScopeAllowedCommand {
+            name: name.into(),
+            command: cmd.into(),
+            args,
+            sidecar: false,
+        })
+    }
+
+    #[test]
+    fn denied_command_is_rejected() {
+        let sh = entry("sh", "sh", None);
+        let other = entry("other", "other", None);
+        let denied = entry("sh", "sh", None);
+        let scope = ShellScope {
+            scopes: vec![&sh, &other],
+            denied: vec![&denied],
+        };
+        assert!(matches!(
+            scope.prepare("sh", ExecuteArgs::None),
+            Err(Error::Denied(name)) if name == "sh"
+        ));
+        assert!(scope.prepare("other", ExecuteArgs::None).is_ok());
     }
 }

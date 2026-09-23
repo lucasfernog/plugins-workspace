@@ -218,6 +218,14 @@ describePlugin('shell', () => {
     expect(message).toMatch(/program not allowed on the configured shell scope/)
   })
 
+  it('rejects programs that a deny scope matches, even when allowed', async () => {
+    // the example allows `e2e-denied` and denies it on the same permission
+    const message = await tauriError((api) =>
+      api.shell.Command.create('e2e-denied').execute()
+    )
+    expect(message).toMatch(/not allowed|denied/)
+  })
+
   it('rejects arguments that do not match the scope', async () => {
     // the scope only allows `-c`/`/C` followed by a non-empty script
     const message = await tauriError(
