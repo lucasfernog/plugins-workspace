@@ -117,10 +117,11 @@ public class FilePickerController: NSObject {
 			directory = cachesDirectory
 		}
 		
-		let targetUrl = directory.appendingPathComponent(sourceUrl.lastPathComponent)
-		do {
-			try deleteFile(targetUrl)
-		}
+		// Copy into a folder of its own: files picked at the same time or in earlier picks can share
+		// a name (common for PHPicker representations), and must not overwrite or delete each other.
+		let targetDirectory = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+		try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
+		let targetUrl = targetDirectory.appendingPathComponent(sourceUrl.lastPathComponent)
 
 		try FileManager.default.copyItem(at: sourceUrl, to: targetUrl)
 		return targetUrl
