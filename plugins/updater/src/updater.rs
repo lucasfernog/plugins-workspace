@@ -329,6 +329,10 @@ impl UpdaterBuilder {
 
     /// Sets the timeout of the update check and download requests.
     /// When it is not set, the requests do not time out.
+    ///
+    /// The timeout covers the whole request, including reading the response body.
+    /// It is not carried over to the [`Update`] returned by [`Updater::check`], so the download
+    /// does not time out unless [`Update::timeout`] is set.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
@@ -403,6 +407,11 @@ impl UpdaterBuilder {
     }
 
     /// Function to run before we run the installer and exit the app through `std::process::exit(0)` on Windows
+    ///
+    /// It replaces the default hook set by [`crate::UpdaterExt::updater_builder`], which calls
+    /// [`tauri::AppHandle::cleanup_before_exit`]; call it from your hook if you still need that
+    /// cleanup (e.g. to remove tray icons). The hook runs before the installer is launched, so
+    /// it also runs when launching the installer fails (e.g. the user declines the UAC prompt).
     #[cfg_attr(not(windows), allow(unused))]
     pub fn on_before_exit<F: Fn() + Send + Sync + 'static>(mut self, f: F) -> Self {
         #[cfg(windows)]
@@ -764,13 +773,18 @@ pub struct Update {
     pub signature: String,
     /// The raw version of server's JSON response. Useful if the response contains additional fields that the updater doesn't handle.
     pub raw_json: serde_json::Value,
-    /// Request timeout
+    /// Timeout of the download request, covering the whole download.
+    ///
+    /// `None` (no timeout) by default: the timeout used for the update check is not carried over.
     pub timeout: Option<Duration>,
     /// Request proxy
     pub proxy: Option<Url>,
     /// Disable system proxy
     pub no_proxy: bool,
-    /// Request headers
+    /// Headers of the download request.
+    ///
+    /// Initialized with the headers of the update check, which are therefore also sent to the
+    /// download URL host, even when it differs from the update endpoint host.
     pub headers: HeaderMap,
     /// Extract path
     #[allow(unused)]
