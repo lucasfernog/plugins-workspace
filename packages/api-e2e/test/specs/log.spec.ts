@@ -130,6 +130,34 @@ describePlugin('log', () => {
     expect(count).toBe(1)
   })
 
+  it('line breaks in the caller location cannot forge log lines', async () => {
+    const message = await tauri(
+      (api, needle) =>
+        new Promise<string>((resolve, reject) => {
+          api.log
+            .attachLogger((record) => {
+              if (record.message.includes(needle)) resolve(record.message)
+            })
+            .then(() =>
+              // the location normally comes from the caller's stack trace
+              api.core.invoke('plugin:log|log', {
+                level: 3,
+                message: needle,
+                location: 'forged\n2026-01-01][00:00:00][my_crate][ERROR] x',
+                file: 'file\r\nname.js'
+              })
+            )
+            .catch(reject)
+          setTimeout(() => reject(new Error('record not received')), 5000)
+        }),
+      'escaped location from e2e'
+    )
+    expect(message).toContain(
+      '[webview::forged\\n2026-01-01][00:00:00][my_crate][ERROR] x]'
+    )
+    expect(message).not.toContain('\n')
+  })
+
   it('attachConsole forwards records to the console', async () => {
     const forwarded = await tauri(
       (api, needle) =>
