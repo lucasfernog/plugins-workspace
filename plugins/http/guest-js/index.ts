@@ -179,22 +179,7 @@ export async function fetch(
     }
   }
 
-  const headersArray =
-    headers instanceof Headers
-      ? Array.from(headers.entries())
-      : Array.isArray(headers)
-        ? headers
-        : Object.entries(headers)
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const mappedHeaders: Array<[string, string]> = headersArray.map(
-    ([name, val]) => [
-      name,
-      // we need to ensure we have all header values as strings
-      // eslint-disable-next-line
-      typeof val === 'string' ? val : (val as any).toString()
-    ]
-  )
+  const mappedHeaders: Array<[string, string]> = Array.from(headers.entries())
 
   // Optimistically check for abort signal and avoid doing any work on the Rust side
   if (signal?.aborted) {
