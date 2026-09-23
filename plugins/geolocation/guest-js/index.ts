@@ -104,17 +104,19 @@ export type PositionOptions = {
   /**
    * High accuracy mode (such as GPS, if available)
    * Will be ignored on Android 12+ if users didn't grant the ACCESS_FINE_LOCATION permission (`coarseLocation` permission).
+   * Default: false
    */
   enableHighAccuracy: boolean
   /**
    * The maximum wait time in milliseconds for location updates.
    * On Android the timeout gets ignored for getCurrentPosition.
    * Ignored on iOS
+   * Default: 10000 (also used for `Infinity`)
    */
   timeout: number
   /**
    * The maximum age in milliseconds of a possible cached position that is acceptable to return.
-   * Default: 0
+   * Default: 0 (`Infinity` accepts a cached position of any age)
    * Ignored on iOS
    */
   maximumAge: number
@@ -138,13 +140,13 @@ export type PositionOptions = {
  * );
  * ```
  *
- * @param options Configuration for the position watcher.
+ * @param options Configuration for the position watcher. Missing fields use their defaults.
  * @param cb Callback invoked with the new {@link Position} on success, or `null` and an error message when a read fails.
  * @returns A promise resolving to the id of the registered watcher.
  * @since 2.0.0
  */
 export async function watchPosition(
-  options: PositionOptions,
+  options: Partial<PositionOptions>,
   cb: (location: Position | null, error?: string) => void
 ): Promise<number> {
   const channel = new Channel<Position | string>()
@@ -171,12 +173,12 @@ export async function watchPosition(
  * const position = await getCurrentPosition();
  * ```
  *
- * @param options Configuration for the position request.
+ * @param options Configuration for the position request. Missing fields use their defaults.
  * @returns A promise resolving to the current {@link Position}.
  * @since 2.0.0
  */
 export async function getCurrentPosition(
-  options?: PositionOptions
+  options?: Partial<PositionOptions>
 ): Promise<Position> {
   return await invoke('plugin:geolocation|get_current_position', {
     options
