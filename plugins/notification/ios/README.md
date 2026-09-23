@@ -1,3 +1,3 @@
-# Tauri Plugin {{ plugin_name_original }}
+# Tauri Plugin Notification
 
-A description of this package.
+The iOS implementation of [`tauri-plugin-notification`](../README.md), a Swift package built by the plugin's `build.rs`.
