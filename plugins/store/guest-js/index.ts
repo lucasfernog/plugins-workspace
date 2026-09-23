@@ -114,7 +114,14 @@ export class LazyStore implements IStore {
 
   private get store(): Promise<Store> {
     if (!this._store) {
-      this._store = load(this.path, this.options)
+      const store = load(this.path, this.options)
+      this._store = store
+      // do not cache a failed load, so the next call tries again
+      store.catch(() => {
+        if (this._store === store) {
+          this._store = undefined
+        }
+      })
     }
     return this._store
   }
@@ -418,10 +425,10 @@ export class LazyStore implements IStore {
 
   /**
    * Close the store and cleans up this resource from memory.
-   * **You should not call any method on this object anymore and should drop any reference to it.**
    *
    * Delegates to {@linkcode Store.close} on the underlying store.
    * If the store was never loaded, this method does nothing.
+   * Calling another method afterwards loads the store again, from its on-disk state.
    *
    * @example
    * ```typescript
@@ -431,8 +438,10 @@ export class LazyStore implements IStore {
    * ```
    */
   async close(): Promise<void> {
-    if (this._store) {
-      await (await this._store).close()
+    const store = this._store
+    if (store) {
+      this._store = undefined
+      await (await store).close()
     }
   }
 }

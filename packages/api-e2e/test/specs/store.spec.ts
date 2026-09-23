@@ -201,22 +201,30 @@ describePlugin('store', () => {
     expect(result.afterClose).toBeNull()
   })
 
-  it('LazyStore initializes on first use and errors after close', async () => {
+  it('LazyStore initializes on first use and reloads after close', async () => {
     const result = await tauri(async (api, path) => {
       const store = new api.store.LazyStore(path, { autoSave: false })
-      await store.set('lazy', 'loaded')
+      await store.set('lazy', 'saved')
       const value = await store.get<string>('lazy')
+      await store.save()
+      await store.set('lazy', 'unsaved')
       await store.close()
-      let closedError: string | null = null
-      try {
-        await store.get('lazy')
-      } catch (error) {
-        closedError = String(error)
+      const loadedAfterClose = await api.store.getStore(path)
+      // the next call loads the store again, from its on-disk state
+      const reopened = await store.get<string>('lazy')
+      const loadedAfterReopen = (await api.store.getStore(path)) !== null
+      await store.close()
+      return {
+        value,
+        loadedAfterClose,
+        reopened,
+        loadedAfterReopen
       }
-      return { value, closedError }
     }, `${dir}/lazy.json`)
-    expect(result.value).toBe('loaded')
-    expect(result.closedError).not.toBeNull()
+    expect(result.value).toBe('saved')
+    expect(result.loadedAfterClose).toBeNull()
+    expect(result.reopened).toBe('saved')
+    expect(result.loadedAfterReopen).toBe(true)
   })
 
   it('change listeners fire for set and delete', async () => {
