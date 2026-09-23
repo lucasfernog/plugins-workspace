@@ -41,7 +41,7 @@ struct FetchRequest {
 impl tauri::Resource for FetchRequest {}
 
 struct AbortSender(Sender<()>);
-impl tauri::Resource for AbortRecveiver {}
+impl tauri::Resource for AbortSender {}
 
 impl AbortSender {
     fn abort(self) {
@@ -49,8 +49,8 @@ impl AbortSender {
     }
 }
 
-struct AbortRecveiver(Receiver<()>);
-impl tauri::Resource for AbortSender {}
+struct AbortReceiver(Receiver<()>);
+impl tauri::Resource for AbortReceiver {}
 
 trait AddRequest {
     fn add_request(&mut self, fut: CancelableResponseFuture) -> ResourceId;
@@ -59,7 +59,7 @@ trait AddRequest {
 impl AddRequest for ResourceTable {
     fn add_request(&mut self, fut: CancelableResponseFuture) -> ResourceId {
         let (tx, rx) = channel::<()>();
-        let (tx, rx) = (AbortSender(tx), AbortRecveiver(rx));
+        let (tx, rx) = (AbortSender(tx), AbortReceiver(rx));
         let req = FetchRequest {
             fut: Mutex::new(fut),
             abort_tx_rid: self.add(tx),
@@ -81,7 +81,7 @@ pub struct FetchResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] //feature flags shoudln't affect api
+#[allow(dead_code)] //feature flags shouldn't affect api
 pub struct DangerousSettings {
     accept_invalid_certs: bool,
     accept_invalid_hostnames: bool,
@@ -413,7 +413,7 @@ pub fn fetch_cancel<R: Runtime>(webview: Webview<R>, rid: ResourceId) -> crate::
     // when `fetch_send` has not taken the abort receiver yet, nothing will consume the request
     // anymore (the frontend does not send an aborted request), so it is released here
     if resources_table
-        .take::<AbortRecveiver>(req.abort_rx_rid)
+        .take::<AbortReceiver>(req.abort_rx_rid)
         .is_ok()
     {
         let _ = resources_table.take::<FetchRequest>(rid);
@@ -429,7 +429,7 @@ pub async fn fetch_send<R: Runtime>(
     let (req, abort_rx) = {
         let mut resources_table = webview.resources_table();
         let req = resources_table.get::<FetchRequest>(rid)?;
-        let abort_rx = resources_table.take::<AbortRecveiver>(req.abort_rx_rid)?;
+        let abort_rx = resources_table.take::<AbortReceiver>(req.abort_rx_rid)?;
         (req, abort_rx)
     };
 
