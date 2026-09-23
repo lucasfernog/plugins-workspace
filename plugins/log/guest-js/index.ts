@@ -280,6 +280,13 @@ type LoggerFn = (fn: RecordPayload) => void
 /**
  * Attaches a listener for the log, and calls the passed function for each log entry.
  *
+ * Log entries are only delivered if the Rust side of the plugin is configured with the `Webview` target
+ * (`Target::new(TargetKind::Webview)`). Every entry of that target is delivered, including the entries logged from
+ * this webview. The `message` is the formatted log line with ANSI escape codes removed.
+ *
+ * This listens to the `log://log` event, so it requires the permission to listen to events
+ * (`core:event:default`, part of `core:default`) rather than a `log:` permission.
+ *
  * @example
  * ```typescript
  * import { attachLogger } from '@tauri-apps/plugin-log';
@@ -314,6 +321,12 @@ export async function attachLogger(fn: LoggerFn): Promise<UnlistenFn> {
 
 /**
  * Attaches a listener that writes log entries to the console as they come in.
+ *
+ * Entries are written with `console.log` (trace), `console.debug`, `console.info`, `console.warn` and
+ * `console.error`. See {@linkcode attachLogger} for the requirements.
+ *
+ * Do not combine this with code that forwards the console to the log functions of this module: the forwarded
+ * entries would be logged again, in an infinite loop.
  *
  * @example
  * ```typescript
