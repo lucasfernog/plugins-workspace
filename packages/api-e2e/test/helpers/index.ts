@@ -141,9 +141,14 @@ export async function tauri<R, A extends unknown[]>(
   // driver gets to interpret its shape: the Selenium atoms that Appium runs
   // scripts through on iOS turn any object with a numeric `length` property
   // into an array.
+  //
+  // The spec runner transpiles with esbuild's `keepNames`, which wraps named inner
+  // functions and classes in `__name(...)` calls. That helper only exists in the
+  // spec module, so the page gets a pass-through stand-in.
   const script = `
     var done = arguments[arguments.length - 1];
     var args = Array.prototype.slice.call(arguments, 0, arguments.length - 1);
+    var __name = function (target) { return target; };
     var fn = (${fn.toString()});
     Promise.resolve()
       .then(function () { return fn.apply(null, [window.__TAURI__].concat(args)); })
