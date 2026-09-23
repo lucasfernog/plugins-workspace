@@ -6538,7 +6538,6 @@ version = "2.5.1"
 dependencies = [
  "auto-launch",
  "serde",
- "serde_json",
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.12",
