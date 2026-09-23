@@ -95,12 +95,17 @@ pub struct Arg {
     /// i.e. when using this argument, the following arguments must be present.
     #[serde(alias = "requires-all")]
     pub requires_all: Option<Vec<String>>,
-    /// Allows a conditional requirement with the signature [arg, value]
-    /// the requirement will only become valid if `arg`'s value equals `${value}`.
+    /// Allows a conditional requirement with the signature `[value, arg]`:
+    /// when this argument's value equals `value`, the argument named `arg` becomes required.
+    ///
+    /// For example, `"requiresIf": ["json", "output"]` on a `format` argument makes
+    /// `--output` required when `--format json` is passed.
+    ///
+    /// **NOTE:** unlike `required_if_eq`, the value comes first.
     #[serde(alias = "requires-if")]
     pub requires_if: Option<(String, String)>,
-    /// Allows specifying that an argument is required conditionally with the signature [arg, value]
-    /// the requirement will only become valid if the `arg`'s value equals `${value}`.
+    /// Allows specifying that this argument is required conditionally with the signature `[arg, value]`:
+    /// this argument becomes required when the value of the argument named `arg` equals `value`.
     #[serde(alias = "required-if-eq")]
     pub required_if_eq: Option<(String, String)>,
     /// Requires that options use the --option=val syntax
