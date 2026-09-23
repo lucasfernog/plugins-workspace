@@ -120,14 +120,15 @@ class ClipboardPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
 
-    if (clip.description?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) != true) {
-      // TODO
-      invoke.reject("Clipboard content reader not implemented")
+    // accept any text type (text/plain, text/html, text/uri-list, ...), not only plain text
+    if (clip.description?.hasMimeType("text/*") != true) {
+      invoke.reject("Clipboard content is not text")
       return
     }
 
     val data = ReadClipData.PlainText()
-    data.text = clip.getItemAt(0).text.toString()
+    // `item.text` is null for HTML-only, URI and intent items; coerce them to plain text instead
+    data.text = clip.getItemAt(0).coerceToText(activity).toString()
     invoke.resolveObject(data)
   }
 
