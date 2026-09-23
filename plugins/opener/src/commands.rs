@@ -70,7 +70,29 @@ pub async fn open_path<R: Runtime>(
 }
 
 /// TODO: in the next major version, rename to `reveal_items_in_dir`
+///
+/// Unscoped by default. If the `allow-reveal-item-in-dir` permission is given `path` scope entries,
+/// every path must be allowed by them.
 #[tauri::command]
-pub async fn reveal_item_in_dir(paths: Vec<PathBuf>) -> crate::Result<()> {
+pub async fn reveal_item_in_dir<R: Runtime>(
+    app: AppHandle<R>,
+    command_scope: CommandScope<crate::scope::Entry>,
+    paths: Vec<PathBuf>,
+) -> crate::Result<()> {
+    // Only the command scope is used: global scope entries were never applied to this command,
+    // so they must not start restricting it.
+    {
+        let scope = Scope::new(
+            &app,
+            command_scope.allows().iter().collect(),
+            command_scope.denies().iter().collect(),
+        );
+        for path in &paths {
+            if !scope.is_reveal_allowed(path)? {
+                return Err(Error::ForbiddenRevealPath(path.clone()));
+            }
+        }
+    }
+
     crate::reveal_items_in_dir(&paths)
 }

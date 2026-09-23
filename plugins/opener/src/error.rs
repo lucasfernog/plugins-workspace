@@ -42,6 +42,9 @@ pub enum Error {
         /// The program the URL was requested to be opened with, if any.
         with: Option<String>,
     },
+    /// The path is not allowed to be revealed by the scope of the `reveal_item_in_dir` command.
+    #[error("Not allowed to reveal path {}", .0.display())]
+    ForbiddenRevealPath(PathBuf),
     /// The requested API is not supported on the current platform, e.g. [`crate::reveal_item_in_dir`] on Android and iOS.
     #[error("API not supported on the current platform")]
     UnsupportedPlatform,

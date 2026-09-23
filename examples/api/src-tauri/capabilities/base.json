@@ -132,6 +132,10 @@
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
     },
+    {
+      "identifier": "opener:allow-reveal-item-in-dir",
+      "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
+    },
     "upload:default",
     "deep-link:default",
     "deep-link:allow-register",

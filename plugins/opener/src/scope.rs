@@ -138,4 +138,40 @@ impl<'a, R: Runtime, M: Manager<R>> Scope<'a, R, M> {
 
         Ok(fs_scope.is_allowed(path) && self.allowed.iter().any(|e| e.matches_path_program(with)))
     }
+
+    /// Whether `path` may be revealed in the file explorer.
+    ///
+    /// Revealing is unscoped unless the scope has `path` entries, the `app` of which is ignored.
+    /// With only deny entries, every path but the denied ones is allowed.
+    pub fn is_reveal_allowed(&self, path: &Path) -> crate::Result<bool> {
+        let has_allow = self
+            .allowed
+            .iter()
+            .any(|e| matches!(***e, Entry::Path { .. }));
+        let has_deny = self
+            .denied
+            .iter()
+            .any(|e| matches!(***e, Entry::Path { .. }));
+        if !has_allow && !has_deny {
+            return Ok(true);
+        }
+
+        let fs_scope = tauri::fs::Scope::new(
+            self.manager,
+            &tauri::utils::config::FsScope::Scope {
+                allow: self.allowed.iter().filter_map(|e| e.path()).collect(),
+                deny: self.denied.iter().filter_map(|e| e.path()).collect(),
+                require_literal_leading_dot: self
+                    .manager
+                    .state::<crate::Opener<R>>()
+                    .require_literal_leading_dot,
+            },
+        )?;
+
+        Ok(if has_allow {
+            fs_scope.is_allowed(path)
+        } else {
+            !fs_scope.is_forbidden(path)
+        })
+    }
 }

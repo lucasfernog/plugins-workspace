@@ -9,6 +9,7 @@ import { tauriError, describePlugin } from '../helpers/index.js'
 // the suite cannot control or close, so only the scope enforcement is covered.
 // The example allows `mailto:`, `tel:`, `http(s)://` URLs (opener:default),
 // `https://` URLs specifically with `inAppBrowser`, and paths under `$APPDATA`.
+// `revealItemInDir` is scoped to `$APPDATA` too.
 
 describePlugin('opener', () => {
   it('openUrl rejects URL schemes outside the scope', async () => {
@@ -33,6 +34,16 @@ describePlugin('opener', () => {
       api.opener.openPath(await api.path.join(await api.path.homeDir(), 'e2e'))
     )
     expect(message).toMatch(/Not allowed to open path/)
+  })
+
+  it('revealItemInDir rejects paths outside its scope', async () => {
+    const message = await tauriError(async (api) =>
+      api.opener.revealItemInDir([
+        await api.path.appDataDir(),
+        await api.path.join(await api.path.homeDir(), 'e2e')
+      ])
+    )
+    expect(message).toMatch(/Not allowed to reveal path/)
   })
 
   it('revealItemInDir rejects paths that do not exist', async () => {
