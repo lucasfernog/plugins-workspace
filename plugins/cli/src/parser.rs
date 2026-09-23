@@ -86,7 +86,8 @@ pub fn get_matches(
 ) -> crate::Result<Matches> {
     let about = cli
         .description()
-        .unwrap_or(&package_info.description.to_string())
+        .map(String::as_str)
+        .unwrap_or(package_info.description)
         .to_string();
     let version = package_info.version.to_string();
     let app = get_app(
