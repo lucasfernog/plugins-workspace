@@ -45,6 +45,30 @@ export type StoreKey =
   | ArrayLike<number>
   | ArrayBuffer
 
+/** Returns the bytes the Rust side reads for a client, vault or record path. */
+function toBytes(
+  value: string | Iterable<number> | ArrayLike<number> | ArrayBuffer
+): number[] {
+  if (typeof value === 'string') {
+    return Array.from(new TextEncoder().encode(value))
+  }
+  if (value instanceof ArrayBuffer) {
+    return Array.from(new Uint8Array(value))
+  }
+  return Array.from(value as ArrayLike<number>)
+}
+
+function sameBytes(a: VaultPath, b: VaultPath): boolean {
+  if (typeof a === 'string' && typeof b === 'string') {
+    return a === b
+  }
+  const bytesA = toBytes(a)
+  const bytesB = toBytes(b)
+  return (
+    bytesA.length === bytesB.length && bytesA.every((v, i) => v === bytesB[i])
+  )
+}
+
 /**
  * The limits applied to the connections of a Stronghold peer-to-peer network.
  * See {@link NetworkConfig} for a note on how these definitions are used.
@@ -623,8 +647,8 @@ export class Vault extends ProcedureExecutor {
   }
 
   /**
-   * Deletes a secret from this vault. Only the record path of the given
-   * location is used, the vault is always this one.
+   * Deletes a secret from this vault. The promise rejects if the location was
+   * not created with {@link Location.generic} or points to another vault.
    *
    * @example
    * ```typescript
@@ -639,6 +663,16 @@ export class Vault extends ProcedureExecutor {
    * @param location The location of the record to delete.
    */
   async remove(location: Location): Promise<void> {
+    if (location.type !== 'Generic') {
+      throw new Error(
+        'Vault.remove only supports locations created with Location.generic'
+      )
+    }
+    if (!sameBytes(location.payload.vault as VaultPath, this.name)) {
+      throw new Error(
+        "the location's vault does not match the vault the record is removed from"
+      )
+    }
     await invoke('plugin:stronghold|remove_secret', {
       snapshotPath: this.path,
       client: this.client,

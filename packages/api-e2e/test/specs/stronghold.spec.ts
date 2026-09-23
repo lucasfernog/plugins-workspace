@@ -107,6 +107,55 @@ describePlugin('stronghold', () => {
     expect(result).toEqual({ removed: [1, 2, 3], after: null })
   })
 
+  it('vault.remove rejects counter locations and other vaults', async () => {
+    const result = await tauri(
+      async (api, dir, password, clientName) => {
+        const { Location } = api.stronghold
+        const path = await api.path.join(
+          await api.path.appDataDir(),
+          dir,
+          'vault-remove.stronghold'
+        )
+        const stronghold = await api.stronghold.Stronghold.load(path, password)
+        const client = await stronghold.createClient(clientName)
+        const vault = client.getVault('vault')
+        const other = client.getVault('other')
+        await vault.insert('record', [1])
+        await other.insert('record', [2])
+
+        const errors: string[] = []
+        for (const location of [
+          Location.counter('vault', 0),
+          Location.generic('other', 'record')
+        ]) {
+          try {
+            await vault.remove(location)
+            errors.push('resolved')
+          } catch (e) {
+            errors.push(String(e))
+          }
+        }
+        // a location of the vault's own records is accepted
+        await other.remove(Location.generic('other', 'record'))
+        // a vault given as bytes matches the same vault given as a string
+        await vault.remove(
+          Location.generic(
+            Array.from(new TextEncoder().encode('vault')),
+            'record'
+          )
+        )
+        await stronghold.unload()
+        return errors
+      },
+      dir,
+      password,
+      clientName
+    )
+    expect(result).toHaveLength(2)
+    expect(result[0]).toMatch(/Location\.generic/)
+    expect(result[1]).toMatch(/does not match/)
+  })
+
   it('a snapshot cannot be opened with the wrong password', async () => {
     const path = await tauri(
       async (api, dir, password, clientName) => {
