@@ -6542,6 +6542,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.12",
+ "winreg 0.10.1",
 ]
 
 [[package]]

@@ -32,3 +32,6 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 thiserror = { workspace = true }
 auto-launch = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.10"
