@@ -139,6 +139,28 @@ sendNotification({
 
 This example uses [`@tauri-apps/plugin-os`](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/os) to detect the platform.
 
+## Platform notes
+
+- **Desktop** only uses the title, body, icon and sound of a notification. Scheduling, actions, channels, attachments and the other options are ignored, and the mobile-only functions (`registerActionTypes`, `pending`, `cancel`, `cancelAll`, `active`, `removeActive`, `removeAllActive`, `createChannel`, `removeChannel`, `channels`) are not available. The permission is always reported as granted.
+- **Windows**: notifications are only shown with the app's name and icon for installed apps. In development they are shown as coming from PowerShell. Windows 7 needs the `windows7-compat` Cargo feature.
+- **macOS**: in development notifications are shown as coming from the Terminal.
+- **Android**: the plugin adds the `POST_NOTIFICATIONS`, `WAKE_LOCK` and `RECEIVE_BOOT_COMPLETED` permissions to the manifest; `requestPermission()` shows the Android 13+ runtime prompt. Icons must be `res/drawable` resources and sounds `res/raw` resources. Channels (`createChannel`, `channelId`) are Android only. Without the `SCHEDULE_EXACT_ALARM` or `USE_EXACT_ALARM` permission, which the plugin does not declare, scheduled notifications use inexact alarms and may be delivered late; repeating schedules are always inexact. Default values can be set in `tauri.conf.json`:
+
+  ```json
+  {
+    "plugins": {
+      "notification": {
+        "icon": "ic_notification",
+        "sound": "notification",
+        "iconColor": "#ff0000"
+      }
+    }
+  }
+  ```
+
+- **iOS**: `requestPermission()` shows the system prompt the first time only; afterwards the user can only change the permission in the Settings app. Attachments (`file://` URLs) are only supported on iOS.
+- The plugin injects a script in every webview that replaces `window.Notification`, so the Notification Web API sends notifications through the plugin.
+
 ## Contributing
 
 PRs accepted. Please make sure to read the Contributing Guide before making a pull request.
