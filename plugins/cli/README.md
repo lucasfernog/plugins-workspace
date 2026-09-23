@@ -61,6 +61,55 @@ fn main() {
 }
 ```
 
+Then define your command line interface under `plugins > cli` in `tauri.conf.json`. Only the arguments and subcommands defined here are accepted:
+
+`src-tauri/tauri.conf.json`
+
+```json
+{
+  "plugins": {
+    "cli": {
+      "description": "Tauri CLI Plugin Example",
+      "args": [
+        {
+          "short": "v",
+          "name": "verbose",
+          "description": "Verbosity level"
+        },
+        {
+          "name": "source",
+          "index": 1,
+          "takesValue": true
+        }
+      ],
+      "subcommands": {
+        "run": {
+          "description": "Run the application",
+          "args": [
+            {
+              "name": "debug",
+              "description": "Run application in debug mode"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+The JavaScript API also needs the `cli:default` permission, which allows `getMatches`, in one of your [capabilities](https://v2.tauri.app/security/capabilities/):
+
+`src-tauri/capabilities/default.json`
+
+```json
+{
+  "permissions": ["cli:default"]
+}
+```
+
+`getMatches` returns the arguments the app was started with, so any webview granted this permission can read them. Do not grant it to remote content if your app may receive secrets on its command line.
+
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
 ```javascript
