@@ -99,9 +99,18 @@ pub(crate) async fn download<R: Runtime>(
     timeout: Option<u64>,
 ) -> Result<ResourceId> {
     let update = webview.resources_table().get::<Update>(rid)?;
+    let update = with_download_options((*update).clone(), headers, timeout)?;
+    let bytes = download_with_events(&update, &on_event).await?;
 
-    let mut update = (*update).clone();
+    Ok(webview.resources_table().add(DownloadedBytes(bytes)))
+}
 
+/// Applies the options passed to the `download` and `download_and_install` commands.
+fn with_download_options(
+    mut update: Update,
+    headers: Option<Vec<(String, String)>>,
+    timeout: Option<u64>,
+) -> Result<Update> {
     if let Some(headers) = headers {
         let mut map = HeaderMap::new();
         for (k, v) in headers {
@@ -114,8 +123,16 @@ pub(crate) async fn download<R: Runtime>(
         update.timeout = Some(Duration::from_millis(timeout));
     }
 
+    Ok(update)
+}
+
+/// Downloads the update, reporting the progress through `on_event`.
+async fn download_with_events(
+    update: &Update,
+    on_event: &Channel<DownloadEvent>,
+) -> Result<Vec<u8>> {
     let mut first_chunk = true;
-    let bytes = update
+    update
         .download(
             |chunk_length, content_length| {
                 if first_chunk {
@@ -128,9 +145,7 @@ pub(crate) async fn download<R: Runtime>(
                 let _ = on_event.send(DownloadEvent::Finished);
             },
         )
-        .await?;
-
-    Ok(webview.resources_table().add(DownloadedBytes(bytes)))
+        .await
 }
 
 #[tauri::command]
@@ -167,41 +182,12 @@ pub(crate) async fn download_and_install<R: Runtime>(
     restart_after_install: Option<bool>,
 ) -> Result<()> {
     let update = webview.resources_table().get::<Update>(rid)?;
-
-    let mut update = (*update).clone();
-
-    if let Some(headers) = headers {
-        let mut map = HeaderMap::new();
-        for (k, v) in headers {
-            map.append(HeaderName::from_str(&k)?, HeaderValue::from_str(&v)?);
-        }
-        update.headers = map;
-    }
-
-    if let Some(timeout) = timeout {
-        update.timeout = Some(Duration::from_millis(timeout));
-    }
-
+    let mut update = with_download_options((*update).clone(), headers, timeout)?;
     if let Some(restart_after_install) = restart_after_install {
         update = update.restart_after_install(restart_after_install);
     }
 
-    let mut first_chunk = true;
-
-    let bytes = update
-        .download(
-            |chunk_length, content_length| {
-                if first_chunk {
-                    first_chunk = !first_chunk;
-                    let _ = on_event.send(DownloadEvent::Started { content_length });
-                }
-                let _ = on_event.send(DownloadEvent::Progress { chunk_length });
-            },
-            || {
-                let _ = on_event.send(DownloadEvent::Finished);
-            },
-        )
-        .await?;
+    let bytes = download_with_events(&update, &on_event).await?;
     // see `install`
     tauri::async_runtime::spawn_blocking(move || update.install(bytes)).await??;
 
