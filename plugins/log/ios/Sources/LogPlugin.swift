@@ -8,7 +8,8 @@ import UIKit
 import os.log
 
 @_cdecl("tauri_log")
-func log(level: Int, message: NSString) {
+// `level` must match the `u8` declared on the Rust side of this FFI function.
+func log(level: UInt8, message: NSString) {
   switch level {
   case 1: Logger.debug(message as String)
   case 2: Logger.info(message as String)
