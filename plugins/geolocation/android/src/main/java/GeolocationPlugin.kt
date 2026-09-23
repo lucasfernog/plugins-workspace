@@ -158,12 +158,20 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
         coords.put("latitude", location.latitude)
         coords.put("longitude", location.longitude)
         coords.put("accuracy", location.accuracy)
-        coords.put("altitude", location.altitude)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // Optional readings are left out (null on the JS/Rust side) when the location has no value
+        // for them, instead of reporting the platform's 0 placeholder.
+        if (location.hasAltitude()) {
+            coords.put("altitude", location.altitude)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasVerticalAccuracy()) {
             coords.put("altitudeAccuracy", location.verticalAccuracyMeters)
         }
-        coords.put("speed", location.speed)
-        coords.put("heading", location.bearing)
+        if (location.hasSpeed()) {
+            coords.put("speed", location.speed)
+        }
+        if (location.hasBearing()) {
+            coords.put("heading", location.bearing)
+        }
         ret.put("timestamp", location.time)
         ret.put("coords", coords)
 

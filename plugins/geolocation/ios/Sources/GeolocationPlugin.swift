@@ -233,10 +233,18 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
     coords["latitude"] = location.coordinate.latitude
     coords["longitude"] = location.coordinate.longitude
     coords["accuracy"] = location.horizontalAccuracy
-    coords["altitude"] = location.altitude
-    coords["altitudeAccuracy"] = location.verticalAccuracy
-    coords["speed"] = location.speed
-    coords["heading"] = location.course
+    // CoreLocation reports invalid readings as negative values; leave them out so they are null
+    // on the JS/Rust side, as documented.
+    if location.verticalAccuracy >= 0 {
+      coords["altitude"] = location.altitude
+      coords["altitudeAccuracy"] = location.verticalAccuracy
+    }
+    if location.speed >= 0 {
+      coords["speed"] = location.speed
+    }
+    if location.course >= 0 {
+      coords["heading"] = location.course
+    }
     ret["timestamp"] = Int((location.timestamp.timeIntervalSince1970 * 1000))
     ret["coords"] = coords
 
