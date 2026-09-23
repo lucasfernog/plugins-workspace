@@ -22,7 +22,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::create_dir_all,
     io::BufReader,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
 };
 
 mod cmd;
@@ -133,7 +133,12 @@ struct RestoringWindowState(Mutex<HashMap<String, usize>>);
 
 impl RestoringWindowState {
     fn start(&self, label: &str) -> RestoringWindowGuard<'_> {
-        *self.0.lock().unwrap().entry(label.into()).or_default() += 1;
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(label.into())
+            .or_default() += 1;
         RestoringWindowGuard {
             state: self,
             label: label.into(),
@@ -141,7 +146,10 @@ impl RestoringWindowState {
     }
 
     fn is_restoring(&self, label: &str) -> bool {
-        self.0.lock().unwrap().contains_key(label)
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(label)
     }
 }
 
@@ -152,7 +160,7 @@ struct RestoringWindowGuard<'a> {
 
 impl Drop for RestoringWindowGuard<'_> {
     fn drop(&mut self) {
-        let mut restoring = self.state.0.lock().unwrap();
+        let mut restoring = self.state.0.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(count) = restoring.get_mut(&self.label) {
             *count -= 1;
             if *count == 0 {
@@ -182,7 +190,7 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         // only after releasing it: off the main thread, window getters block on the event
         // loop, whose window event handlers take this same lock.
         let tracked: Vec<(String, WebviewWindow<R>)> = {
-            let state = cache.0.lock().unwrap();
+            let state = cache.0.lock().unwrap_or_else(PoisonError::into_inner);
             state
                 .keys()
                 .filter_map(|label| {
@@ -204,7 +212,7 @@ impl<R: Runtime> AppHandleExt for tauri::AppHandle<R> {
         }
 
         let contents = {
-            let mut state = cache.0.lock().unwrap();
+            let mut state = cache.0.lock().unwrap_or_else(PoisonError::into_inner);
             for (label, snapshot) in snapshots {
                 if let Some(s) = state.get_mut(&label) {
                     snapshot.apply(s);
@@ -255,7 +263,7 @@ impl<R: Runtime> WindowExt for Window<R> {
         let saved_state = cache
             .0
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .get(label)
             .filter(|state| *state != &WindowState::default())
             .cloned();
@@ -337,7 +345,7 @@ impl<R: Runtime> WindowExt for Window<R> {
                 metadata.fullscreen = self.is_fullscreen()?;
             }
 
-            let mut c = cache.0.lock().unwrap();
+            let mut c = cache.0.lock().unwrap_or_else(PoisonError::into_inner);
             let entry = c.entry(label.into()).or_default();
             // another thread may have cached a state for this window in the meantime
             if *entry == WindowState::default() {
@@ -579,7 +587,7 @@ impl Builder {
                 {
                     cache
                         .lock()
-                        .unwrap()
+                        .unwrap_or_else(PoisonError::into_inner)
                         .entry(label.clone())
                         .or_insert_with(WindowState::default);
                 }
@@ -587,7 +595,7 @@ impl Builder {
                 window.on_window_event(move |e| match e {
                     WindowEvent::CloseRequested { .. } => {
                         if let Ok(snapshot) = window_clone.snapshot(state_flags) {
-                            let mut c = cache.lock().unwrap();
+                            let mut c = cache.lock().unwrap_or_else(PoisonError::into_inner);
                             if let Some(state) = c.get_mut(&label) {
                                 snapshot.apply(state);
                             }
@@ -601,7 +609,7 @@ impl Builder {
                                 .is_restoring(window_clone.label())
                             && !window_clone.is_minimized().unwrap_or_default() =>
                     {
-                        let mut c = cache.lock().unwrap();
+                        let mut c = cache.lock().unwrap_or_else(PoisonError::into_inner);
                         if let Some(state) = c.get_mut(&label) {
                             state.prev_x = state.x;
                             state.prev_y = state.y;
@@ -627,7 +635,7 @@ impl Builder {
                         };
 
                         if !window_clone.is_minimized().unwrap_or_default() && !is_maximized {
-                            let mut c = cache.lock().unwrap();
+                            let mut c = cache.lock().unwrap_or_else(PoisonError::into_inner);
                             if let Some(state) = c.get_mut(&label) {
                                 state.width = size.width;
                                 state.height = size.height;
