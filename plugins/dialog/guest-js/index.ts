@@ -328,11 +328,11 @@ type OpenDialogReturn<T extends OpenDialogOptions> = T['directory'] extends true
  * Open a file/directory selection dialog.
  *
  * The selected paths are added to the filesystem and asset protocol scopes.
- * When security is more important than the easy of use of this API,
+ * When security is more important than the ease of use of this API,
  * prefer writing a dedicated command instead.
  *
  * Note that the scope change is not persisted, so the values are cleared when the application is restarted.
- * You can save it to the filesystem using [tauri-plugin-persisted-scope](https://github.com/tauri-apps/tauri-plugin-persisted-scope).
+ * You can save it to the filesystem using [tauri-plugin-persisted-scope](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/persisted-scope).
  * @example
  * ```typescript
  * import { open } from '@tauri-apps/plugin-dialog';
@@ -392,11 +392,11 @@ async function open<T extends OpenDialogOptions>(
  * Open a file/directory save dialog.
  *
  * The selected path is added to the filesystem and asset protocol scopes.
- * When security is more important than the easy of use of this API,
+ * When security is more important than the ease of use of this API,
  * prefer writing a dedicated command instead.
  *
  * Note that the scope change is not persisted, so the values are cleared when the application is restarted.
- * You can save it to the filesystem using [tauri-plugin-persisted-scope](https://github.com/tauri-apps/tauri-plugin-persisted-scope).
+ * You can save it to the filesystem using [tauri-plugin-persisted-scope](https://github.com/tauri-apps/plugins-workspace/tree/v2/plugins/persisted-scope).
  * @example
  * ```typescript
  * import { save } from '@tauri-apps/plugin-dialog';
