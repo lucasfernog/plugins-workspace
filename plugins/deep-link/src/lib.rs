@@ -15,6 +15,8 @@ use tauri::{
     AppHandle, EventId, Listener, Manager, Runtime,
 };
 
+#[cfg(test)]
+mod build_support;
 mod commands;
 mod config;
 mod error;

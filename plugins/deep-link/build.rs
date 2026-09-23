@@ -6,6 +6,10 @@
 mod config;
 use config::{AssociatedDomain, Config};
 
+#[path = "src/build_support.rs"]
+mod build_support;
+use build_support::xml_escape;
+
 const COMMANDS: &[&str] = &["get_current", "register", "unregister", "is_registered"];
 
 // TODO: Consider using activity-alias in case users may have multiple activities in their app.
@@ -13,7 +17,7 @@ fn intent_filter(domain: &AssociatedDomain) -> String {
     let host = domain
         .host
         .as_ref()
-        .map(|h| format!(r#"<data android:host="{h}" />"#))
+        .map(|h| format!(r#"<data android:host="{}" />"#, xml_escape(h)))
         .unwrap_or_default();
 
     let auto_verify = if domain.is_app_link() {
@@ -39,32 +43,32 @@ fn intent_filter(domain: &AssociatedDomain) -> String {
         schemes = domain
             .scheme
             .iter()
-            .map(|scheme| format!(r#"<data android:scheme="{scheme}" />"#))
+            .map(|scheme| format!(r#"<data android:scheme="{}" />"#, xml_escape(scheme)))
             .collect::<Vec<_>>()
             .join("\n    "),
         host = host,
         domains = domain
             .path
             .iter()
-            .map(|path| format!(r#"<data android:path="{path}" />"#))
+            .map(|path| format!(r#"<data android:path="{}" />"#, xml_escape(path)))
             .collect::<Vec<_>>()
             .join("\n    "),
         path_patterns = domain
             .path_pattern
             .iter()
-            .map(|pattern| format!(r#"<data android:pathPattern="{pattern}" />"#))
+            .map(|pattern| { format!(r#"<data android:pathPattern="{}" />"#, xml_escape(pattern)) })
             .collect::<Vec<_>>()
             .join("\n    "),
         path_prefixes = domain
             .path_prefix
             .iter()
-            .map(|prefix| format!(r#"<data android:pathPrefix="{prefix}" />"#))
+            .map(|prefix| { format!(r#"<data android:pathPrefix="{}" />"#, xml_escape(prefix)) })
             .collect::<Vec<_>>()
             .join("\n    "),
         path_suffixes = domain
             .path_suffix
             .iter()
-            .map(|suffix| format!(r#"<data android:pathSuffix="{suffix}" />"#))
+            .map(|suffix| { format!(r#"<data android:pathSuffix="{}" />"#, xml_escape(suffix)) })
             .collect::<Vec<_>>()
             .join("\n    "),
     )
@@ -136,10 +140,12 @@ fn main() {
                 .expect("failed to update entitlements");
             }
 
+            // domains that only use http(s) have no custom scheme to register
             let deep_link_domains = config
                 .mobile
                 .iter()
                 .filter(|domain| !domain.is_app_link())
+                .filter(|domain| !build_support::custom_schemes(domain).is_empty())
                 .collect::<Vec<_>>();
 
             if deep_link_domains.is_empty() {
@@ -154,13 +160,7 @@ fn main() {
                         deep_link_domains
                             .iter()
                             .map(|domain| {
-                                let schemes = domain
-                                    .scheme
-                                    .iter()
-                                    .filter(|scheme| {
-                                        scheme.as_str() != "https" && scheme.as_str() != "http"
-                                    })
-                                    .collect::<Vec<_>>();
+                                let schemes = build_support::custom_schemes(domain);
 
                                 let mut dict = plist::Dictionary::new();
                                 dict.insert(
@@ -173,7 +173,7 @@ fn main() {
                                 );
                                 dict.insert(
                                     "CFBundleURLName".into(),
-                                    domain.scheme[0].clone().into(),
+                                    schemes[0].to_string().into(),
                                 );
                                 plist::Value::Dictionary(dict)
                             })
