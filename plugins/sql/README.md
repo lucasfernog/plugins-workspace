@@ -112,7 +112,7 @@ This plugin supports database migrations, allowing you to manage database schema
 
 ### Defining Migrations
 
-Migrations are defined in Rust using the `Migration` struct. Each migration should include a unique version number, a description, the SQL to be executed, and the type of migration (Up or Down).
+Migrations are defined in Rust using the `Migration` struct. Each migration should include a unique version number, a description, the SQL to be executed, and the type of migration (Up or Down). Only `MigrationKind::Up` migrations are executed; `Down` migrations are currently ignored.
 
 Example of a migration:
 
@@ -136,7 +136,8 @@ Example of adding migrations:
 ```rust
 use tauri_plugin_sql::{Builder, Migration, MigrationKind};
 
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     let migrations = vec![
         // Define your migrations here
         Migration {
@@ -149,13 +150,16 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(
-            tauri_plugin_sql::Builder::default()
+            Builder::new()
                 .add_migrations("sqlite:mydatabase.db", migrations)
                 .build(),
         )
-        ...
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 ```
+
+The connection string passed to `add_migrations` must be exactly the one used in `preload` or `Database.load()` (for example `sqlite:mydatabase.db`), otherwise the migrations are not run.
 
 ### Applying Migrations
 
@@ -178,12 +182,12 @@ import Database from '@tauri-apps/plugin-sql'
 const db = await Database.load('sqlite:mydatabase.db')
 ```
 
-Ensure that the migrations are defined in the correct order and are safe to run multiple times.
-
 ### Migration Management
 
-- **Version Control**: Each migration must have a unique version number. This is crucial for ensuring the migrations are applied in the correct order.
-- **Idempotency**: Write migrations in a way that they can be safely re-run without causing errors or unintended consequences.
+- **Applied once**: sqlx records every applied migration in the `_sqlx_migrations` table of the database, so each version runs at most once per database. Migrations therefore do not need to be safe to re-run.
+- **Version Control**: Each migration must have a unique version number. Register the migrations in ascending version order.
+- **Never change a shipped migration**: sqlx stores a checksum of every applied migration. Editing the SQL of a migration that already ran fails every later load with a `VersionMismatch` error, and removing one from the list fails with a `VersionMissing` error. Add a new migration with a higher version instead.
+- **Transactions**: Each migration runs in its own transaction. If one fails, only that migration is rolled back; the ones before it stay applied. MySQL does not support transactional DDL, so a failed MySQL migration can leave partial changes behind.
 - **Testing**: Thoroughly test migrations to ensure they work as expected and do not compromise the integrity of your database.
 
 ## Contributing
