@@ -34,8 +34,10 @@ class ClipboardPlugin: Plugin {
     let clipboard = UIPasteboard.general
     if let text = clipboard.string {
       invoke.resolve(ReadClipData.plainText(text: text))
-    } else {
+    } else if clipboard.numberOfItems == 0 {
       invoke.reject("Clipboard is empty")
+    } else {
+      invoke.reject("Clipboard content is not text")
     }
   }
     
