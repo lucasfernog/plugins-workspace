@@ -37,7 +37,7 @@ impl<R: Runtime> Haptics<R> {
     ///
     /// On iOS this plays a continuous [Core Haptics](https://developer.apple.com/documentation/corehaptics)
     /// pattern when the device supports it, falling back to the system alert vibration
-    /// otherwise. On Android it uses [`Vibrator`](https://developer.android.com/reference/android/os/Vibrator).
+    /// otherwise, which has a fixed length and ignores `duration`. On Android it uses [`Vibrator`](https://developer.android.com/reference/android/os/Vibrator).
     ///
     /// # Errors
     ///

@@ -20,7 +20,8 @@ import type {
  * Triggers a vibration for `duration` milliseconds, replacing the vibration that is still
  * playing, if any. A `duration` of `0` only stops the current vibration.
  *
- * Has no effect on desktop platforms.
+ * On iOS devices without Core Haptics support, the fixed-length system vibration plays instead
+ * and `duration` is ignored. Has no effect on desktop platforms.
  *
  * @example
  * ```typescript
