@@ -130,6 +130,44 @@ describePlugin('log', () => {
     expect(count).toBe(1)
   })
 
+  it('the record target points at the calling function', async () => {
+    const messages = await tauri(
+      (api, needle) =>
+        new Promise<{ named: string; anonymous: string }>((resolve, reject) => {
+          const messages = { named: '', anonymous: '' }
+          function namedLogCaller() {
+            return api.log.info(`${needle} named`)
+          }
+          function outerLogCaller() {
+            // the anonymous arrow function is the caller here
+            return [0].map(() => api.log.info(`${needle} anonymous`))[0]
+          }
+          api.log
+            .attachLogger((record) => {
+              if (record.message.includes(`${needle} named`)) {
+                messages.named = record.message
+              } else if (record.message.includes(`${needle} anonymous`)) {
+                messages.anonymous = record.message
+              }
+            })
+            .then(async (detach) => {
+              await namedLogCaller()
+              await outerLogCaller()
+              setTimeout(() => {
+                detach()
+                resolve(messages)
+              }, 1000)
+            })
+            .catch(reject)
+        }),
+      'caller location from e2e'
+    )
+    expect(messages.named).toContain('[webview::namedLogCaller')
+    expect(messages.anonymous).toContain('[webview')
+    // WebKit used to skip anonymous frames and report the next named one
+    expect(messages.anonymous).not.toContain('outerLogCaller')
+  })
+
   it('attachConsole forwards records to the console', async () => {
     const forwarded = await tauri(
       (api, needle) =>

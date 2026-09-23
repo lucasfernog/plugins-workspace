@@ -115,13 +115,35 @@ function getCallerLocation(stack?: string) {
     // bar@filename.js:6:6
     // foo@filename.js:2:6
     // global code@filename.js:13:4
+    //
+    // Anonymous functions (e.g. arrow function callbacks) have an empty name:
+    //
+    // @filename.js:13:4
 
-    const traces = stack.split('\n').map((line) => line.split('@'))
-    const filtered = traces.filter(([name, location]) => {
-      return name.length > 0 && location !== '[native code]'
-    })
+    const traces = stack
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const separator = line.indexOf('@')
+        return separator === -1
+          ? { name: line, location: '' }
+          : {
+              name: line.slice(0, separator),
+              location: line.slice(separator + 1)
+            }
+      })
+    const filtered = traces.filter(
+      ({ location }) => location !== '[native code]'
+    )
     // Find the third line (caller's caller of the current location)
-    return filtered[2]?.filter((v) => v.length > 0).join('@')
+    const caller = filtered[2]
+    if (!caller) {
+      return
+    }
+    if (!caller.location) {
+      return caller.name || undefined
+    }
+    return `${caller.name || '<anonymous>'}@${caller.location}`
   }
 }
 
