@@ -3,6 +3,23 @@
 // SPDX-License-Identifier: MIT
 
 //! Automatically launch your application at startup. Supports Windows, Mac (via AppleScript or Launch Agent), and Linux.
+//!
+//! This crate is empty on Android and iOS, so gate every use of it (and its dependency in
+//! `Cargo.toml`) to desktop targets, for example with `#[cfg(desktop)]`:
+//!
+//! ```no_run
+//! # fn run<R: tauri::Runtime>(builder: tauri::Builder<R>) {
+//! builder.setup(|app| {
+//!     #[cfg(desktop)]
+//!     app.handle().plugin(
+//!         tauri_plugin_autostart::Builder::new()
+//!             .arg("--autostarted")
+//!             .build(),
+//!     )?;
+//!     Ok(())
+//! });
+//! # }
+//! ```
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
