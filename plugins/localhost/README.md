@@ -28,8 +28,7 @@ Install the Core plugin by adding the following to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-portpicker = "0.1" # used in the example to pick a random free port
-tauri-plugin-localhost = "2.0.0"
+tauri-plugin-localhost = "2"
 # alternatively with Git:
 tauri-plugin-localhost = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
 ```
@@ -44,22 +43,32 @@ First you need to register the core plugin with Tauri:
 #[cfg(not(dev))]
 use tauri::{ipc::CapabilityBuilder, Manager, Url};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+#[cfg(not(dev))]
+use tauri_plugin_localhost::LocalhostExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let port = portpicker::pick_unused_port().expect("failed to find unused port");
-
     tauri::Builder::default()
-        .plugin(tauri_plugin_localhost::Builder::new(port).build())
-        .setup(move |app| {
+        // Port 0 lets the operating system pick a free port. Bind to 127.0.0.1 explicitly:
+        // `localhost` only binds one address family, leaving the other one to other processes.
+        .plugin(
+            tauri_plugin_localhost::Builder::new(0)
+                .host("127.0.0.1")
+                .build(),
+        )
+        .setup(|app| {
             // In `tauri dev` mode you usually use your dev server.
             #[cfg(dev)]
             let url = WebviewUrl::App(std::path::PathBuf::from("/"));
 
             #[cfg(not(dev))]
             let url = {
-                let url: Url = format!("http://localhost:{}", port).parse().unwrap();
+                // The address the server is actually bound to, including the picked port.
+                let addr = app.localhost_addr().expect("localhost plugin not registered");
+                let url: Url = format!("http://{addr}").parse().unwrap();
 
+                // The page is now served from a remote origin, which has no IPC access by
+                // default. This grants it to the `main` window when it loads this URL.
                 app.add_capability(
                     CapabilityBuilder::new("localhost")
                         .remote(url.to_string())
@@ -80,6 +89,12 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 ```
+
+If the server can't bind to its address, plugin setup fails and the app doesn't start.
+
+The server also runs during `tauri dev`. If `devUrl` is set and `frontendDist` is a directory, it serves the files from `frontendDist` on disk, so build your frontend first if you want to load it through the server in dev mode.
+
+Anything granted to the `localhost` capability is available to whatever page is loaded from that URL. The server has no authentication, so any local process can read the assets it serves.
 
 ## Contributing
 
