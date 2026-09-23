@@ -28,10 +28,10 @@ interface Options {
    */
   id?: number
   /**
-   * Identifier of the {@link Channel} that deliveres this notification.
+   * Identifier of the {@link Channel} that delivers this notification. Android only.
    *
    * If the channel does not exist, the notification won't fire.
-   * Make sure the channel exists with {@link listChannels} and {@link createChannel}.
+   * Make sure the channel exists with {@link channels} and {@link createChannel}.
    */
   channelId?: string
   /**
@@ -44,41 +44,51 @@ interface Options {
   body?: string
   /**
    * Schedule this notification to fire on a later time or a fixed interval.
+   *
+   * Mobile only: desktop notifications are shown immediately.
    */
   schedule?: Schedule
   /**
    * Multiline text.
    * Changes the notification style to big text.
    * Cannot be used with `inboxLines`.
+   *
+   * Android only.
    */
   largeBody?: string
   /**
    * Detail text for the notification with `largeBody`, `inboxLines` or `groupSummary`.
+   *
+   * Android only.
    */
   summary?: string
   /**
-   * Defines an action type for this notification.
+   * The identifier of an action type registered with {@link registerActionTypes},
+   * whose actions are displayed on this notification. Mobile only.
    */
   actionTypeId?: string
   /**
-   * Identifier used to group multiple notifications.
+   * Identifier used to group multiple notifications. Mobile only.
    *
    * https://developer.apple.com/documentation/usernotifications/unmutablenotificationcontent/1649872-threadidentifier
    */
   group?: string
   /**
-   * Instructs the system that this notification is the summary of a group on Android.
+   * Instructs the system that this notification is the summary of a group. Android only.
    */
   groupSummary?: boolean
   /**
-   * The sound resource name or file path for the notification.
+   * The sound for the notification.
    *
    * ## Platform-specific behavior:
    *
-   * - On macOS: use system sounds (e.g., "Ping", "Blow") or sound files in the app bundle
-   * - On Linux: use XDG theme sounds (e.g., "message-new-instant") or file paths
-   * - On Windows: use file paths to sound files (.wav format)
-   * - On Mobile: use resource names
+   * - **macOS**: a system sound name (e.g. `Ping`, `Blow`) or a sound file in the app bundle.
+   * - **Linux**: an XDG sound theme name (e.g. `message-new-instant`).
+   * - **Windows**: one of the built-in toast sounds: `Default`, `IM`, `Mail`, `Reminder`, `SMS`,
+   *   `Alarm`, `Alarm2`-`Alarm10`, `Call`, `Call2`-`Call10`. File paths are not supported.
+   * - **Android**: the name of a sound resource in the app's `res/raw` folder. On Android 8+ the
+   *   sound is decided by the notification channel, so create a {@link Channel} with this sound.
+   * - **iOS**: the name of a sound file in the app bundle.
    */
   sound?: string
   /**
@@ -86,35 +96,35 @@ interface Options {
    * Changes the notification style to inbox.
    * Cannot be used with `largeBody`.
    *
-   * Only supports up to 5 lines.
+   * Only supports up to 5 lines. Android only.
    */
   inboxLines?: string[]
   /**
    * Notification icon.
    *
-   * On Android the icon must be placed in the app's `res/drawable` folder.
+   * On Android the icon must be placed in the app's `res/drawable` folder. Not used on iOS.
    */
   icon?: string
   /**
-   * Notification large icon (Android).
+   * Notification large icon. Android only.
    *
    * The icon must be placed in the app's `res/drawable` folder.
    */
   largeIcon?: string
   /**
-   * Icon color on Android.
+   * Icon color, as a hex color string such as `#ff0000`. Android only.
    */
   iconColor?: string
   /**
-   * Notification attachments.
+   * Notification attachments. iOS only.
    */
   attachments?: Attachment[]
   /**
-   * Extra payload to store in the notification.
+   * Extra payload to store in the notification. Mobile only.
    */
   extra?: Record<string, unknown>
   /**
-   * If true, the notification cannot be dismissed by the user on Android.
+   * If true, the notification cannot be dismissed by the user. Android only.
    *
    * An application service must manage the dismissal of the notification.
    * It is typically used to indicate a background task that is pending (e.g. a file download)
@@ -122,19 +132,20 @@ interface Options {
    */
   ongoing?: boolean
   /**
-   * Automatically cancel the notification when the user clicks on it.
+   * Automatically cancel the notification when the user clicks on it. Android only.
    */
   autoCancel?: boolean
   /**
-   * Changes the notification presentation to be silent on iOS (no badge, no sound, not listed).
+   * Presents the notification without a banner, sound or badge while the app is in the foreground.
+   * iOS only; it does not affect notifications delivered while the app is in the background.
    */
   silent?: boolean
   /**
-   * Notification visibility.
+   * How much of the notification is shown on the lock screen. Android only.
    */
   visibility?: Visibility
   /**
-   * Sets the number of items this notification represents on Android.
+   * Sets the number of items this notification represents. Android only.
    */
   number?: number
 }
@@ -152,6 +163,8 @@ interface ScheduleInterval {
   year?: number
   /**
    * The month of the year the notification fires on.
+   *
+   * The base differs per platform: on Android `0` is January, on iOS `1` is January.
    */
   month?: number
   /**
@@ -352,12 +365,12 @@ class Schedule {
 }
 
 /**
- * Attachment of a notification.
+ * Attachment of a notification, such as an image. iOS only.
  */
 interface Attachment {
   /** Attachment identifier. */
   id: string
-  /** Attachment URL. Accepts the `asset` and `file` protocols. */
+  /** Attachment URL. Must be a `file://` URL of a file the app can read. */
   url: string
 }
 
@@ -459,6 +472,8 @@ interface PendingNotification {
   body?: string
   /**
    * The schedule that determines when the notification is delivered.
+   *
+   * On iOS `at` and `every` schedules are both reported as `at`, with the date of the next delivery.
    */
   schedule: Schedule
 }
@@ -688,7 +703,10 @@ function sendNotification(options: Options | string): void {
 }
 
 /**
- * Register actions that are performed when the user clicks on the notification.
+ * Registers the action types (groups of buttons) notifications can reference through their
+ * `actionTypeId` option.
+ *
+ * Mobile only. On iOS each call replaces the previously registered action types.
  *
  * @example
  * ```typescript
@@ -713,7 +731,9 @@ async function registerActionTypes(types: ActionType[]): Promise<void> {
 }
 
 /**
- * Retrieves the list of pending notifications.
+ * Retrieves the list of scheduled notifications that have not been delivered yet.
+ *
+ * Mobile only.
  *
  * @example
  * ```typescript
@@ -731,6 +751,8 @@ async function pending(): Promise<PendingNotification[]> {
 
 /**
  * Cancels the pending notifications with the given list of identifiers.
+ *
+ * Mobile only.
  *
  * @example
  * ```typescript
@@ -751,6 +773,8 @@ async function cancel(notifications: number[]): Promise<void> {
 /**
  * Cancels all pending notifications.
  *
+ * Mobile only.
+ *
  * @example
  * ```typescript
  * import { cancelAll } from '@tauri-apps/plugin-notification';
@@ -766,7 +790,9 @@ async function cancelAll(): Promise<void> {
 }
 
 /**
- * Retrieves the list of active notifications.
+ * Retrieves the list of delivered notifications that are still shown in the notification center.
+ *
+ * Mobile only.
  *
  * @example
  * ```typescript
@@ -784,6 +810,8 @@ async function active(): Promise<ActiveNotification[]> {
 
 /**
  * Removes the active notifications with the given list of identifiers.
+ *
+ * Mobile only.
  *
  * @example
  * ```typescript
@@ -806,6 +834,8 @@ async function removeActive(
 /**
  * Removes all active notifications.
  *
+ * Mobile only.
+ *
  * @example
  * ```typescript
  * import { removeAllActive } from '@tauri-apps/plugin-notification';
@@ -822,6 +852,8 @@ async function removeAllActive(): Promise<void> {
 
 /**
  * Creates a notification channel.
+ *
+ * Android only: rejects on iOS and is not available on desktop.
  *
  * @example
  * ```typescript
@@ -849,6 +881,8 @@ async function createChannel(channel: Channel): Promise<void> {
 /**
  * Removes the channel with the given identifier.
  *
+ * Android only: rejects on iOS and is not available on desktop.
+ *
  * @example
  * ```typescript
  * import { removeChannel } from '@tauri-apps/plugin-notification';
@@ -867,6 +901,8 @@ async function removeChannel(id: string): Promise<void> {
 
 /**
  * Retrieves the list of notification channels.
+ *
+ * Android only: rejects on iOS and is not available on desktop.
  *
  * @example
  * ```typescript
@@ -910,18 +946,25 @@ async function onNotificationReceived(
 /**
  * Listens to the actions the user performs on a notification.
  *
- * Only emitted on mobile, for notifications that reference an action type
- * registered with {@link registerActionTypes}.
+ * Only emitted on mobile, when the user taps a notification or one of the actions of an
+ * action type registered with {@link registerActionTypes}.
+ *
+ * Despite the callback's declared type, the payload is
+ * `{ actionId: string, inputValue?: string, notification: object }`: `actionId` is the
+ * {@link Action} identifier, or `'tap'` for a tap on the notification itself (`'dismiss'` on iOS when the action type sets `customDismissAction`); `inputValue` is the
+ * text typed for an action with `input: true`; `notification` is the notification the action was
+ * performed on.
  *
  * @example
  * ```typescript
  * import { onAction } from '@tauri-apps/plugin-notification';
- * const unlisten = await onAction((notification) => {
- *   console.log(`user acted on notification: ${notification.title}`);
+ * const unlisten = await onAction((event) => {
+ *   const { actionId, inputValue } = event as unknown as { actionId: string; inputValue?: string };
+ *   console.log(`user performed ${actionId}`, inputValue);
  * });
  * ```
  *
- * @param cb The closure called with the notification the action was performed on.
+ * @param cb The closure called with the action payload.
  *
  * @returns A promise resolving to a listener that can be used to stop listening for the event.
  *

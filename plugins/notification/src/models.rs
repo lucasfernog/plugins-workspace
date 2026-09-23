@@ -10,7 +10,7 @@ use url::Url;
 
 /// A media file attached to a notification.
 ///
-/// Attachments are only used on mobile; desktop notifications ignore them.
+/// Attachments are only used on iOS; Android and desktop notifications ignore them.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attachment {
@@ -21,7 +21,7 @@ pub struct Attachment {
 impl Attachment {
     /// Creates a new attachment with the given identifier and URL.
     ///
-    /// The URL accepts the `asset` and `file` protocols.
+    /// The URL must be a `file://` URL of a file the app can read.
     pub fn new(id: impl Into<String>, url: Url) -> Self {
         Self { id: id.into(), url }
     }
@@ -35,8 +35,12 @@ impl Attachment {
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleInterval {
     /// The year the notification fires on.
+    ///
+    /// Note that a `u8` cannot hold an actual year, so this field cannot be used.
     pub year: Option<u8>,
     /// The month of the year the notification fires on.
+    ///
+    /// The base differs per platform: on Android `0` is January, on iOS `1` is January.
     pub month: Option<u8>,
     /// The day of the month the notification fires on.
     pub day: Option<u8>,

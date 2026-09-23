@@ -108,18 +108,25 @@ impl<R: Runtime> NotificationBuilder<R> {
     /// Multiline text.
     /// Changes the notification style to big text.
     /// Cannot be used with `inboxLines`.
+    ///
+    /// Only used on Android.
     pub fn large_body(mut self, large_body: impl Into<String>) -> Self {
         self.data.large_body.replace(large_body.into());
         self
     }
 
     /// Detail text for the notification with `largeBody`, `inboxLines` or `groupSummary`.
+    ///
+    /// Only used on Android.
     pub fn summary(mut self, summary: impl Into<String>) -> Self {
         self.data.summary.replace(summary.into());
         self
     }
 
-    /// Defines an action type for this notification.
+    /// Sets the identifier of an action type registered with
+    /// `Notification::register_action_types`, whose actions are displayed on this notification.
+    ///
+    /// Only used on mobile.
     pub fn action_type_id(mut self, action_type_id: impl Into<String>) -> Self {
         self.data.action_type_id.replace(action_type_id.into());
         self
@@ -133,13 +140,25 @@ impl<R: Runtime> NotificationBuilder<R> {
         self
     }
 
-    /// Instructs the system that this notification is the summary of a group on Android.
+    /// Instructs the system that this notification is the summary of a group.
+    ///
+    /// Only used on Android.
     pub fn group_summary(mut self) -> Self {
         self.data.group_summary = true;
         self
     }
 
-    /// The sound resource name for the notification.
+    /// The sound for the notification.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **macOS**: a system sound name (e.g. `Ping`) or a sound file in the app bundle.
+    /// - **Linux**: an XDG sound theme name (e.g. `message-new-instant`).
+    /// - **Windows**: one of the built-in toast sounds (`Default`, `IM`, `Mail`, `Reminder`, `SMS`,
+    ///   `Alarm`, `Alarm2`-`Alarm10`, `Call`, `Call2`-`Call10`). File paths are not supported.
+    /// - **Android**: the name of a sound resource in the app's `res/raw` folder. On Android 8+ the
+    ///   notification channel decides the sound.
+    /// - **iOS**: the name of a sound file in the app bundle.
     pub fn sound(mut self, sound: impl Into<String>) -> Self {
         self.data.sound.replace(sound.into());
         self
@@ -149,7 +168,7 @@ impl<R: Runtime> NotificationBuilder<R> {
     /// Changes the notification style to inbox.
     /// Cannot be used with `largeBody`.
     ///
-    /// Only supports up to 5 lines.
+    /// Only supports up to 5 lines. Only used on Android.
     pub fn inbox_line(mut self, line: impl Into<String>) -> Self {
         self.data.inbox_lines.push(line.into());
         self
@@ -163,7 +182,7 @@ impl<R: Runtime> NotificationBuilder<R> {
         self
     }
 
-    /// Notification large icon (Android).
+    /// Notification large icon. Only used on Android.
     ///
     /// The icon must be placed in the app's `res/drawable` folder.
     pub fn large_icon(mut self, large_icon: impl Into<String>) -> Self {
@@ -171,13 +190,13 @@ impl<R: Runtime> NotificationBuilder<R> {
         self
     }
 
-    /// Icon color on Android.
+    /// Icon color, as a hex color string such as `#ff0000`. Only used on Android.
     pub fn icon_color(mut self, icon_color: impl Into<String>) -> Self {
         self.data.icon_color.replace(icon_color.into());
         self
     }
 
-    /// Append an attachment to the notification.
+    /// Append an attachment to the notification. Only used on iOS.
     pub fn attachment(mut self, attachment: Attachment) -> Self {
         self.data.attachments.push(attachment);
         self
@@ -201,13 +220,15 @@ impl<R: Runtime> NotificationBuilder<R> {
         self
     }
 
-    /// Automatically cancel the notification when the user clicks on it.
+    /// Automatically cancel the notification when the user clicks on it. Only used on Android.
     pub fn auto_cancel(mut self) -> Self {
         self.data.auto_cancel = true;
         self
     }
 
-    /// Changes the notification presentation to be silent on iOS (no badge, no sound, not listed).
+    /// Presents the notification without a banner, sound or badge while the app is in the foreground.
+    ///
+    /// Only used on iOS; notifications delivered while the app is in the background are not affected.
     pub fn silent(mut self) -> Self {
         self.data.silent = true;
         self
