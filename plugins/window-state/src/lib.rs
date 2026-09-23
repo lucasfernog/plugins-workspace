@@ -420,7 +420,19 @@ impl Builder {
                 cmd::filename
             ])
             .setup(move |app, _api| {
-                let cache = load_saved_window_states(app, &filename).unwrap_or_default();
+                let cache = match load_saved_window_states(app, &filename) {
+                    Ok(cache) => cache,
+                    // nothing saved yet
+                    Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                        Default::default()
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "failed to load the saved window state, starting from scratch: {e}"
+                        );
+                        Default::default()
+                    }
+                };
                 app.manage(WindowStateCache(Arc::new(Mutex::new(cache))));
                 app.manage(RestoringWindowState(Mutex::new(())));
                 app.manage(PluginState {
@@ -452,7 +464,9 @@ impl Builder {
                 }
 
                 if !self.skip_initial_state.contains(label) {
-                    let _ = window.restore_state(state_flags);
+                    if let Err(e) = window.restore_state(state_flags) {
+                        log::warn!("failed to restore the state of window `{label}`: {e}");
+                    }
                 }
 
                 let cache = window.state::<WindowStateCache>();
@@ -474,7 +488,9 @@ impl Builder {
                     WindowEvent::CloseRequested { .. } => {
                         let mut c = cache.lock().unwrap();
                         if let Some(state) = c.get_mut(&label) {
-                            let _ = window_clone.update_state(state, state_flags);
+                            if let Err(e) = window_clone.update_state(state, state_flags) {
+                                log::warn!("failed to read the state of window `{label}`: {e}")
+                            }
                         }
                     }
 
@@ -527,7 +543,9 @@ impl Builder {
             })
             .on_event(move |app, event| {
                 if let RunEvent::Exit = event {
-                    let _ = app.save_window_state(state_flags);
+                    if let Err(e) = app.save_window_state(state_flags) {
+                        log::error!("failed to save the window state: {e}");
+                    }
                 }
             })
             .build()
