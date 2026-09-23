@@ -491,7 +491,15 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
             flag
         )
 
-        nfcAdapter?.enableForegroundDispatch(activity, pendingIntent, filters, techLists)
+        // enableForegroundDispatch must be called from the main thread, while the activity is resumed
+        activity.runOnUiThread {
+            try {
+                nfcAdapter?.enableForegroundDispatch(activity, pendingIntent, filters, techLists)
+            } catch (e: IllegalStateException) {
+                // the activity is paused, onResume enables the dispatch for the current session
+                Logger.warn("NFC", "failed to enable foreground dispatch: $e")
+            }
+        }
     }
 
     private fun disableNFCInForeground() {
