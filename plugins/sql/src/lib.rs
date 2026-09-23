@@ -116,9 +116,11 @@ pub struct Migration {
 struct MigrationList(Vec<Migration>);
 
 impl MigrationList {
-    /// Converts the [`MigrationKind::Up`] migrations of this list to sqlx migrations.
+    /// Converts the [`MigrationKind::Up`] migrations of this list to sqlx migrations,
+    /// in ascending version order (sqlx applies them in the order they are listed).
     fn to_sqlx(&self) -> Vec<SqlxMigration> {
-        self.0
+        let mut migrations: Vec<SqlxMigration> = self
+            .0
             .iter()
             .filter(|migration| matches!(migration.kind, MigrationKind::Up))
             .map(|migration| {
@@ -130,7 +132,10 @@ impl MigrationList {
                     false,
                 )
             })
-            .collect()
+            .collect();
+        // stable, so migrations sharing a version keep their registration order
+        migrations.sort_by_key(|migration| migration.version);
+        migrations
     }
 }
 
@@ -291,6 +296,30 @@ mod tests {
             .await
             .unwrap();
         DbPool::Sqlite(pool)
+    }
+
+    #[test]
+    fn migrations_are_sorted_by_version_and_down_is_skipped() {
+        let list = MigrationList(vec![
+            migration(3, "SELECT 3;"),
+            Migration {
+                version: 2,
+                description: "down",
+                sql: "SELECT 'down';",
+                kind: MigrationKind::Down,
+            },
+            migration(1, "SELECT 1;"),
+            migration(2, "SELECT 2;"),
+        ]);
+        let resolved = list.to_sqlx();
+        assert_eq!(
+            resolved.iter().map(|m| m.version).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        assert!(resolved
+            .iter()
+            .all(|m| m.migration_type == MigrationType::ReversibleUp));
+        assert_eq!(resolved[1].sql, "SELECT 2;");
     }
 
     #[test]
