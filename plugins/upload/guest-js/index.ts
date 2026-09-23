@@ -67,21 +67,29 @@ enum HttpMethod {
  * @example
  * ```typescript
  * import { upload } from '@tauri-apps/plugin-upload';
+ * import { appDataDir, join } from '@tauri-apps/api/path';
  *
- * await upload(
+ * const response = await upload(
  *   'https://example.com/file-upload',
- *   './path/to/my/file.txt',
- *   ({ progress, total }) => console.log(`Uploaded ${progress} of ${total} bytes`),
- *   { 'Content-Type': 'text/plain' }
+ *   await join(await appDataDir(), 'file.txt'),
+ *   ({ progressTotal, total }) => console.log(`Uploaded ${progressTotal} of ${total} bytes`),
+ *   new Map([['Authorization', 'Bearer <token>']])
  * );
  * ```
  *
  * @param url The URL to upload the file to.
- * @param filePath The path of the file to upload.
- * @param progressHandler A callback invoked with upload progress updates.
- * @param headers Additional request headers to send with the upload.
+ * @param filePath The absolute path of the file to upload. The path is used as-is: a relative
+ * path resolves against the process's current working directory, and it is not checked against
+ * the file system plugin's scope.
+ * @param progressHandler A callback invoked with upload progress updates. Progress is reported as
+ * the file is read into the request body, so it can reach the total before the server has
+ * received all the data and replied.
+ * @param headers Additional request headers to send with the upload. The `Content-Length` header
+ * is always set from the file size.
  * @param method The HTTP method used to send the file. Defaults to {@link HttpMethod.Post}.
- * @returns A promise resolving to the response body as text.
+ * @returns A promise resolving to the response body as text. It rejects if the file cannot be
+ * read, if the request fails, or with `request failed with status code <code>: <body>` if the
+ * server replies with a non-2xx status.
  *
  * @since 2.0.0
  */
@@ -118,23 +126,30 @@ async function upload(
  * @example
  * ```typescript
  * import { download } from '@tauri-apps/plugin-upload';
+ * import { appDataDir, join } from '@tauri-apps/api/path';
  *
  * await download(
  *   'https://example.com/file-download-link',
- *   './path/to/save/my/file.txt',
- *   ({ progress, total }) => console.log(`Downloaded ${progress} of ${total} bytes`),
- *   { 'Content-Type': 'text/plain' }
+ *   await join(await appDataDir(), 'file.txt'),
+ *   ({ progressTotal, total }) => console.log(`Downloaded ${progressTotal} of ${total} bytes`),
+ *   new Map([['Authorization', 'Bearer <token>']])
  * );
  * ```
  *
  * @param url The URL to download the file from.
- * @param filePath The path to save the file to. It must include the file name.
+ * @param filePath The absolute path to save the file to. It must include the file name, and its
+ * parent directory must already exist. The path is used as-is: a relative path resolves against
+ * the process's current working directory, and it is not checked against the file system
+ * plugin's scope.
  * @param progressHandler A callback invoked with download progress updates. The reported
  * `total` will be `0` if the server did not send a `Content-Length` header or the response body
  * is compressed.
  * @param headers Additional request headers to send with the download request.
  * @param body An optional request body. When provided, the download is requested with an HTTP
  * `POST` request using this value as the body; otherwise an HTTP `GET` request is used.
+ * @returns A promise that resolves once the whole response has been written to `filePath`. It
+ * rejects if the request fails, if the file cannot be written, or with
+ * `request failed with status code <code>: <body>` if the server replies with a non-2xx status.
  *
  * @since 2.0.0
  */
