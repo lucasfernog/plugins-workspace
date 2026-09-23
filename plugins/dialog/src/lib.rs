@@ -337,9 +337,12 @@ impl<R: Runtime> MessageDialogBuilder<R> {
         self
     }
 
-    /// Shows a message dialog
+    /// Shows a message dialog.
     ///
-    /// Returns `true` if the user pressed the OK/Yes button,
+    /// This is not a blocking operation: `f` is called with `true` once the user pressed the
+    /// OK/Yes button (or the first custom button), or with `false` otherwise.
+    ///
+    /// Use [`Self::show_with_result`] to know exactly which button was pressed.
     pub fn show<F: FnOnce(bool) + Send + 'static>(self, f: F) {
         let ok_label = match &self.buttons {
             MessageDialogButtons::OkCustom(ok) => Some(ok.clone()),
@@ -361,16 +364,17 @@ impl<R: Runtime> MessageDialogBuilder<R> {
         })
     }
 
-    /// Shows a message dialog and returns the button that was pressed.
+    /// Shows a message dialog and passes the button that was pressed to `f`.
     ///
-    /// Returns a [`MessageDialogResult`] enum that indicates which button was pressed.
+    /// This is not a blocking operation: `f` is called with a [`MessageDialogResult`] once the
+    /// dialog is closed.
     pub fn show_with_result<F: FnOnce(MessageDialogResult) + Send + 'static>(self, f: F) {
         show_message_dialog(self, f)
     }
 
     /// Shows a message dialog.
     ///
-    /// Returns `true` if the user pressed the OK/Yes button,
+    /// Returns `true` if the user pressed the OK/Yes button (or the first custom button).
     ///
     /// This is a blocking operation,
     /// and should *NOT* be used when running on the main thread context.
