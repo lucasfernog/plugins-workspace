@@ -6,7 +6,11 @@
 use crate::semver_compat::semver_compat_string;
 
 use crate::SingleInstanceCallback;
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 use tauri::{
     plugin::{self, TauriPlugin},
     AppHandle, Manager, RunEvent, Runtime,
@@ -23,10 +27,10 @@ use windows_sys::Win32::{
     },
     UI::WindowsAndMessaging::{
         self as w32wm, AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DestroyWindow,
-        FindWindowW, GetWindowThreadProcessId, RegisterClassExW, SendMessageW, CREATESTRUCTW,
-        GWLP_USERDATA, GWL_STYLE, WINDOW_LONG_PTR_INDEX, WM_COPYDATA, WM_CREATE, WM_DESTROY,
-        WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
-        WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+        FindWindowW, GetWindowThreadProcessId, RegisterClassExW, SendMessageTimeoutW,
+        CREATESTRUCTW, GWLP_USERDATA, GWL_STYLE, SMTO_ABORTIFHUNG, WINDOW_LONG_PTR_INDEX,
+        WM_COPYDATA, WM_CREATE, WM_DESTROY, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
     },
 };
 
@@ -36,26 +40,52 @@ use crate::copydata;
 /// message window or release the mutex.
 const FIND_FIRST_INSTANCE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long the second instance waits for the first instance to handle its message (which
+/// includes running the callback) before exiting anyway.
+const SEND_TIMEOUT_MS: u32 = 10_000;
+
 struct MutexHandle(isize);
 
 struct TargetWindowHandle(isize);
 
 struct UserData<R: Runtime> {
     app: AppHandle<R>,
-    callback: Box<SingleInstanceCallback<R>>,
+    callback: RefCell<Box<SingleInstanceCallback<R>>>,
+    pending: RefCell<VecDeque<(Vec<String>, String)>>,
 }
 
 impl<R: Runtime> UserData<R> {
+    fn new(app: AppHandle<R>, callback: Box<SingleInstanceCallback<R>>) -> Self {
+        Self {
+            app,
+            callback: RefCell::new(callback),
+            pending: Default::default(),
+        }
+    }
+
     unsafe fn from_hwnd_raw(hwnd: HWND) -> *mut Self {
         GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Self
     }
 
-    unsafe fn from_hwnd<'a>(hwnd: HWND) -> &'a mut Self {
-        &mut *Self::from_hwnd_raw(hwnd)
+    unsafe fn from_hwnd<'a>(hwnd: HWND) -> Option<&'a Self> {
+        Self::from_hwnd_raw(hwnd).as_ref()
     }
 
-    fn run_callback(&mut self, args: Vec<String>, cwd: String) {
-        (self.callback)(&self.app, args, cwd)
+    fn run_callback(&self, args: Vec<String>, cwd: String) {
+        self.pending.borrow_mut().push_back((args, cwd));
+        // If the callback runs a modal loop (e.g. a blocking message dialog), the window proc can
+        // be entered again while it is still running. Don't call it re-entrantly: the message is
+        // queued above and the outer call runs it once the callback returns.
+        let Ok(mut callback) = self.callback.try_borrow_mut() else {
+            return;
+        };
+        loop {
+            let next = self.pending.borrow_mut().pop_front();
+            let Some((args, cwd)) = next else {
+                break;
+            };
+            callback(&self.app, args, cwd);
+        }
     }
 }
 
@@ -115,11 +145,7 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
 
             app.manage(MutexHandle(hmutex as _));
 
-            let userdata = UserData {
-                app: app.clone(),
-                callback,
-            };
-            let userdata = Box::into_raw(Box::new(userdata));
+            let userdata = Box::into_raw(Box::new(UserData::new(app.clone(), callback)));
             let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
             app.manage(TargetWindowHandle(hwnd as _));
 
@@ -153,8 +179,11 @@ fn forward_to_first_instance(hwnd: HWND) {
     // instance running an older version of this plugin doesn't acknowledge it, so fall back to
     // the legacy format then.
     let data = copydata::encode(cwd, &args);
+    // No answer (timeout, e.g. because the callback shows a dialog, or a hung first instance)
+    // means a first instance that understands the new format may still be handling it, so only
+    // resend when an older first instance explicitly answered without acknowledging it.
     let result = send_copydata(hwnd, copydata::NUL_SEPARATED_DATA, &data);
-    if result != copydata::ACK {
+    if result.is_some_and(|result| result != copydata::ACK) {
         let data = copydata::encode_legacy(cwd, &args);
         send_copydata(hwnd, copydata::LEGACY_DATA, &data);
     }
@@ -174,14 +203,27 @@ pub fn destroy<R: Runtime, M: Manager<R>>(manager: &M) {
     }
 }
 
-/// Sends `data` to `hwnd` with `WM_COPYDATA` and returns the window procedure's result.
-fn send_copydata(hwnd: HWND, kind: usize, data: &[u8]) -> isize {
+/// Sends `data` to `hwnd` with `WM_COPYDATA` and returns the window procedure's result, or `None`
+/// if the first instance didn't answer within [`SEND_TIMEOUT_MS`] or is hung.
+fn send_copydata(hwnd: HWND, kind: usize, data: &[u8]) -> Option<isize> {
     let cds = COPYDATASTRUCT {
         dwData: kind,
         cbData: data.len() as _,
         lpData: data.as_ptr() as _,
     };
-    unsafe { SendMessageW(hwnd, WM_COPYDATA, 0, &cds as *const _ as _) }
+    let mut result = 0usize;
+    let ok = unsafe {
+        SendMessageTimeoutW(
+            hwnd,
+            WM_COPYDATA,
+            0,
+            &cds as *const _ as _,
+            SMTO_ABORTIFHUNG,
+            SEND_TIMEOUT_MS,
+            &mut result,
+        )
+    };
+    (ok != 0).then_some(result as isize)
 }
 
 unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
@@ -220,8 +262,9 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
                 copydata::decode_legacy(bytes)
             };
 
-            let userdata = UserData::<R>::from_hwnd(hwnd);
-            userdata.run_callback(args, cwd);
+            if let Some(userdata) = UserData::<R>::from_hwnd(hwnd) {
+                userdata.run_callback(args, cwd);
+            }
 
             if cds.dwData == copydata::NUL_SEPARATED_DATA {
                 copydata::ACK
