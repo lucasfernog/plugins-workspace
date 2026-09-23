@@ -149,17 +149,27 @@ export default class WebSocket {
   }
 
   /**
-   * Adds a listener that is called whenever a message is received on this connection, including
-   * an error message (as a `'Close'` message) when the underlying stream fails.
+   * Adds a listener that is called whenever a message is received on this connection.
+   *
+   * When the underlying stream fails (for example the server drops the connection without a
+   * close handshake), the listener is called once more with the error **as a plain string**,
+   * not as a {@link Message}, so check `typeof message === 'string'` before reading `type`.
    * @example
    * ```typescript
    * import WebSocket from '@tauri-apps/plugin-websocket';
    *
    * const ws = await WebSocket.connect('wss://example.com');
-   * const unlisten = ws.addListener((message) => console.log(message));
+   * const unlisten = ws.addListener((message) => {
+   *   if (typeof message === 'string') {
+   *     console.error('connection error', message);
+   *   } else if (message.type === 'Text') {
+   *     console.log(message.data);
+   *   }
+   * });
    * ```
    *
-   * @param cb The callback invoked with each received {@link Message}.
+   * @param cb The callback invoked with each received {@link Message}, or with the error string
+   * when the stream fails.
    * @returns A function that removes the listener when called.
    */
   addListener(cb: (arg: Message) => void): () => void {
