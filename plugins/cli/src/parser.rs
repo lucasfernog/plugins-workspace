@@ -66,8 +66,8 @@ impl Matches {
 
 /// Gets the argument matches of the CLI definition.
 ///
-/// This is a low level API. If the application has been built,
-/// prefer [`App::get_cli_matches`](`crate::App#method.get_cli_matches`).
+/// This is a low level API. Prefer [`Cli::matches`](crate::Cli::matches), available through
+/// [`CliExt::cli`](crate::CliExt::cli).
 ///
 /// # Examples
 ///
