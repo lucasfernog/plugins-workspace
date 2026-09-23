@@ -29,6 +29,10 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   private var permissionRequests: [Invoke] = []
   private var positionRequests: [Invoke] = []
   private var watcherChannels: [Channel] = []
+  // The location manager's accuracy is shared by every request, so it is the highest accuracy
+  // any pending getCurrentPosition() call or active watcher asked for.
+  private var pendingHighAccuracyRequest: Bool = false
+  private var highAccuracyWatchers: Set<UInt64> = []
 
   override init() {
     super.init()
@@ -46,10 +50,9 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
       self.positionRequests.append(invoke)
 
       if args.enableHighAccuracy == true {
-        self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
-      } else {
-        self.locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+        self.pendingHighAccuracyRequest = true
       }
+      self.updateDesiredAccuracy()
 
       // TODO: Use the authorizationStatus instance property with locationManagerDidChangeAuthorization(_:) instead.
       if CLLocationManager.authorizationStatus() == .notDetermined {
@@ -67,10 +70,9 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
       self.watcherChannels.append(args.channel)
 
       if args.options.enableHighAccuracy == true {
-        self.locationManager.desiredAccuracy = kCLLocationAccuracyBest
-      } else {
-        self.locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
+        self.highAccuracyWatchers.insert(args.channel.id)
       }
+      self.updateDesiredAccuracy()
 
       // TODO: Use the authorizationStatus instance property with locationManagerDidChangeAuthorization(_:) instead.
       if CLLocationManager.authorizationStatus() == .notDetermined {
@@ -89,6 +91,8 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
 
     DispatchQueue.main.async {
       self.watcherChannels = self.watcherChannels.filter { $0.id != args.channelId }
+      self.highAccuracyWatchers.remove(UInt64(args.channelId))
+      self.updateDesiredAccuracy()
 
       // TODO: capacitor plugin calls stopUpdating unconditionally
       if self.watcherChannels.isEmpty {
@@ -152,6 +156,8 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
     let requests = self.positionRequests + self.permissionRequests
     self.positionRequests.removeAll()
     self.permissionRequests.removeAll()
+    self.pendingHighAccuracyRequest = false
+    self.updateDesiredAccuracy()
 
     for request in requests {
       request.reject(error.localizedDescription)
@@ -170,6 +176,9 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
     _ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]
   ) {
     // Respond to all getCurrentPosition() calls.
+    self.pendingHighAccuracyRequest = false
+    self.updateDesiredAccuracy()
+
     for request in self.positionRequests {
       // The capacitor plugin uses locations.first but .last should be the most current one
       // and i don't see a reason to use old locations
@@ -224,6 +233,12 @@ class GeolocationPlugin: Plugin, CLLocationManagerDelegate {
   //
   // Internal/Helper methods
   //
+
+  private func updateDesiredAccuracy() {
+    let highAccuracy = self.pendingHighAccuracyRequest || !self.highAccuracyWatchers.isEmpty
+    self.locationManager.desiredAccuracy =
+      highAccuracy ? kCLLocationAccuracyBest : kCLLocationAccuracyKilometer
+  }
 
   // TODO: Why is this pub in capacitor
   private func stopUpdating() {
