@@ -88,58 +88,52 @@ fn main() {
 
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
-```javascript
-import { Stronghold, Location, Client } from "tauri-plugin-stronghold-api";
-import { appDataDir } from "@tauri-apps/api/path";
+```typescript
+import { Stronghold, Client } from '@tauri-apps/plugin-stronghold'
+import { appDataDir, join } from '@tauri-apps/api/path'
 
 const initStronghold = async () => {
-  const vaultPath = `${await appDataDir()}/vault.hold`;
+  const vaultPath = await join(await appDataDir(), 'vault.hold')
+  const vaultPassword = 'The password of the vault'
 
-  const vaultKey = "The key to the vault";
+  const stronghold = await Stronghold.load(vaultPath, vaultPassword)
 
-  const stronghold = await Stronghold.load(vaultPath, vaultKey);
-
-  let client: Client;
-
-  const clientName = "name your client";
-
+  const clientName = 'name your client'
+  let client: Client
   try {
-    client = await hold.loadClient(clientName);
-  } catch {
-    client = await hold.createClient(clientName);
+    client = await stronghold.loadClient(clientName)
+  } catch (e) {
+    // only create the client if it does not exist yet: creating a client that is
+    // already loaded replaces it with an empty one
+    if (!String(e).includes('no data present')) {
+      throw e
+    }
+    client = await stronghold.createClient(clientName)
   }
 
-  return {
-    stronghold,
-    client,
-  };
-};
+  return { stronghold, client }
+}
 
-const { stronghold, client } = await initStronghold();
+const { stronghold, client } = await initStronghold()
 
-const store = client.getStore();
+// Secrets are written to a vault. They can never be read back by the frontend,
+// only used through the vault procedures (key derivation, signing, ...).
+const vault = client.getVault('my-vault')
+await vault.insert('my-secret', Array.from(new TextEncoder().encode('secret')))
 
-const key = "my_key";
+// The store is a plain key-value store whose values can be read back, so only use
+// it for data that is not secret.
+const store = client.getStore()
+const key = 'my_key'
+await store.insert(key, Array.from(new TextEncoder().encode('Hello, World!')))
+const data = await store.get(key)
+const value = data ? new TextDecoder().decode(data) : null
 
-// Insert a record to the store
+// Remove a record from the store
+await store.remove(key)
 
-const data = Array.from(new TextEncoder().encode("Hello, World!"));
-
-await store.insert(key, data);
-
-// Read a record from store
-
-const data = await store.get(key);
-
-const value = new TextDecoder().decode(new Uint8Array(data));
-
-// Save your updates
-
-await stronghold.save();
-
-// Remove a record from store
-
-await store.remove(key);
+// Changes are only written to the snapshot file on `save()` (or `unload()`)
+await stronghold.save()
 ```
 
 ## Contributing
