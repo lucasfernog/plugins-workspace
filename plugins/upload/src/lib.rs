@@ -36,7 +36,13 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 
 use read_progress_stream::ReadProgressStream;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 /// The HTTP method used to send the file in the `upload` command.
 ///
@@ -123,25 +129,81 @@ async fn download(
         }
         let total = response.content_length().unwrap_or(0);
 
-        let mut file = BufWriter::new(File::create(&file_path).await?);
-        let mut stream = response.bytes_stream();
+        // Stream into a temporary file next to the destination and only move it into place once
+        // the whole body has been written, so a failed download neither leaves a partial file
+        // behind nor destroys an existing file at `file_path`.
+        let destination = download_destination(Path::new(&file_path)).await;
+        let temp_path = temp_download_path(&destination)?;
+        let file = File::create(&temp_path).await?;
 
-        let mut stats = TransferStats::default();
-        while let Some(chunk) = stream.try_next().await? {
-            file.write_all(&chunk).await?;
-            stats.record_chunk_transfer(chunk.len());
-            let _ = on_progress.send(ProgressPayload {
-                progress: chunk.len() as u64,
-                progress_total: stats.total_transferred,
-                total,
-                transfer_speed: stats.transfer_speed,
-            });
+        let result = async {
+            let mut file = BufWriter::new(file);
+            let mut stream = response.bytes_stream();
+
+            let mut stats = TransferStats::default();
+            while let Some(chunk) = stream.try_next().await? {
+                file.write_all(&chunk).await?;
+                stats.record_chunk_transfer(chunk.len());
+                let _ = on_progress.send(ProgressPayload {
+                    progress: chunk.len() as u64,
+                    progress_total: stats.total_transferred,
+                    total,
+                    transfer_speed: stats.transfer_speed,
+                });
+            }
+            file.flush().await?;
+            // close the file before renaming it (required on Windows)
+            drop(file);
+
+            // keep the permissions of the file being replaced
+            if let Ok(metadata) = tokio::fs::metadata(&destination).await {
+                let _ = tokio::fs::set_permissions(&temp_path, metadata.permissions()).await;
+            }
+            tokio::fs::rename(&temp_path, &destination).await?;
+            Ok::<(), Error>(())
         }
-        file.flush().await?;
-        Ok(())
+        .await;
+
+        if result.is_err() {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+        }
+        result
     })
     .await
     .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?
+}
+
+/// Resolves the path a download is finally written to. An existing destination is canonicalized,
+/// so that downloading to a symlink keeps writing through it instead of replacing the link.
+async fn download_destination(file_path: &Path) -> PathBuf {
+    tokio::fs::canonicalize(file_path)
+        .await
+        .unwrap_or_else(|_| file_path.to_path_buf())
+}
+
+/// A unique, hidden temporary path in the same directory as `destination`, so it can be renamed
+/// over the destination atomically.
+fn temp_download_path(destination: &Path) -> std::io::Result<PathBuf> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let file_name = destination.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid download path: {}", destination.display()),
+        )
+    })?;
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    let mut temp_name = OsString::from(".");
+    temp_name.push(file_name);
+    temp_name.push(format!(
+        ".{}-{}-{nanos}.download",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    Ok(destination.with_file_name(temp_name))
 }
 
 #[command]
@@ -317,6 +379,71 @@ mod tests {
         );
         let response_body = result.unwrap();
         assert_eq!(response_body, "upload successful");
+    }
+
+    #[tokio::test]
+    async fn failed_download_keeps_existing_file() {
+        use tokio::io::AsyncReadExt;
+
+        // A server that announces 100 bytes but closes the connection after 7.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            let _ = socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial")
+                .await;
+            let _ = socket.shutdown().await;
+        });
+
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-upload-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("existing.txt");
+        std::fs::write(&file_path, "original contents").unwrap();
+
+        let sender: Channel<ProgressPayload> =
+            Channel::new(|_msg: InvokeResponseBody| -> tauri::Result<()> { Ok(()) });
+        let result = download(
+            url,
+            file_path.to_string_lossy().into_owned(),
+            HashMap::new(),
+            None,
+            sender,
+        )
+        .await;
+        assert!(result.is_err(), "the truncated download must fail");
+
+        assert_eq!(
+            std::fs::read_to_string(&file_path).unwrap(),
+            "original contents"
+        );
+        let entries: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![OsString::from("existing.txt")]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn temp_download_path_is_a_hidden_sibling() {
+        let destination = Path::new("/some/dir/file.txt");
+        let temp = temp_download_path(destination).unwrap();
+        assert_eq!(temp.parent(), destination.parent());
+        let name = temp.file_name().unwrap().to_string_lossy();
+        assert!(name.starts_with(".file.txt."), "{name}");
+        assert!(name.ends_with(".download"), "{name}");
+        assert_ne!(temp, temp_download_path(destination).unwrap());
+        assert!(temp_download_path(Path::new("/")).is_err());
     }
 
     async fn download_file(url: String) -> Result<()> {

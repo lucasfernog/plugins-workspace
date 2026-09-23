@@ -44,6 +44,8 @@ export interface FixtureServer {
  *   {@link UPDATER_TARGET_OLDER}, and replies `204 No Content` when it is
  *   {@link UPDATER_TARGET_NO_UPDATE}.
  * - `GET /download` — {@link DOWNLOAD_FIXTURE_BODY} with a `Content-Length`.
+ * - `GET /download-truncated` — announces a 100 KiB body, sends a few bytes
+ *   and drops the connection.
  * - `* /echo` — a JSON description of the request (`method`, `url`, `headers`
  *   and the utf-8 `body`).
  * - `ws /ws` — a WebSocket echo endpoint: text and binary messages are sent
@@ -86,6 +88,16 @@ export function startFixtureServer(): Promise<FixtureServer> {
             'content-length': Buffer.byteLength(DOWNLOAD_FIXTURE_BODY)
           })
           .end(DOWNLOAD_FIXTURE_BODY)
+        return
+      }
+
+      if (route === 'download-truncated' && req.method === 'GET') {
+        // announce more bytes than are sent, then drop the connection
+        res.writeHead(200, {
+          'content-type': 'text/plain',
+          'content-length': 100 * 1024
+        })
+        res.write('partial', () => res.socket?.destroy())
         return
       }
 

@@ -91,6 +91,40 @@ describePlugin('upload', () => {
     expect(message).toMatch(/404/)
   })
 
+  it('a failed download keeps the existing file and leaves no partial file', async () => {
+    const result = await tauri(
+      async (api, url, dir) => {
+        const baseDir = api.fs.BaseDirectory.AppData
+        const relativePath = `${dir}/truncated/existing.txt`
+        await api.fs.mkdir(`${dir}/truncated`, { baseDir, recursive: true })
+        await api.fs.writeTextFile(relativePath, 'original contents', {
+          baseDir
+        })
+        let error: string | null = null
+        try {
+          await api.upload.download(
+            url,
+            await api.path.join(await api.path.appDataDir(), relativePath)
+          )
+        } catch (e) {
+          error = String(e)
+        }
+        return {
+          error,
+          contents: await api.fs.readTextFile(relativePath, { baseDir }),
+          entries: (await api.fs.readDir(`${dir}/truncated`, { baseDir })).map(
+            (entry) => entry.name
+          )
+        }
+      },
+      `${FIXTURE_SERVER_URL}/download-truncated`,
+      dir
+    )
+    expect(result.error).not.toBeNull()
+    expect(result.contents).toBe('original contents')
+    expect(result.entries).toEqual(['existing.txt'])
+  })
+
   it('upload streams a file with the requested method and headers', async () => {
     const contents = 'upload me\n'.repeat(1000)
     const result = await tauri(
