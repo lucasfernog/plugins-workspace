@@ -27,12 +27,16 @@ class OpenerPlugin(private val activity: Activity) : Plugin(activity) {
         try {
             val args = invoke.parseArgs(OpenArgs::class.java)
 
-            if (args.with == "inAppBrowser") {
+            val uri = args.url.toUri()
+            val scheme = uri.scheme?.lowercase()
+
+            // Custom Tabs only support http(s) URLs, other schemes are opened with their default app
+            if (args.with == "inAppBrowser" && (scheme == "http" || scheme == "https")) {
                 val builder = CustomTabsIntent.Builder()
                 val intent = builder.build()
-                intent.launchUrl(activity, args.url.toUri())
+                intent.launchUrl(activity, uri)
             } else {
-                val intent = Intent(Intent.ACTION_VIEW, args.url.toUri())
+                val intent = Intent(Intent.ACTION_VIEW, uri)
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 activity.applicationContext?.startActivity(intent)
             }
