@@ -18,8 +18,8 @@ use tauri::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WAIT_ABANDONED,
-        WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
+        CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_CLASS_ALREADY_EXISTS, HWND, LPARAM,
+        LRESULT, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT, WPARAM,
     },
     System::{
         DataExchange::COPYDATASTRUCT,
@@ -107,8 +107,16 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
 
             let hmutex =
                 unsafe { CreateMutexW(std::ptr::null(), true.into(), mutex_name.as_ptr()) };
+            let last_error = unsafe { GetLastError() };
 
-            if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            if hmutex.is_null() {
+                tracing::error!(
+                    "single_instance: failed to create the mutex (error {last_error}), launching normally"
+                );
+                return Ok(());
+            }
+
+            if last_error == ERROR_ALREADY_EXISTS {
                 // Another instance owns the mutex. Its message window may not exist yet (it is
                 // still starting up) or anymore (it is shutting down), so keep looking for the
                 // window while waiting for the mutex to be released, instead of giving up right
@@ -144,10 +152,24 @@ pub fn init<R: Runtime>(callback: Box<SingleInstanceCallback<R>>) -> TauriPlugin
                 }
             }
 
-            app.manage(MutexHandle(Mutex::new(Some(hmutex as _))));
-
             let userdata = Box::into_raw(Box::new(UserData::new(app.clone(), callback)));
             let hwnd = create_event_target_window::<R>(&class_name, &window_name, userdata);
+            if hwnd.is_null() {
+                let error = unsafe { GetLastError() };
+                tracing::error!(
+                    "single_instance: failed to create the message window (error {error}), launching normally"
+                );
+                // Release the mutex so other instances don't wait for a window that never
+                // appears. `userdata` is leaked on purpose: if the window got as far as
+                // `WM_CREATE`, `WM_DESTROY` already freed it.
+                unsafe {
+                    ReleaseMutex(hmutex);
+                    CloseHandle(hmutex);
+                }
+                return Ok(());
+            }
+
+            app.manage(MutexHandle(Mutex::new(Some(hmutex as _))));
             app.manage(TargetWindowHandle(Mutex::new(Some(hwnd as _))));
 
             Ok(())
@@ -317,7 +339,16 @@ fn create_event_target_window<R: Runtime>(
             hIconSm: std::ptr::null_mut(),
         };
 
-        RegisterClassExW(&class);
+        if RegisterClassExW(&class) == 0 {
+            let error = GetLastError();
+            // Not fatal on its own when the class already exists; `CreateWindowExW` reports
+            // whether we can actually create the window.
+            if error != ERROR_CLASS_ALREADY_EXISTS {
+                tracing::error!(
+                    "single_instance: failed to register the window class (error {error})"
+                );
+            }
+        }
 
         let hwnd = CreateWindowExW(
             WS_EX_NOACTIVATE
@@ -343,6 +374,9 @@ fn create_event_target_window<R: Runtime>(
             GetModuleHandleW(std::ptr::null()),
             userdata as _,
         );
+        if hwnd.is_null() {
+            return hwnd;
+        }
         SetWindowLongPtrW(
             hwnd,
             GWL_STYLE,
