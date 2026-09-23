@@ -20,7 +20,7 @@
 
 use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use http::header::{HeaderName, HeaderValue};
-use serde::{ser::Serializer, Deserialize, Serialize};
+use serde::{ser::Serializer, Deserialize, Deserializer, Serialize};
 use tauri::{
     ipc::Channel,
     plugin::{Builder as PluginBuilder, TauriPlugin},
@@ -87,11 +87,35 @@ struct ConnectionManager(Mutex<HashMap<Id, WebSocketWriter>>);
 ))]
 struct TlsConnector(Mutex<Option<Connector>>);
 
-#[derive(Deserialize)]
-#[serde(untagged, rename_all = "camelCase")]
+/// A size limit: either a number of bytes or the string `"none"` (no limit).
+#[derive(Debug, PartialEq, Eq)]
 enum Max {
     None,
     Number(usize),
+}
+
+impl<'de> Deserialize<'de> for Max {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Number(usize),
+            String(String),
+        }
+
+        match Raw::deserialize(deserializer).map_err(|_| {
+            serde::de::Error::custom("expected a non-negative integer or the string \"none\"")
+        })? {
+            Raw::Number(n) => Ok(Max::Number(n)),
+            Raw::String(s) if s == "none" => Ok(Max::None),
+            Raw::String(s) => Err(serde::de::Error::custom(format!(
+                "expected a non-negative integer or the string \"none\", found \"{s}\""
+            ))),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -327,5 +351,66 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(json: serde_json::Value) -> WebSocketConfig {
+        serde_json::from_value::<ConnectionConfig>(json)
+            .expect("valid config")
+            .into()
+    }
+
+    #[test]
+    fn max_sizes_accept_none() {
+        let config = config(serde_json::json!({
+            "maxMessageSize": "none",
+            "maxFrameSize": "none"
+        }));
+        assert_eq!(config.max_message_size, None);
+        assert_eq!(config.max_frame_size, None);
+    }
+
+    #[test]
+    fn max_sizes_accept_numbers() {
+        let config = config(serde_json::json!({
+            "maxMessageSize": 1024,
+            "maxFrameSize": 512
+        }));
+        assert_eq!(config.max_message_size, Some(1024));
+        assert_eq!(config.max_frame_size, Some(512));
+    }
+
+    #[test]
+    fn max_sizes_default_when_unset_or_null() {
+        let default = WebSocketConfig::default();
+        for json in [
+            serde_json::json!({}),
+            serde_json::json!({ "maxMessageSize": null, "maxFrameSize": null }),
+        ] {
+            let config = config(json);
+            assert_eq!(config.max_message_size, default.max_message_size);
+            assert_eq!(config.max_frame_size, default.max_frame_size);
+        }
+    }
+
+    #[test]
+    fn max_sizes_reject_other_values() {
+        for value in [
+            serde_json::json!("unlimited"),
+            serde_json::json!(-1),
+            serde_json::json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<ConnectionConfig>(serde_json::json!({
+                    "maxMessageSize": value
+                }))
+                .is_err(),
+                "{value} should be rejected"
+            );
+        }
     }
 }

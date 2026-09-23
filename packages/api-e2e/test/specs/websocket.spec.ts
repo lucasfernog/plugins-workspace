@@ -80,6 +80,31 @@ describePlugin('websocket', () => {
     expect(headers['x-e2e-header']).toBe('from the plugin')
   })
 
+  it('accepts "none" and numeric size limits', async () => {
+    const echoes = await tauri(async (api, url) => {
+      const echoes: Message[] = []
+      for (const limit of ['none', 1024 * 1024] as const) {
+        const ws = await api.websocket.connect(url, {
+          maxMessageSize: limit,
+          maxFrameSize: limit
+        })
+        echoes.push(
+          await new Promise<Message>((resolve, reject) => {
+            setTimeout(() => reject(new Error('echo not received')), 5000)
+            ws.addListener(resolve)
+            ws.send(`limit ${limit}`).catch(reject)
+          })
+        )
+        await ws.disconnect()
+      }
+      return echoes
+    }, WEBSOCKET_FIXTURE_URL)
+    expect(echoes).toEqual([
+      { type: 'Text', data: 'limit none' },
+      { type: 'Text', data: `limit ${1024 * 1024}` }
+    ])
+  })
+
   it('a listener stops receiving once removed', async () => {
     const counts = await tauri(async (api, url) => {
       const ws = await api.websocket.connect(url)
