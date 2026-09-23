@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 
 use crate::{AppHandleExt, StateFlags, WindowExt};
-use tauri::{command, AppHandle, Manager, Runtime};
+use tauri::{command, AppHandle, Manager, Runtime, Window};
 
 fn get_state_flags<R: Runtime>(
     app: &AppHandle<R>,
@@ -31,14 +31,21 @@ pub async fn save_window_state<R: Runtime>(
 #[command]
 pub async fn restore_state<R: Runtime>(
     app: AppHandle<R>,
+    window: Window<R>,
     label: String,
     flags: Option<u32>,
 ) -> std::result::Result<(), String> {
     let flags = get_state_flags(&app, flags)?;
-    app.get_webview_window(&label)
-        .ok_or_else(|| format!("Couldn't find window with label: {label}"))?
-        .restore_state(flags)
-        .map_err(|e| e.to_string())?;
+    if let Some(webview_window) = app.get_webview_window(&label) {
+        webview_window.restore_state(flags)
+    } else if window.label() == label {
+        // the calling webview's window, which is not a webview window when it hosts several
+        // webviews (e.g. `restoreStateCurrent` from such a window)
+        window.restore_state(flags)
+    } else {
+        return Err(format!("Couldn't find window with label: {label}"));
+    }
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

@@ -3,7 +3,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauri, eventually, describePlugin, itWm } from '../helpers/index.js'
+import {
+  tauri,
+  tauriError,
+  eventually,
+  describePlugin,
+  itWm
+} from '../helpers/index.js'
 
 // The plugin is desktop-only: a mobile window is the whole screen and has no
 // state to persist, so the whole suite is skipped there.
@@ -21,6 +27,15 @@ describePlugin('window-state', { desktopOnly: true }, () => {
       await api.windowState.restoreStateCurrent()
       return null
     })
+  })
+
+  it('restoreState rejects a label with no window', async () => {
+    const message = await tauriError((api) =>
+      api.windowState.restoreState('e2e-window-state-missing')
+    )
+    expect(message).toMatch(
+      /Couldn't find window with label: e2e-window-state-missing/
+    )
   })
 
   it('StateFlags combine as a bit set', async () => {
