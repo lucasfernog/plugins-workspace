@@ -18,6 +18,8 @@ import { invoke } from '@tauri-apps/api/core'
 // open <a href="..."> links with the API
 function openLinks(): void {
   document.querySelector('body')?.addEventListener('click', function (e) {
+    // another handler already took care of this click
+    if (e.defaultPrevented) return
     let target: HTMLElement | null = e.target as HTMLElement
     while (target) {
       if (target.matches('a')) {
@@ -29,8 +31,11 @@ function openLinks(): void {
           )
           && t.target === '_blank'
         ) {
-          void invoke('plugin:shell|open', {
+          invoke('plugin:shell|open', {
             path: t.href
+          }).catch((error: unknown) => {
+            // e.g. `shell:allow-open` is not granted to this webview
+            console.error(error)
           })
           e.preventDefault()
         }
