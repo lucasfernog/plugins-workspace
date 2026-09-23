@@ -1454,10 +1454,14 @@ impl Update {
         if need_authorization {
             log::debug!("app installation needs admin privileges");
             // Use AppleScript to perform moves with admin privileges
+            let shell_command = format!(
+                "rm -rf {src} && mv -f {new} {src}",
+                src = shell_quote(path_to_str(&self.extract_path)?),
+                new = shell_quote(path_to_str(tmp_extract_dir.path())?),
+            );
             let apple_script = format!(
-                "do shell script \"rm -rf '{src}' && mv -f '{new}' '{src}'\" with administrator privileges",
-                src = self.extract_path.display(),
-                new = tmp_extract_dir.path().display()
+                "do shell script \"{}\" with administrator privileges",
+                applescript_escape(&shell_command)
             );
 
             let (tx, rx) = std::sync::mpsc::channel();
@@ -1492,6 +1496,29 @@ impl Update {
 
         Ok(())
     }
+}
+
+/// Quotes `s` as a single POSIX shell word, so that the shell never interprets any of its
+/// characters.
+#[cfg(any(target_os = "macos", test))]
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// Escapes `s` so that it can be embedded in an AppleScript string literal.
+#[cfg(any(target_os = "macos", test))]
+fn applescript_escape(s: &str) -> String {
+    s.replace('\\', r"\\").replace('"', "\\\"")
+}
+
+#[cfg(target_os = "macos")]
+fn path_to_str(path: &Path) -> Result<&str> {
+    path.to_str().ok_or_else(|| {
+        Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("path {} is not valid UTF-8", path.display()),
+        ))
+    })
 }
 
 /// Gets the base target string used by the updater. If bundle type is available it
@@ -1873,6 +1900,36 @@ mod tests {
         let comment = "timestamp:1700000000\tfile:app.zip\tversion:2024-01-01";
         assert!(verify_signed_version(comment, "2024-01-01", true).is_ok());
         assert!(verify_signed_version(comment, "2024-01-02", true).is_err());
+    }
+
+    #[test]
+    fn quotes_shell_words() {
+        use super::shell_quote;
+
+        assert_eq!(
+            shell_quote("/Applications/App.app"),
+            "'/Applications/App.app'"
+        );
+        assert_eq!(
+            shell_quote("/Applications/Bob's Tools.app"),
+            r"'/Applications/Bob'\''s Tools.app'"
+        );
+        assert_eq!(shell_quote("a'; rm -rf / #"), r"'a'\''; rm -rf / #'");
+        assert_eq!(shell_quote("$(x) `y` \"z\""), "'$(x) `y` \"z\"'");
+    }
+
+    #[test]
+    fn escapes_applescript_strings() {
+        use super::{applescript_escape, shell_quote};
+
+        assert_eq!(applescript_escape("plain"), "plain");
+        assert_eq!(applescript_escape(r#"a"b\c"#), r#"a\"b\\c"#);
+        // a quoted shell word stays a single AppleScript string literal
+        let word = shell_quote(r#"/Users/x/My "Apps"\App.app"#);
+        assert_eq!(
+            applescript_escape(&word),
+            r#"'/Users/x/My \"Apps\"\\App.app'"#
+        );
     }
 
     #[test]
