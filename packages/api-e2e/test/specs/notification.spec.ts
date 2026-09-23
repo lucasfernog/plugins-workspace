@@ -67,6 +67,20 @@ describePlugin('notification', () => {
     }
   )
 
+  itOn(
+    ['android', 'ios'],
+    'removeActive rejects invalid identifiers',
+    async () => {
+      // through the command: iOS used to treat any invalid argument as removeAllActive()
+      const error = await tauriError((api) =>
+        api.core.invoke('plugin:notification|remove_active', {
+          notifications: [{ id: 'not-a-number' }]
+        })
+      )
+      expect(error).not.toBe('')
+    }
+  )
+
   itOn('android', 'channels can be created, listed and removed', async () => {
     const result = await tauri(async (api) => {
       const { Importance, Visibility } = api.notification

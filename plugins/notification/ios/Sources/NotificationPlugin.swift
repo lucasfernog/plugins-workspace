@@ -81,7 +81,8 @@ struct RemoveActiveNotification: Decodable {
 }
 
 struct RemoveActiveArgs: Decodable {
-  let notifications: [RemoveActiveNotification]
+  // `removeAllActive()` sends no list: remove every delivered notification
+  let notifications: [RemoveActiveNotification]?
 }
 
 func showNotification(invoke: Invoke, notification: Notification)
@@ -244,19 +245,21 @@ class NotificationPlugin: Plugin {
     invoke.resolve()
   }
 
-  @objc func removeActive(_ invoke: Invoke) {
-    do {
-      let args = try invoke.parseArgs(RemoveActiveArgs.self)
+  @objc func removeActive(_ invoke: Invoke) throws {
+    // `removeAllActive()` sends no list (and older Rust versions sent `null`): remove everything.
+    // Invalid arguments are rejected rather than treated as that case.
+    let args =
+      invoke.getRawArgs() == "null" ? nil : try invoke.parseArgs(RemoveActiveArgs.self)
+    if let notifications = args?.notifications {
       UNUserNotificationCenter.current().removeDeliveredNotifications(
-        withIdentifiers: args.notifications.map { String($0.id) })
-      invoke.resolve()
-    } catch {
+        withIdentifiers: notifications.map { String($0.id) })
+    } else {
       UNUserNotificationCenter.current().removeAllDeliveredNotifications()
       DispatchQueue.main.async(execute: {
         UIApplication.shared.applicationIconBadgeNumber = 0
       })
-      invoke.resolve()
     }
+    invoke.resolve()
   }
 
   @objc func getActive(_ invoke: Invoke) {
