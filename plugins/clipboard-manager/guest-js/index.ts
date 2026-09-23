@@ -39,6 +39,17 @@ async function writeText(
 
 /**
  * Gets the clipboard content as plain text.
+ *
+ * Rejects if the clipboard is empty or does not hold text.
+ *
+ * #### Platform-specific
+ *
+ * - **Android:** Since Android 10, an app can only read the clipboard while it has input focus
+ *   (for example, not during startup before its window is focused). Otherwise the promise rejects
+ *   with "Clipboard is empty".
+ * - **iOS:** Since iOS 16, reading the clipboard shows the system "Allow Paste" prompt unless
+ *   the user started the paste themselves (e.g. from a paste button or menu).
+ *
  * @example
  * ```typescript
  * import { readText } from '@tauri-apps/plugin-clipboard-manager';
