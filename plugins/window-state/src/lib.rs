@@ -536,7 +536,7 @@ impl Builder {
 
 fn load_saved_window_states<R: Runtime>(
     app: &AppHandle<R>,
-    filename: &String,
+    filename: &str,
 ) -> Result<HashMap<String, WindowState>> {
     let app_dir = app.path().app_config_dir()?;
     let state_path = app_dir.join(filename);
