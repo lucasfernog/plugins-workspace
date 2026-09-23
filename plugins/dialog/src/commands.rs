@@ -162,7 +162,7 @@ pub(crate) async fn open<R: Runtime>(
                             if let Some(s) = window.try_fs_scope() {
                                 s.allow_directory(&path, options.recursive)?;
                             }
-                            tauri_scope.allow_directory(&path, options.directory)?;
+                            tauri_scope.allow_directory(&path, options.recursive)?;
                         }
                     }
                 }
@@ -176,7 +176,7 @@ pub(crate) async fn open<R: Runtime>(
                         if let Some(s) = window.try_fs_scope() {
                             s.allow_directory(&path, options.recursive)?;
                         }
-                        tauri_scope.allow_directory(&path, options.directory)?;
+                        tauri_scope.allow_directory(&path, options.recursive)?;
                     }
                 }
                 OpenResponse::Folder(folder.map(|p| p.simplified()))
