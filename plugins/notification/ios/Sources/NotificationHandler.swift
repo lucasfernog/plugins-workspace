@@ -76,14 +76,16 @@ public class NotificationHandler: NSObject, NotificationHandlerProtocol {
   }
 
   func toActiveNotification(_ request: UNNotificationRequest) -> ActiveNotification {
-    let notificationRequest = notificationsMap[request.identifier]!
+    // only notifications shown by this process are in the map: the ones delivered before an
+    // app restart, or posted by other libraries, are not
+    let notificationRequest = notificationsMap[request.identifier]
     return ActiveNotification(
       id: Int(request.identifier) ?? -1,
       title: request.content.title,
       body: request.content.body,
-      sound: notificationRequest.sound ?? "",
+      sound: notificationRequest?.sound ?? "",
       actionTypeId: request.content.categoryIdentifier,
-      attachments: notificationRequest.attachments
+      attachments: notificationRequest?.attachments
     )
   }
 
