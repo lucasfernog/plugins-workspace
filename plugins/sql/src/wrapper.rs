@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde_json::Value as JsonValue;
 #[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
 use sqlx::{migrate::MigrateDatabase, Column, Executor, Pool, Row};
-#[cfg(any(feature = "sqlite", feature = "mysql", feature = "postgres"))]
+#[cfg(feature = "sqlite")]
 use tauri::Manager;
 use tauri::{AppHandle, Runtime};
 
