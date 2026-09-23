@@ -21,6 +21,10 @@ const shell =
 // every platform: `prepare_cmd` rejects before anything is executed.
 const itSpawns = platform === 'ios' ? it.skip : it
 
+// Specs whose script needs a Unix shell (`sh -c`), which `cmd` has no
+// equivalent of.
+const itSpawnsUnix = platform === 'ios' || platform === 'win32' ? it.skip : it
+
 /**
  * Puts a directory in the form the two sides of the working directory
  * assertion can be compared in: the shell may print it with a different path
@@ -210,6 +214,36 @@ describePlugin('shell', () => {
       expect(result.signal).toBe(9)
     }
   })
+
+  itSpawnsUnix(
+    'output that is not valid UTF-8 is decoded with replacement characters',
+    async () => {
+      const result = await tauri(
+        async (api, program, flag, script) => {
+          const executed = await api.shell.Command.create(program, [
+            flag,
+            script
+          ]).execute()
+          const spawned = await new Promise<string[]>((resolve, reject) => {
+            const lines: string[] = []
+            const command = api.shell.Command.create(program, [flag, script])
+            command.stdout.on('data', (line) => lines.push(line))
+            command.on('error', (error) => reject(new Error(error)))
+            command.on('close', () => resolve(lines))
+            command.spawn().catch(reject)
+            setTimeout(() => reject(new Error('command never closed')), 15000)
+          })
+          return { code: executed.code, stdout: executed.stdout, spawned }
+        },
+        shell.program,
+        shell.flag,
+        'printf "\\377ok\\n"'
+      )
+      expect(result.code).toBe(0)
+      expect(result.stdout).toBe('\uFFFDok\n')
+      expect(result.spawned).toEqual(['\uFFFDok\n'])
+    }
+  )
 
   it('rejects programs that are not in the scope', async () => {
     const message = await tauriError((api) =>

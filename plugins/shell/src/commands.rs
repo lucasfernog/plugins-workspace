@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, string::FromUtf8Error};
+use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin};
 
 use encoding_rs::Encoding;
 use serde::{Deserialize, Serialize};
@@ -29,21 +29,26 @@ pub enum JSCommandEvent {
     Stderr(Buffer),
     /// Stdout bytes until a newline (\n) or carriage return (\r) is found.
     Stdout(Buffer),
-    /// An error happened waiting for the command to finish or converting the stdout/stderr bytes to an UTF-8 string.
+    /// An error happened waiting for the command to finish or reading its stdout/stderr.
     Error(String),
     /// Command process terminated.
     Terminated(TerminatedPayload),
 }
 
-fn get_event_buffer(line: Vec<u8>, encoding: EncodingWrapper) -> Result<Buffer, FromUtf8Error> {
+/// Decodes bytes that are not valid UTF-8 with `U+FFFD` replacement characters,
+/// rather than failing and losing the whole output.
+fn utf8_lossy(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+}
+
+fn get_event_buffer(line: Vec<u8>, encoding: EncodingWrapper) -> Buffer {
     match encoding {
         EncodingWrapper::Text(character_encoding) => match character_encoding {
-            Some(encoding) => Ok(Buffer::Text(
-                encoding.decode_with_bom_removal(&line).0.into(),
-            )),
-            None => String::from_utf8(line).map(Buffer::Text),
+            Some(encoding) => Buffer::Text(encoding.decode_with_bom_removal(&line).0.into()),
+            None => Buffer::Text(utf8_lossy(line)),
         },
-        EncodingWrapper::Raw => Ok(Buffer::Raw(line)),
+        EncodingWrapper::Raw => Buffer::Raw(line),
     }
 }
 
@@ -52,12 +57,8 @@ impl JSCommandEvent {
         match event {
             CommandEvent::Terminated(payload) => JSCommandEvent::Terminated(payload),
             CommandEvent::Error(error) => JSCommandEvent::Error(error),
-            CommandEvent::Stderr(line) => get_event_buffer(line, encoding)
-                .map(JSCommandEvent::Stderr)
-                .unwrap_or_else(|e| JSCommandEvent::Error(e.to_string())),
-            CommandEvent::Stdout(line) => get_event_buffer(line, encoding)
-                .map(JSCommandEvent::Stdout)
-                .unwrap_or_else(|e| JSCommandEvent::Error(e.to_string())),
+            CommandEvent::Stderr(line) => JSCommandEvent::Stderr(get_event_buffer(line, encoding)),
+            CommandEvent::Stdout(line) => JSCommandEvent::Stdout(get_event_buffer(line, encoding)),
         }
     }
 }
@@ -212,8 +213,8 @@ pub async fn execute<R: Runtime>(
             Output::String(encoding.decode_with_bom_removal(&output.stderr).0.into()),
         ),
         EncodingWrapper::Text(None) => (
-            Output::String(String::from_utf8(output.stdout)?),
-            Output::String(String::from_utf8(output.stderr)?),
+            Output::String(utf8_lossy(output.stdout)),
+            Output::String(utf8_lossy(output.stderr)),
         ),
         EncodingWrapper::Raw => (Output::Raw(output.stdout), Output::Raw(output.stderr)),
     };
@@ -317,4 +318,25 @@ pub async fn open<R: Runtime>(
     with: Option<Program>,
 ) -> crate::Result<()> {
     crate::open::open(Some(&shell.open_scope), path, with)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_event_buffer, Buffer, EncodingWrapper};
+
+    #[test]
+    fn invalid_utf8_is_decoded_lossily() {
+        let Buffer::Text(text) =
+            get_event_buffer(b"\xffok\n".to_vec(), EncodingWrapper::Text(None))
+        else {
+            panic!("expected text");
+        };
+        assert_eq!(text, "\u{FFFD}ok\n");
+
+        let Buffer::Text(text) = get_event_buffer(b"ok\n".to_vec(), EncodingWrapper::Text(None))
+        else {
+            panic!("expected text");
+        };
+        assert_eq!(text, "ok\n");
+    }
 }
