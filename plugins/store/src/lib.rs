@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -44,6 +44,27 @@ struct StoreState {
     deserialize_fns: HashMap<String, DeserializeFn>,
     default_serialize: SerializeFn,
     default_deserialize: DeserializeFn,
+    restrict_frontend_paths: bool,
+}
+
+/// Checks that a store path coming from the frontend is a relative path that stays inside the
+/// app data directory it is resolved against, see [`Builder::restrict_frontend_paths`].
+fn validate_frontend_path(path: &Path) -> Result<()> {
+    let mut has_file_name = false;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => has_file_name = true,
+            Component::CurDir => {}
+            Component::Prefix(_) | Component::RootDir | Component::ParentDir => {
+                return Err(Error::PathNotAllowed(path.to_path_buf()));
+            }
+        }
+    }
+    if has_file_name {
+        Ok(())
+    } else {
+        Err(Error::PathNotAllowed(path.to_path_buf()))
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -128,6 +149,9 @@ async fn load<R: Runtime>(
     path: PathBuf,
     options: Option<LoadStoreOptions>,
 ) -> Result<ResourceId> {
+    if store_state.restrict_frontend_paths {
+        validate_frontend_path(&path)?;
+    }
     let builder = builder(app, store_state, path, options)?;
     let (_, rid) = builder.build_inner()?;
     Ok(rid)
@@ -139,6 +163,9 @@ async fn get_store<R: Runtime>(
     store_state: State<'_, StoreState>,
     path: PathBuf,
 ) -> Result<Option<ResourceId>> {
+    if store_state.restrict_frontend_paths {
+        validate_frontend_path(&path)?;
+    }
     let stores = store_state.stores.read().unwrap();
     Ok(stores.get(&resolve_store_path(&app, path)?).copied())
 }
@@ -357,6 +384,7 @@ pub struct Builder {
     deserialize_fns: HashMap<String, DeserializeFn>,
     default_serialize: SerializeFn,
     default_deserialize: DeserializeFn,
+    restrict_frontend_paths: bool,
 }
 
 impl Default for Builder {
@@ -366,6 +394,7 @@ impl Default for Builder {
             deserialize_fns: Default::default(),
             default_serialize,
             default_deserialize,
+            restrict_frontend_paths: false,
         }
     }
 }
@@ -437,6 +466,34 @@ impl Builder {
         self
     }
 
+    /// Only allow the frontend to load stores at relative paths inside the app data directory.
+    ///
+    /// Store paths are resolved against [`BaseDirectory::AppData`](tauri::path::BaseDirectory::AppData),
+    /// but an absolute path replaces that directory and `..` components can leave it, so by default
+    /// any frontend code allowed to call the `load` command (included in `store:default`) can read
+    /// and overwrite any JSON file the app can access.
+    ///
+    /// When enabled, the `load` and `get_store` commands reject paths that are absolute,
+    /// contain a `..` component or have no file name. Stores created from Rust are not affected.
+    ///
+    /// This is disabled by default for backwards compatibility,
+    /// and will be the default behavior in the next major version.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// tauri::Builder::default()
+    ///     .plugin(
+    ///         tauri_plugin_store::Builder::default()
+    ///             .restrict_frontend_paths(true)
+    ///             .build(),
+    ///     );
+    /// ```
+    pub fn restrict_frontend_paths(mut self, restrict: bool) -> Self {
+        self.restrict_frontend_paths = restrict;
+        self
+    }
+
     /// Builds the plugin.
     ///
     /// # Examples
@@ -462,6 +519,7 @@ impl Builder {
                     deserialize_fns: self.deserialize_fns,
                     default_serialize: self.default_serialize,
                     default_deserialize: self.default_deserialize,
+                    restrict_frontend_paths: self.restrict_frontend_paths,
                 });
                 Ok(())
             })
@@ -479,5 +537,51 @@ impl Builder {
                 }
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frontend_path_validation() {
+        for allowed in [
+            "store.json",
+            "nested/store.json",
+            "./store.json",
+            "a/./b.json",
+        ] {
+            assert!(
+                validate_frontend_path(Path::new(allowed)).is_ok(),
+                "{allowed} should be allowed"
+            );
+        }
+        let mut denied = vec![
+            "",
+            ".",
+            "..",
+            "../store.json",
+            "nested/../../store.json",
+            "nested/../store.json",
+            "/etc/store.json",
+            "/",
+        ];
+        if cfg!(windows) {
+            denied.extend([
+                "C:\\store.json",
+                "C:store.json",
+                "\\\\server\\share\\store.json",
+            ]);
+        }
+        for denied in denied {
+            assert!(
+                matches!(
+                    validate_frontend_path(Path::new(denied)),
+                    Err(Error::PathNotAllowed(_))
+                ),
+                "{denied} should be denied"
+            );
+        }
     }
 }

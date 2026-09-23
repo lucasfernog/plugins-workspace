@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@wdio/globals'
-import { tauri, describePlugin, scratchDir } from '../helpers/index.js'
+import {
+  tauri,
+  tauriError,
+  describePlugin,
+  scratchDir
+} from '../helpers/index.js'
 
 // Store paths are relative to `$APPDATA`, which is also inside the example's
 // fs scope, so the specs can inspect what the plugin persists.
@@ -125,6 +130,25 @@ describePlugin('store', () => {
       return contents
     }, `${dir}/autosave.json`)
     expect(onDisk).toEqual({ auto: true })
+  })
+
+  // the example registers the plugin with `restrict_frontend_paths(true)`
+  it('rejects store paths outside the app data directory', async () => {
+    const parentDir = await tauriError((api) =>
+      api.store.load('../outside-app-data.json')
+    )
+    expect(parentDir).toContain('is not allowed')
+
+    const absolute = await tauriError(async (api, path) => {
+      const appDataDir = await api.path.appDataDir()
+      return api.store.load(await api.path.join(appDataDir, path))
+    }, `${dir}/absolute.json`)
+    expect(absolute).toContain('is not allowed')
+
+    const getStore = await tauriError((api) =>
+      api.store.getStore('nested/../../outside-app-data.json')
+    )
+    expect(getStore).toContain('is not allowed')
   })
 
   it('defaults apply on load and reset restores them', async () => {

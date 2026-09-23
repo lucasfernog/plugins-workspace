@@ -32,6 +32,12 @@ pub enum Error {
     /// Deserialize function not found
     #[error("Deserialize Function \"{0}\" not found")]
     DeserializeFunctionNotFound(String),
+    /// The frontend is not allowed to load a store at this path,
+    /// see [`Builder::restrict_frontend_paths`](crate::Builder::restrict_frontend_paths).
+    #[error(
+        "Store path {0:?} is not allowed, it must be a relative path inside the app data directory"
+    )]
+    PathNotAllowed(std::path::PathBuf),
     /// Some Tauri API failed
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
