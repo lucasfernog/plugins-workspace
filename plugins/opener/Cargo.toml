@@ -17,8 +17,8 @@ exclude = ["/guest-js", "/package.json", "/rollup.config.js", "/tsconfig.json"]
 windows = { level = "full", notes = "" }
 linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
-android = { level = "partial", notes = "Only allows to open URLs via `open`" }
-ios = { level = "partial", notes = "Only allows to open URLs via `open`" }
+android = { level = "partial", notes = "Only `openUrl` is supported" }
+ios = { level = "partial", notes = "Only `openUrl` is supported" }
 
 
 [build-dependencies]

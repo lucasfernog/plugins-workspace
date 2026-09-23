@@ -7,8 +7,10 @@
 | Linux    | ✓         |
 | Windows  | ✓         |
 | macOS    | ✓         |
-| Android  | ✓         |
-| iOS      | ✓         |
+| Android  | Partial   |
+| iOS      | Partial   |
+
+On Android and iOS only `openUrl` is supported: `openPath` does not work there yet, and `revealItemInDir` is unsupported.
 
 ## Install
 
