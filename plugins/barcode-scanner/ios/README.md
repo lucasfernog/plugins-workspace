@@ -1,3 +1,3 @@
 # Tauri Plugin Barcode Scanner
 
-A description of this package.
+The iOS implementation of the Tauri barcode scanner plugin, built on AVFoundation.
