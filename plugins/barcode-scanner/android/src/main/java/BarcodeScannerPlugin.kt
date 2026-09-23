@@ -277,44 +277,48 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
 
     override fun analyze(image: ImageProxy) {
         @SuppressLint("UnsafeOptInUsageError") val mediaImage = image.image
-        if (mediaImage != null) {
-            val inputImage =
-                InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
-            scanner
-                ?.process(inputImage)
-                ?.addOnSuccessListener { barcodes ->
-                    if (barcodes.isNotEmpty())  {
-                        val barcode = barcodes[0]
-                        val bounds = barcode.boundingBox
-                        val rawValue = barcode.rawValue ?: ""
-                        val rawFormat = barcode.format
-                        var format: String? = null
-
-                        for (entry in supportedFormats.entries) {
-                            if (entry.value == rawFormat) {
-                                format = entry.key
-                                break
-                            }
-                        }
-
-                        val s = bounds?.flattenToString()
-                        val jsObject = JSObject()
-                        jsObject.put("content", rawValue)
-                        jsObject.put("format", format)
-                        jsObject.put("bounds", s)
-
-                        savedInvoke?.resolve(jsObject)
-                        destroy()
-                    }
-                }
-                ?.addOnFailureListener { e ->
-                    Logger.error(e.message ?: e.toString())
-                }
-                ?.addOnCompleteListener {
-                    image.close()
-                    mediaImage.close()
-                }
+        val scanner = this.scanner
+        if (mediaImage == null || scanner == null) {
+            // CameraX delivers no further frames until this one is closed
+            image.close()
+            return
         }
+        val inputImage =
+            InputImage.fromMediaImage(mediaImage, image.imageInfo.rotationDegrees)
+        scanner
+            .process(inputImage)
+            .addOnSuccessListener { barcodes ->
+                if (barcodes.isNotEmpty())  {
+                    val barcode = barcodes[0]
+                    val bounds = barcode.boundingBox
+                    val rawValue = barcode.rawValue ?: ""
+                    val rawFormat = barcode.format
+                    var format: String? = null
+
+                    for (entry in supportedFormats.entries) {
+                        if (entry.value == rawFormat) {
+                            format = entry.key
+                            break
+                        }
+                    }
+
+                    val s = bounds?.flattenToString()
+                    val jsObject = JSObject()
+                    jsObject.put("content", rawValue)
+                    jsObject.put("format", format)
+                    jsObject.put("bounds", s)
+
+                    savedInvoke?.resolve(jsObject)
+                    destroy()
+                }
+            }
+            .addOnFailureListener { e ->
+                Logger.error(e.message ?: e.toString())
+            }
+            .addOnCompleteListener {
+                // closing the ImageProxy also closes the underlying media image
+                image.close()
+            }
     }
 
     @Command
