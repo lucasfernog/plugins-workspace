@@ -359,7 +359,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 val filters = kind.filters()
                 val techLists = kind.techLists()
                 enableNFCInForeground(filters, techLists)
-                session = Session(NfcAction.Write(message), invoke, true, null, filters, techLists)
+                session = Session(NfcAction.Write(message), invoke, false, null, filters, techLists)
                 Logger.warn("NFC", "Write Mode Enabled")
             } ?: run {
                 invoke.reject("Missing `kind` for write")
