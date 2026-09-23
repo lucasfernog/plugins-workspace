@@ -498,7 +498,6 @@ class Child {
    */
   async kill(): Promise<void> {
     await invoke('plugin:shell|kill', {
-      cmd: 'killChild',
       pid: this.pid
     })
   }
