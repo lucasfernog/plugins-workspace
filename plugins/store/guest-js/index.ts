@@ -765,7 +765,8 @@ export class Store extends Resource implements IStore {
   /**
    * Listen to changes on a store key.
    *
-   * The callback is only invoked for changes made to this store instance.
+   * The callback is invoked for changes made to this store from any handle, in any window or from Rust,
+   * until the store is closed (a store loaded again afterwards is a new instance). It is not invoked by {@linkcode Store.reload}.
    *
    * @example
    * ```typescript
@@ -796,7 +797,8 @@ export class Store extends Resource implements IStore {
   /**
    * Listen to changes on the store.
    *
-   * The callback is only invoked for changes made to this store instance.
+   * The callback is invoked for changes made to this store from any handle, in any window or from Rust,
+   * until the store is closed (a store loaded again afterwards is a new instance). It is not invoked by {@linkcode Store.reload}.
    *
    * @example
    * ```typescript
