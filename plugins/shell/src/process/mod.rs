@@ -160,10 +160,7 @@ impl From<Command> for StdCommand {
 
 impl Command {
     pub(crate) fn new<S: AsRef<OsStr>>(program: S) -> Self {
-        log::debug!(
-            "Creating sidecar {}",
-            program.as_ref().to_str().unwrap_or("")
-        );
+        log::debug!("Creating command {}", program.as_ref().to_string_lossy());
         let mut command = StdCommand::new(program);
 
         command.stdout(Stdio::piped());
