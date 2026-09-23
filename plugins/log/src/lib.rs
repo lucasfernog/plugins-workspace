@@ -275,18 +275,8 @@ impl RotatingFile {
                 let entry = entry.ok()?;
                 let path = entry.path();
                 let old_file_name = path.file_name()?.to_string_lossy().into_owned();
-                if old_file_name.starts_with(&self.file_name)
-                  // exclude the current active file
-                  && old_file_name != format!("{}.log", self.file_name)
-                {
-                    let date = old_file_name
-                        .strip_prefix(&self.file_name)?
-                        .strip_prefix("_")?
-                        .strip_suffix(".log")?;
-                    Some((path, date.to_string()))
-                } else {
-                    None
-                }
+                let date = self.archived_file_date(&old_file_name)?.to_string();
+                Some((path, date))
             })
             .collect::<Vec<_>>();
 
@@ -299,6 +289,20 @@ impl RotatingFile {
             }
         }
         Ok(())
+    }
+
+    /// Returns the date part of `file_name` if it names a log file archived by this rotator, i.e.
+    /// `{self.file_name}_{date}.log` where `date` matches [`LOG_DATE_FORMAT`].
+    ///
+    /// Returns `None` for any other file, including the active log file and the files of other targets whose
+    /// name starts with this target's name (e.g. `app_webview.log` for the `app` target).
+    fn archived_file_date<'a>(&self, file_name: &'a str) -> Option<&'a str> {
+        let date = file_name
+            .strip_prefix(self.file_name.as_str())?
+            .strip_prefix('_')?
+            .strip_suffix(".log")?;
+        time::PrimitiveDateTime::parse(date, LOG_DATE_FORMAT).ok()?;
+        Some(date)
     }
 
     fn rename_file_to_dated(&self) -> Result<(), Error> {
@@ -990,6 +994,34 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.0.join("app.log")).unwrap(),
             "abcdefgh"
+        );
+    }
+
+    #[test]
+    fn remove_old_files_ignores_other_targets_sharing_the_prefix() {
+        let dir = TestDir::new("shared-prefix");
+        for name in [
+            "app_webview.log",
+            "app_webview_2020-01-01_00-00-00.log",
+            "app_2020-01-01_00-00-00.log",
+            "app_2020-01-02_00-00-00.log",
+            "app_notes.log",
+        ] {
+            fs::write(dir.0.join(name), "x").unwrap();
+        }
+
+        // `new` prunes the archives down to the requested count
+        let _file = rotating_file(&dir, "app", RotationStrategy::KeepSome(1));
+
+        assert_eq!(
+            dir.files(),
+            vec![
+                "app.log".to_string(),
+                "app_2020-01-02_00-00-00.log".to_string(),
+                "app_notes.log".to_string(),
+                "app_webview.log".to_string(),
+                "app_webview_2020-01-01_00-00-00.log".to_string(),
+            ]
         );
     }
 }
