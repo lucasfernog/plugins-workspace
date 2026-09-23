@@ -99,6 +99,11 @@ export async function selectionFeedback(): Promise<Result<null, Error>> {
   return commands.selectionFeedback()
 }
 
-export { ImpactFeedbackStyle, NotificationFeedbackType } from './bindings'
+export type {
+  ImpactFeedbackStyle,
+  NotificationFeedbackType,
+  Result,
+  Error as HapticsError
+} from './bindings'
 
 // export { events };
