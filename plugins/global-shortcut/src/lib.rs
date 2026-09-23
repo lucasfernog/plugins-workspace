@@ -29,7 +29,8 @@ use serde::Serialize;
 use tauri::{
     ipc::Channel,
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    AppHandle, Manager, Runtime, State,
+    webview::PageLoadEvent,
+    AppHandle, Manager, RunEvent, Runtime, State, Webview, WindowEvent,
 };
 
 mod error;
@@ -61,6 +62,16 @@ impl TryFrom<&str> for ShortcutWrapper {
 struct RegisteredShortcut<R: Runtime> {
     shortcut: Shortcut,
     handler: Option<Arc<HandlerFn<R>>>,
+    /// The webview that registered this shortcut through the JavaScript API, if any.
+    owner: Option<Owner>,
+}
+
+/// The webview (and its window) a shortcut registered from JavaScript belongs to. Its handler is
+/// an IPC channel into that page, so the shortcut is unregistered when the page goes away.
+#[derive(Clone)]
+struct Owner {
+    webview: String,
+    window: String,
 }
 
 struct GlobalHotKeyManager(global_hotkey::GlobalHotKeyManager);
@@ -104,14 +115,23 @@ impl<R: Runtime> GlobalShortcut<R> {
         let id = shortcut.id();
         let handler = handler.map(|h| Arc::new(Box::new(h) as HandlerFn<R>));
         run_main_thread!(self.app, self.manager, |m| m.0.register(shortcut))?;
-        self.shortcuts
-            .lock()
-            .unwrap()
-            .insert(id, RegisteredShortcut { shortcut, handler });
+        self.shortcuts.lock().unwrap().insert(
+            id,
+            RegisteredShortcut {
+                shortcut,
+                handler,
+                owner: None,
+            },
+        );
         Ok(())
     }
 
-    fn register_multiple_internal<S, F>(&self, shortcuts: S, handler: Option<F>) -> Result<()>
+    fn register_multiple_internal<S, F>(
+        &self,
+        shortcuts: S,
+        handler: Option<F>,
+        owner: Option<Owner>,
+    ) -> Result<()>
     where
         S: IntoIterator<Item = Shortcut>,
         F: Fn(&AppHandle<R>, &Shortcut, ShortcutEvent) + Send + Sync + 'static,
@@ -128,6 +148,7 @@ impl<R: Runtime> GlobalShortcut<R> {
                 RegisteredShortcut {
                     shortcut,
                     handler: handler.clone(),
+                    owner: owner.clone(),
                 },
             );
         }
@@ -150,6 +171,25 @@ impl<R: Runtime> GlobalShortcut<R> {
         }
 
         result.map_err(Into::into)
+    }
+
+    /// Unregisters the shortcuts registered through the JavaScript API by the webviews matching
+    /// `is_owner`, whose handlers can no longer be reached.
+    fn unregister_owned_by(&self, is_owner: impl Fn(&Owner) -> bool) {
+        let hotkeys = self
+            .shortcuts
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| s.owner.as_ref().is_some_and(&is_owner))
+            .map(|s| s.shortcut)
+            .collect::<Vec<_>>();
+        if hotkeys.is_empty() {
+            return;
+        }
+        if let Err(e) = self.unregister_internal(hotkeys) {
+            log::warn!("failed to unregister the shortcuts of a closed or reloaded webview: {e}");
+        }
     }
 }
 
@@ -191,7 +231,11 @@ impl<R: Runtime> GlobalShortcut<R> {
         for shortcut in shortcuts {
             s.push(try_into_shortcut(shortcut)?);
         }
-        self.register_multiple_internal(s, None::<fn(&AppHandle<R>, &Shortcut, ShortcutEvent)>)
+        self.register_multiple_internal(
+            s,
+            None::<fn(&AppHandle<R>, &Shortcut, ShortcutEvent)>,
+            None,
+        )
     }
 
     /// Register multiple shortcuts with a handler.
@@ -206,7 +250,7 @@ impl<R: Runtime> GlobalShortcut<R> {
         for shortcut in shortcuts {
             s.push(try_into_shortcut(shortcut)?);
         }
-        self.register_multiple_internal(s, Some(handler))
+        self.register_multiple_internal(s, Some(handler), None)
     }
 
     /// Unregister a shortcut
@@ -334,7 +378,7 @@ struct ShortcutJsEvent {
 
 #[tauri::command]
 fn register<R: Runtime>(
-    _app: AppHandle<R>,
+    webview: Webview<R>,
     global_shortcut: State<'_, GlobalShortcut<R>>,
     shortcuts: Vec<String>,
     handler: Channel<ShortcutJsEvent>,
@@ -360,6 +404,10 @@ fn register<R: Runtime>(
                 let _ = handler.send(js_event);
             },
         ),
+        Some(Owner {
+            webview: webview.label().to_string(),
+            window: webview.window().label().to_string(),
+        }),
     )
 }
 
@@ -481,6 +529,28 @@ impl<R: Runtime> Builder<R> {
                 unregister_all,
                 is_registered,
             ])
+            .on_page_load(|webview, payload| {
+                // a reload or navigation drops the page's IPC channels, so the handlers of the
+                // shortcuts it registered can never run again
+                if payload.event() == PageLoadEvent::Started {
+                    if let Some(global_shortcut) = webview.try_state::<GlobalShortcut<R>>() {
+                        let label = webview.label();
+                        global_shortcut.unregister_owned_by(|owner| owner.webview == label);
+                    }
+                }
+            })
+            .on_event(|app, event| {
+                if let RunEvent::WindowEvent {
+                    label,
+                    event: WindowEvent::Destroyed,
+                    ..
+                } = event
+                {
+                    if let Some(global_shortcut) = app.try_state::<GlobalShortcut<R>>() {
+                        global_shortcut.unregister_owned_by(|owner| &owner.window == label);
+                    }
+                }
+            })
             .setup(move |app, _api| {
                 let manager = global_hotkey::GlobalHotKeyManager::new()?;
                 let mut store = HashMap::<HotKeyId, RegisteredShortcut<R>>::new();
@@ -491,6 +561,7 @@ impl<R: Runtime> Builder<R> {
                         RegisteredShortcut {
                             shortcut,
                             handler: None,
+                            owner: None,
                         },
                     );
                 }

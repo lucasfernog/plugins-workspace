@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-import { expect } from '@wdio/globals'
+import { browser, expect } from '@wdio/globals'
 import {
   tauri,
   tauriError,
   describePlugin,
+  eventually,
   platform
 } from '../helpers/index.js'
 
@@ -92,6 +93,26 @@ describePlugin('global-shortcut', { desktopOnly: true }, () => {
         ? /RegisterEventHotKey failed for F11/
         : /already registered/i
     )
+  })
+
+  it('shortcuts registered by a page are released when it reloads', async () => {
+    const shortcut = 'CommandOrControl+Shift+F6'
+    await tauri((api, s) => api.globalShortcut.register(s, () => {}), shortcut)
+    expect(
+      await tauri((api, s) => api.globalShortcut.isRegistered(s), shortcut)
+    ).toBe(true)
+
+    // the page's IPC channel (the handler) is gone after a reload, so the
+    // plugin unregisters the shortcut and the new page can register it again
+    await browser.refresh()
+    const result = await eventually(() =>
+      tauri(async (api, s) => {
+        const before = await api.globalShortcut.isRegistered(s)
+        await api.globalShortcut.register(s, () => {})
+        return { before, after: await api.globalShortcut.isRegistered(s) }
+      }, shortcut)
+    )
+    expect(result).toEqual({ before: false, after: true })
   })
 
   it('rejects shortcuts that cannot be parsed', async () => {

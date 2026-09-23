@@ -33,6 +33,10 @@ export type ShortcutHandler = (event: ShortcutEvent) => void
  * If the shortcut is already taken by another application, the handler will not be triggered.
  * Make sure the shortcut is as unique as possible while still taking user experience into consideration.
  *
+ * The shortcuts belong to the page that registered them: they are unregistered automatically when
+ * the webview reloads or navigates to another page, or when its window is closed, since the handler
+ * can no longer be called then.
+ *
  * @example
  * ```typescript
  * import { register } from '@tauri-apps/plugin-global-shortcut';
