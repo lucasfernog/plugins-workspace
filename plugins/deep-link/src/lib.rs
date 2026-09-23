@@ -124,6 +124,7 @@ mod imp {
         /// - **Windows / Linux**: This function reads the command line arguments and checks if there's only one value, which must be an URL with scheme matching one of the configured values.
         ///   Note that you must manually check the arguments when registering deep link schemes dynamically with [`Self::register`].
         ///   Additionally, the deep link might have been provided as a CLI argument so you should check if its format matches what you expect.
+        /// - **Android**: Returns at most one URL, the last one the app was opened with.
         pub fn get_current(&self) -> crate::Result<Option<Vec<url::Url>>> {
             self.plugin_handle
                 .run_mobile_plugin::<GetCurrentResponse>("getCurrent", ())
@@ -148,7 +149,7 @@ mod imp {
         ///
         /// ## Platform-specific:
         ///
-        /// - **Linux**: Can only unregister the scheme if it was initially registered with [`register`](`Self::register`). Needs the `update-desktop-database` command available on the system. May not work on older distros.
+        /// - **Linux**: Can only unregister the scheme if it was initially registered with [`register`](`Self::register`). Refreshes the desktop database with the `update-desktop-database` command; without it, [`is_registered`](`Self::is_registered`) may keep returning `true`. May not work on older distros.
         /// - **macOS / Android / iOS**: Unsupported, will return [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`).
         pub fn unregister<S: AsRef<str>>(&self, _protocol: S) -> crate::Result<()> {
             Err(crate::Error::UnsupportedPlatform)
@@ -236,6 +237,7 @@ mod imp {
         /// - **Windows / Linux**: This function reads the command line arguments and checks if there's only one value, which must be an URL with scheme matching one of the configured values.
         ///   Note that you must manually check the arguments when registering deep link schemes dynamically with [`Self::register`].
         ///   Additionally, the deep link might have been provided as a CLI argument so you should check if its format matches what you expect.
+        ///   Later deep links only update it when they are forwarded by the single-instance plugin with its `deep-link` feature.
         pub fn get_current(&self) -> crate::Result<Option<Vec<url::Url>>> {
             return Ok(self.current.lock().unwrap().clone());
         }
@@ -243,7 +245,15 @@ mod imp {
         /// Registers all schemes defined in the configuration file.
         ///
         /// This is useful to ensure the schemes are registered even if the user did not install the app properly
-        /// (e.g. an AppImage that was not properly registered with an AppImage launcher).
+        /// (e.g. an AppImage that was not properly registered with an AppImage launcher), or when running
+        /// in development on Windows, where the app is not installed.
+        ///
+        /// ## Platform-specific:
+        ///
+        /// - **Linux**: Writes `$XDG_DATA_HOME/applications/<binary name>-handler.desktop` and needs the
+        ///   `xdg-mime` and `update-desktop-database` commands available on the system.
+        /// - **macOS / iOS**: Returns [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`) if any
+        ///   desktop scheme is configured, as schemes are registered at build time there. Only call it on Windows and Linux.
         pub fn register_all(&self) -> crate::Result<()> {
             let Some(config) = &self.config else {
                 return Ok(());
@@ -262,7 +272,11 @@ mod imp {
         ///
         /// ## Platform-specific:
         ///
-        /// - **Linux**: Needs the `xdg-mime` and `update-desktop-database` commands available on the system.
+        /// - **Windows**: Writes the scheme under `HKEY_CURRENT_USER\Software\Classes`.
+        /// - **Linux**: Writes `$XDG_DATA_HOME/applications/<binary name>-handler.desktop` (usually
+        ///   `~/.local/share/applications`) and makes it the default handler. Needs the `xdg-mime` and
+        ///   `update-desktop-database` commands available on the system (the `xdg-utils` and
+        ///   `desktop-file-utils` packages).
         /// - **macOS / Android / iOS**: Unsupported, will return [`Error::UnsupportedPlatform`](`crate::Error::UnsupportedPlatform`).
         pub fn register<S: AsRef<str>>(&self, _protocol: S) -> crate::Result<()> {
             #[cfg(windows)]
