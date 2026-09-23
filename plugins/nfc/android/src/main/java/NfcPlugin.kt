@@ -98,17 +98,17 @@ enum class TechKind(@JsonValue val value: String) {
 }
 
 private fun addDataFilters(intentFilter: IntentFilter, uri: UriFilter?, mimeType: String?) {
-    uri?.let { it -> {
-        it.scheme?.let {
+    uri?.let { filter ->
+        filter.scheme?.let {
             intentFilter.addDataScheme(it)
         }
-        it.host?.let {
+        filter.host?.let {
             intentFilter.addDataAuthority(it, null)
         }
-        it.pathPrefix?.let {
+        filter.pathPrefix?.let {
             intentFilter.addDataPath(it, PatternMatcher.PATTERN_PREFIX)
         }
-    }}
+    }
     mimeType?.let {
         intentFilter.addDataType(it)
     }
