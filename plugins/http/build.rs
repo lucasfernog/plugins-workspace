@@ -30,7 +30,7 @@ enum HttpScopeEntry {
     ///
     /// - "https://*:*" : allows all HTTPS origin on any port
     ///
-    /// - "https://*.github.com/tauri-apps/tauri": allows any subdomain of "github.com" with the "tauri-apps/api" path
+    /// - "https://*.github.com/tauri-apps/tauri": allows any subdomain of "github.com" with the "/tauri-apps/tauri" path
     ///
     /// - "https://myapi.service.com/users/*": allows access to any URLs that begins with "https://myapi.service.com/users/"
     Value(String),
@@ -46,7 +46,7 @@ enum HttpScopeEntry {
         ///
         /// - "https://*:*" : allows all HTTPS origin on any port
         ///
-        /// - "https://*.github.com/tauri-apps/tauri": allows any subdomain of "github.com" with the "tauri-apps/api" path
+        /// - "https://*.github.com/tauri-apps/tauri": allows any subdomain of "github.com" with the "/tauri-apps/tauri" path
         ///
         /// - "https://myapi.service.com/users/*": allows access to any URLs that begins with "https://myapi.service.com/users/"
         url: String,
