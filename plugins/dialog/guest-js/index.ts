@@ -492,14 +492,16 @@ async function ask(
   options?: string | ConfirmDialogOptions
 ): Promise<boolean> {
   const opts = typeof options === 'string' ? { title: options } : options
+  // `||` rather than `??`: an empty label falls back to the default one, like the
+  // `customButtons` check does, so the result can still match `okLabel`
   const customButtons = opts?.okLabel || opts?.cancelLabel
-  const okLabel = opts?.okLabel ?? 'Yes'
+  const okLabel = opts?.okLabel || 'Yes'
   return (
     (await messageCommand(message, {
       title: opts?.title,
       kind: opts?.kind,
       buttons: customButtons
-        ? { ok: okLabel, cancel: opts.cancelLabel ?? 'No' }
+        ? { ok: okLabel, cancel: opts.cancelLabel || 'No' }
         : 'YesNo'
     })) === okLabel
   )
@@ -529,14 +531,16 @@ async function confirm(
   options?: string | ConfirmDialogOptions
 ): Promise<boolean> {
   const opts = typeof options === 'string' ? { title: options } : options
+  // `||` rather than `??`: an empty label falls back to the default one, like the
+  // `customButtons` check does, so the result can still match `okLabel`
   const customButtons = opts?.okLabel || opts?.cancelLabel
-  const okLabel = opts?.okLabel ?? 'Ok'
+  const okLabel = opts?.okLabel || 'Ok'
   return (
     (await messageCommand(message, {
       title: opts?.title,
       kind: opts?.kind,
       buttons: customButtons
-        ? { ok: okLabel, cancel: opts.cancelLabel ?? 'Cancel' }
+        ? { ok: okLabel, cancel: opts.cancelLabel || 'Cancel' }
         : 'OkCancel'
     })) === okLabel
   )
