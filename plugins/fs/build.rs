@@ -24,8 +24,9 @@ enum FsScopeEntry {
     /// The pattern can start with a variable that resolves to a system base directory.
     /// The variables are: `$AUDIO`, `$CACHE`, `$CONFIG`, `$DATA`, `$LOCALDATA`, `$DESKTOP`,
     /// `$DOCUMENT`, `$DOWNLOAD`, `$EXE`, `$FONT`, `$HOME`, `$PICTURE`, `$PUBLIC`, `$RUNTIME`,
-    /// `$TEMPLATE`, `$VIDEO`, `$RESOURCE`, `$APP`, `$LOG`, `$TEMP`, `$APPCONFIG`, `$APPDATA`,
+    /// `$TEMPLATE`, `$VIDEO`, `$RESOURCE`, `$TEMP`, `$APPCONFIG`, `$APPDATA`,
     /// `$APPLOCALDATA`, `$APPCACHE`, `$APPLOG`.
+    /// `$DESKTOP`, `$EXE`, `$FONT`, `$RUNTIME` and `$TEMPLATE` are not available on Android.
     Value(PathBuf),
     Object {
         /// A path that can be accessed by the webview when using the fs APIs.
@@ -33,8 +34,9 @@ enum FsScopeEntry {
         /// The pattern can start with a variable that resolves to a system base directory.
         /// The variables are: `$AUDIO`, `$CACHE`, `$CONFIG`, `$DATA`, `$LOCALDATA`, `$DESKTOP`,
         /// `$DOCUMENT`, `$DOWNLOAD`, `$EXE`, `$FONT`, `$HOME`, `$PICTURE`, `$PUBLIC`, `$RUNTIME`,
-        /// `$TEMPLATE`, `$VIDEO`, `$RESOURCE`, `$APP`, `$LOG`, `$TEMP`, `$APPCONFIG`, `$APPDATA`,
+        /// `$TEMPLATE`, `$VIDEO`, `$RESOURCE`, `$TEMP`, `$APPCONFIG`, `$APPDATA`,
         /// `$APPLOCALDATA`, `$APPCACHE`, `$APPLOG`.
+        /// `$DESKTOP`, `$EXE`, `$FONT`, `$RUNTIME` and `$TEMPLATE` are not available on Android.
         path: PathBuf,
     },
 }
