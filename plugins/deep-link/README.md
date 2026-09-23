@@ -110,7 +110,8 @@ Under `tauri.conf.json > plugins > deep-link`, configure the domains (mobile) an
     "deep-link": {
       "mobile": [
         { "host": "your.website.com", "pathPrefix": ["/open"] },
-        { "host": "another.site.br" }
+        { "host": "another.site.br" },
+        { "scheme": ["my-tauri-app"], "appLink": false }
       ],
       "desktop": {
         "schemes": ["something", "my-tauri-app"]
@@ -119,6 +120,19 @@ Under `tauri.conf.json > plugins > deep-link`, configure the domains (mobile) an
   }
 }
 ```
+
+Each `mobile` entry accepts:
+
+| Key                                               | Default                               | Platforms    | Notes                                                                                                                                                            |
+| ------------------------------------------------- | ------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheme`                                          | `["https", "http"]`                   | Android, iOS | Custom schemes are added to `CFBundleURLTypes` on iOS.                                                                                                           |
+| `host`                                            | none                                  | Android, iOS | Required for `http`/`https` (the build fails otherwise). Must not include `scheme://`.                                                                           |
+| `path`, `pathPrefix`, `pathPattern`, `pathSuffix` | `[]`                                  | Android      | Become `<data android:path…>` attributes. iOS ignores them: configure paths in your `apple-app-site-association` file instead.                                   |
+| `appLink`                                         | `true` for `http`/`https` with a host | Android, iOS | App links / universal links: adds `android:autoVerify` on Android and an `applinks:<host>` associated domain on iOS. Set it to `false` for plain custom schemes. |
+
+`desktop` is either one object or a list of objects with a `schemes` list (plus the macOS-only `name`, `role` and `domains` keys, see the [Tauri configuration reference](https://v2.tauri.app/reference/config/#deeplinkprotocol)).
+
+On Android and iOS, the plugin's build script writes these entries into the generated Android manifest, the iOS entitlements (`com.apple.developer.associated-domains`) and the iOS `Info.plist` (`CFBundleURLTypes`) on every build. App links on iOS also need the Associated Domains capability on your App ID.
 
 ## Usage
 
