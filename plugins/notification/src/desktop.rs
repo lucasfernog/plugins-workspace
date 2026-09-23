@@ -108,11 +108,77 @@ impl<R: Runtime> Notification<R> {
     }
 }
 
+/// Whether the executable runs from a Cargo target directory rather than from an installation,
+/// in which case it has no registered AppUserModelID on Windows.
+///
+/// Development builds always count as such, as does an executable in a profile directory of a
+/// `target` directory (`target/<profile>` or `target/<triple>/<profile>`).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_cargo_build(exe: &std::path::Path, is_dev: bool) -> bool {
+    is_dev
+        || exe
+            .ancestors()
+            // <profile> and <triple>/<profile>
+            .skip(2)
+            .take(2)
+            .any(|dir| dir.file_name().is_some_and(|name| name == "target"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_cargo_build;
+    use std::path::PathBuf;
+
+    fn path(components: &[&str]) -> PathBuf {
+        components.iter().collect()
+    }
+
+    #[test]
+    fn detects_cargo_builds() {
+        assert!(is_cargo_build(
+            &path(&["project", "target", "debug", "app.exe"]),
+            false
+        ));
+        assert!(is_cargo_build(
+            &path(&["project", "target", "release", "app.exe"]),
+            false
+        ));
+        assert!(is_cargo_build(
+            &path(&[
+                "project",
+                "target",
+                "x86_64-pc-windows-msvc",
+                "debug",
+                "app.exe"
+            ]),
+            false
+        ));
+        assert!(is_cargo_build(
+            &path(&["project", "target", "ci", "app.exe"]),
+            false
+        ));
+        assert!(is_cargo_build(
+            &path(&["custom-dir", "debug", "app.exe"]),
+            true
+        ));
+        assert!(!is_cargo_build(
+            &path(&["Program Files", "App", "app.exe"]),
+            false
+        ));
+        assert!(!is_cargo_build(
+            &path(&["Users", "target", "AppData", "Local", "App", "app.exe"]),
+            false
+        ));
+        assert!(!is_cargo_build(&path(&["target", "app.exe"]), false));
+        assert!(!is_cargo_build(&path(&["app.exe"]), false));
+    }
+}
+
 mod imp {
     //! Types and functions related to desktop notifications.
 
     #[cfg(windows)]
-    use std::path::MAIN_SEPARATOR as SEP;
+    use super::is_cargo_build;
 
     /// The desktop notification definition.
     ///
@@ -236,12 +302,9 @@ mod imp {
             #[cfg(windows)]
             {
                 let exe = tauri::utils::platform::current_exe()?;
-                let exe_dir = exe.parent().expect("failed to get exe directory");
-                let curr_dir = exe_dir.display().to_string();
-                // set the notification's System.AppUserModel.ID only when running the installed app
-                if !(curr_dir.ends_with(format!("{SEP}target{SEP}debug").as_str())
-                    || curr_dir.ends_with(format!("{SEP}target{SEP}release").as_str()))
-                {
+                // set the notification's System.AppUserModel.ID only when running the installed app,
+                // an unregistered ID makes Windows drop the toast
+                if !is_cargo_build(&exe, tauri::is_dev()) {
                     notification.app_id(&self.identifier);
                 }
             }
