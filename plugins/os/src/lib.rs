@@ -21,6 +21,7 @@ use tauri::{
 mod commands;
 mod error;
 
+#[allow(deprecated)]
 pub use error::Error;
 
 /// The type of the current operating system, as returned by [`type_`].

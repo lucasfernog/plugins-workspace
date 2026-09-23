@@ -6806,7 +6806,6 @@ name = "tauri-plugin-os"
 version = "2.3.2"
 dependencies = [
  "gethostname 1.0.1",
- "log",
  "os_info",
  "serde",
  "serde_json",
