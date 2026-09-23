@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-const COMMANDS: &[&str] = &["cli_matches"];
+const COMMANDS: &[&str] = &["cli_matches", "cli_matches_from"];
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)

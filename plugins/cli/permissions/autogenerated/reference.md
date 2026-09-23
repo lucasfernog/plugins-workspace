@@ -40,4 +40,30 @@ Denies the cli_matches command without any pre-configured scope.
 
 </td>
 </tr>
+
+<tr>
+<td>
+
+`cli:allow-cli-matches-from`
+
+</td>
+<td>
+
+Enables the cli_matches_from command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`cli:deny-cli-matches-from`
+
+</td>
+<td>
+
+Denies the cli_matches_from command without any pre-configured scope.
+
+</td>
+</tr>
 </table>

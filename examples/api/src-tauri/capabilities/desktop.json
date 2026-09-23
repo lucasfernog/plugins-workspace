@@ -7,6 +7,7 @@
   "permissions": [
     "autostart:default",
     "cli:default",
+    "cli:allow-cli-matches-from",
     "positioner:default",
     "updater:default",
     "global-shortcut:allow-unregister",

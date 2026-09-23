@@ -117,7 +117,7 @@ const commonSurface: Surface<CommonPluginApi> = {
 /** Plugins the example only registers on desktop. */
 const desktopSurface: Surface<DesktopPluginApi> = {
   autostart: ['enable', 'disable', 'isEnabled'],
-  cli: ['getMatches'],
+  cli: ['getMatches', 'getMatchesFrom'],
   globalShortcut: ['register', 'unregister', 'unregisterAll', 'isRegistered'],
   positioner: [
     'Position',

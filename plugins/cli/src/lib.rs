@@ -60,11 +60,20 @@ fn cli_matches<R: Runtime>(_app: AppHandle<R>, cli: State<'_, Cli<R>>) -> Result
     cli.matches()
 }
 
+#[tauri::command]
+fn cli_matches_from<R: Runtime>(
+    _app: AppHandle<R>,
+    cli: State<'_, Cli<R>>,
+    args: Vec<String>,
+) -> Result<parser::Matches> {
+    cli.matches_from(args)
+}
+
 /// Initializes the plugin, reading the CLI definition from the `plugins.cli` object in
 /// `tauri.conf.json`.
 pub fn init<R: Runtime>() -> TauriPlugin<R, Config> {
     Builder::new("cli")
-        .invoke_handler(tauri::generate_handler![cli_matches])
+        .invoke_handler(tauri::generate_handler![cli_matches, cli_matches_from])
         .setup(|app, api| {
             app.manage(Cli(api));
             Ok(())

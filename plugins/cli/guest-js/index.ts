@@ -78,6 +78,28 @@ async function getMatches(): Promise<CliMatches> {
   return await invoke('plugin:cli|cli_matches')
 }
 
+/**
+ * Parse the given arguments instead of the ones the current process was started with, and get the matches using the same configuration as {@link getMatches}.
+ *
+ * Useful to handle arguments received later, e.g. the `argv` of a second instance forwarded by the single-instance plugin.
+ *
+ * Requires the `cli:allow-cli-matches-from` permission, which is not part of `cli:default`.
+ *
+ * @example
+ * ```typescript
+ * import { getMatchesFrom } from '@tauri-apps/plugin-cli';
+ * // the first item is the binary name, as in `argv`
+ * const matches = await getMatchesFrom(['your-app', 'run', '--debug']);
+ * ```
+ *
+ * @param args The arguments to parse. Like a process' `argv`, the first item is the binary name and is not matched against the configuration.
+ * @returns A promise resolving to the parsed CLI matches. Rejects if the arguments do not satisfy the CLI configuration.
+ * @since 2.5.0
+ */
+async function getMatchesFrom(args: string[]): Promise<CliMatches> {
+  return await invoke('plugin:cli|cli_matches_from', { args })
+}
+
 export type { ArgMatch, SubcommandMatch, CliMatches }
 
-export { getMatches }
+export { getMatches, getMatchesFrom }
