@@ -339,18 +339,29 @@ async fn initialize(
     mut password: String,
 ) -> std::result::Result<(), InitializeError> {
     let hash_function = hash_function.0.clone();
+    let existing = collection.get(&snapshot_path);
     let path = snapshot_path.clone();
     // hashing the password (argon2) and decrypting the snapshot are CPU and I/O bound,
     // so they must not block the async runtime
     let stronghold = tauri::async_runtime::spawn_blocking(move || {
         let hash = hash_function(&password);
         password.zeroize();
-        let hash = hash.map_err(InitializeError::PasswordHash)?;
-        Stronghold::new(path, hash).map_err(InitializeError::from)
+        let hash = Zeroizing::new(hash.map_err(InitializeError::PasswordHash)?);
+        // The snapshot is already open with this password (e.g. loaded again after a
+        // webview reload, or from another window): keep that instance, so its unsaved
+        // changes and the clients loaded by other handles are not discarded.
+        if existing.is_some_and(|s| s.is_encrypted_with(&hash)) {
+            return Ok(None);
+        }
+        Stronghold::new(path, hash.to_vec())
+            .map(Some)
+            .map_err(InitializeError::from)
     })
     .await??;
 
-    collection.insert(&snapshot_path, Arc::new(stronghold));
+    if let Some(stronghold) = stronghold {
+        collection.insert(&snapshot_path, Arc::new(stronghold));
+    }
 
     Ok(())
 }

@@ -668,6 +668,10 @@ export class Stronghold {
   /**
    * Load the snapshot if it exists (password must match), or start a fresh stronghold instance otherwise.
    *
+   * If the snapshot is already loaded with the same password (for example from another
+   * window, or before a webview reload), the loaded instance is reused, keeping its
+   * unsaved changes and loaded clients.
+   *
    * @example
    * ```typescript
    * import { Stronghold } from '@tauri-apps/plugin-stronghold';

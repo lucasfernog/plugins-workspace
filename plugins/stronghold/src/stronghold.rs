@@ -89,6 +89,21 @@ impl Stronghold {
         Ok(())
     }
 
+    /// Whether this instance is encrypted with `key`, compared in constant time.
+    pub(crate) fn is_encrypted_with(&self, key: &[u8]) -> bool {
+        let Ok(buffer) = self.keyprovider.try_unlock() else {
+            return false;
+        };
+        let current = buffer.borrow();
+        let current: &[u8] = &current;
+        current.len() == key.len()
+            && current
+                .iter()
+                .zip(key)
+                .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+                == 0
+    }
+
     /// Returns a reference to the underlying [`iota_stronghold::Stronghold`] instance.
     pub fn inner(&self) -> &iota_stronghold::Stronghold {
         &self.inner
@@ -99,5 +114,23 @@ impl Deref for Stronghold {
     type Target = iota_stronghold::Stronghold;
     fn deref(&self) -> &Self::Target {
         &self.inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_encrypted_with_compares_the_key() {
+        let path = std::env::temp_dir().join(format!(
+            "tauri-plugin-stronghold-key-check-{}.hold",
+            std::process::id()
+        ));
+        let stronghold = Stronghold::new(&path, vec![1; 32]).unwrap();
+        assert!(stronghold.is_encrypted_with(&[1; 32]));
+        assert!(!stronghold.is_encrypted_with(&[2; 32]));
+        assert!(!stronghold.is_encrypted_with(&[1; 16]));
+        assert!(!path.exists());
     }
 }

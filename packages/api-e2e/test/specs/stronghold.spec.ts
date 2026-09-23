@@ -156,6 +156,37 @@ describePlugin('stronghold', () => {
     })
   })
 
+  it('loading an open snapshot again keeps its unsaved changes', async () => {
+    const result = await tauri(
+      async (api, dir, password, clientName) => {
+        const path = await api.path.join(
+          await api.path.appDataDir(),
+          dir,
+          'load-twice.stronghold'
+        )
+        const stronghold = await api.stronghold.Stronghold.load(path, password)
+        const client = await stronghold.createClient(clientName)
+        await client.getStore().insert('unsaved', [7, 8])
+
+        // e.g. a webview reload or a second window opening the same snapshot
+        const again = await api.stronghold.Stronghold.load(path, password)
+        const fromOldHandle = await client.getStore().get('unsaved')
+        const fromNewHandle = await (await again.loadClient(clientName))
+          .getStore()
+          .get('unsaved')
+        await again.unload()
+        return {
+          fromOldHandle: fromOldHandle && Array.from(fromOldHandle),
+          fromNewHandle: fromNewHandle && Array.from(fromNewHandle)
+        }
+      },
+      dir,
+      password,
+      clientName
+    )
+    expect(result).toEqual({ fromOldHandle: [7, 8], fromNewHandle: [7, 8] })
+  })
+
   it('different spellings of a snapshot path share one instance', async () => {
     const result = await tauri(
       async (api, dir, password, clientName) => {
