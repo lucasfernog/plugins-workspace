@@ -304,7 +304,15 @@ impl<R: Runtime> StoreInner<R> {
 
     /// Saves the store to disk at the store's `path`.
     pub fn save(&self) -> crate::Result<()> {
-        fs::create_dir_all(self.path.parent().expect("invalid store path"))?;
+        if self.path.file_name().is_none() {
+            return Err(crate::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid store path {:?}: it has no file name", self.path),
+            )));
+        }
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
 
         let bytes = (self.serialize_fn)(&self.cache).map_err(crate::Error::Serialize)?;
         fs::write(&self.path, bytes)?;
