@@ -457,7 +457,14 @@ impl UpdaterBuilder {
         let executable_path = self.executable_path.clone().unwrap_or(current_exe()?);
 
         // Get the extract_path from the provided executable_path
-        let extract_path = if cfg!(target_os = "linux") {
+        // the Linux install implementation, which the BSDs share, replaces the executable itself
+        let extract_path = if cfg!(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        )) {
             executable_path
         } else {
             extract_path_from_executable(&executable_path)?
