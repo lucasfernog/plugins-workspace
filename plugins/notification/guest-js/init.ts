@@ -55,10 +55,6 @@ import type { Options } from './index'
   }
 
   async function sendNotification(options: string | Options): Promise<void> {
-    if (typeof options === 'object') {
-      Object.freeze(options)
-    }
-
     await invoke('plugin:notification|notify', {
       options:
         typeof options === 'string'
@@ -71,11 +67,10 @@ import type { Options } from './index'
 
   // @ts-expect-error unfortunately we can't implement the whole type, so we overwrite it with our own version
   window.Notification = function (title, options) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const opts = options || {}
+    // copy the options: the caller's object must not be mutated
     void sendNotification(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      Object.assign(opts, {
+      Object.assign({}, options, {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         title
       })

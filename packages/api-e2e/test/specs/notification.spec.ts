@@ -40,6 +40,30 @@ describePlugin('notification', () => {
     expect(result).toEqual({ permission: 'granted', requested: 'granted' })
   })
 
+  itDesktop(
+    'sending a notification leaves the caller options untouched',
+    async () => {
+      const result = await tauri((api) => {
+        const constructorOptions = { body: 'sent by the e2e suite' }
+        new window.Notification('e2e', constructorOptions)
+        const sendOptions = { title: 'e2e', body: 'sent by the e2e suite' }
+        api.notification.sendNotification(sendOptions)
+        return {
+          constructorOptions,
+          constructorFrozen: Object.isFrozen(constructorOptions),
+          sendOptions,
+          sendFrozen: Object.isFrozen(sendOptions)
+        }
+      })
+      expect(result).toEqual({
+        constructorOptions: { body: 'sent by the e2e suite' },
+        constructorFrozen: false,
+        sendOptions: { title: 'e2e', body: 'sent by the e2e suite' },
+        sendFrozen: false
+      })
+    }
+  )
+
   itOn(
     ['android', 'ios'],
     'action types register, and cancel/remove leave nothing pending or active',
