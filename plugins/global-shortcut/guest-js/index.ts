@@ -30,6 +30,9 @@ export type ShortcutHandler = (event: ShortcutEvent) => void
  *
  * The handler is called when any of the registered shortcuts are pressed by the user.
  *
+ * If one of the shortcuts fails to register (for instance because it is already registered),
+ * the promise rejects and none of the given shortcuts are registered.
+ *
  * If the shortcut is already taken by another application, the handler will not be triggered.
  * Make sure the shortcut is as unique as possible while still taking user experience into consideration.
  *

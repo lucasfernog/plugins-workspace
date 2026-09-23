@@ -120,9 +120,20 @@ impl<R: Runtime> GlobalShortcut<R> {
 
         let hotkeys = shortcuts.into_iter().collect::<Vec<_>>();
 
+        // Register every shortcut in a single main thread dispatch, without holding the
+        // shortcuts lock: the main thread may need that lock to dispatch a hotkey event, so
+        // holding it while waiting on the main thread could deadlock.
+        {
+            let hotkeys = hotkeys.clone();
+            run_main_thread!(self.app, self.manager, |m| register_all_or_none(
+                &hotkeys,
+                |h| m.0.register(h),
+                |h| m.0.unregister(h)
+            ))?;
+        }
+
         let mut shortcuts = self.shortcuts.lock().unwrap();
         for shortcut in hotkeys {
-            run_main_thread!(self.app, self.manager, |m| m.0.register(shortcut))?;
             shortcuts.insert(
                 shortcut.id(),
                 RegisteredShortcut {
@@ -164,6 +175,9 @@ impl<R: Runtime> GlobalShortcut<R> {
     }
 
     /// Register multiple shortcuts.
+    ///
+    /// If any of the shortcuts fails to register, the ones registered by this call are
+    /// unregistered again and the error is returned, so either all or none are registered.
     pub fn register_multiple<S, T>(&self, shortcuts: S) -> Result<()>
     where
         S: IntoIterator<Item = T>,
@@ -178,6 +192,9 @@ impl<R: Runtime> GlobalShortcut<R> {
     }
 
     /// Register multiple shortcuts with a handler.
+    ///
+    /// If any of the shortcuts fails to register, the ones registered by this call are
+    /// unregistered again and the error is returned, so either all or none are registered.
     pub fn on_shortcuts<S, T, F>(&self, shortcuts: S, handler: F) -> Result<()>
     where
         S: IntoIterator<Item = T>,
@@ -284,6 +301,25 @@ impl<R: Runtime, T: Manager<R>> GlobalShortcutExt<R> for T {
     fn global_shortcut(&self) -> &GlobalShortcut<R> {
         self.state::<GlobalShortcut<R>>().inner()
     }
+}
+
+/// Registers every hotkey with `register`. If one of them fails, the hotkeys registered so far
+/// are unregistered again with `unregister` and the error is returned, so either all of them are
+/// registered or none are.
+fn register_all_or_none<E>(
+    hotkeys: &[Shortcut],
+    mut register: impl FnMut(Shortcut) -> std::result::Result<(), E>,
+    mut unregister: impl FnMut(Shortcut) -> std::result::Result<(), E>,
+) -> std::result::Result<(), E> {
+    for (i, hotkey) in hotkeys.iter().enumerate() {
+        if let Err(e) = register(*hotkey) {
+            for registered in &hotkeys[..i] {
+                let _ = unregister(*registered);
+            }
+            return Err(e);
+        }
+    }
+    Ok(())
 }
 
 fn parse_shortcut<S: AsRef<str>>(shortcut: S) -> Result<Shortcut> {
@@ -493,5 +529,52 @@ impl<R: Runtime> Builder<R> {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shortcut(s: &str) -> Shortcut {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn register_all_or_none_registers_everything() {
+        let hotkeys = [shortcut("Alt+A"), shortcut("Alt+B")];
+        let mut registered = Vec::new();
+        let res: std::result::Result<(), ()> = register_all_or_none(
+            &hotkeys,
+            |h| {
+                registered.push(h);
+                Ok(())
+            },
+            |_| panic!("nothing should be unregistered"),
+        );
+        assert!(res.is_ok());
+        assert_eq!(registered, hotkeys);
+    }
+
+    #[test]
+    fn register_all_or_none_rolls_back_on_failure() {
+        let hotkeys = [shortcut("Alt+A"), shortcut("Alt+B"), shortcut("Alt+C")];
+        let registered = std::cell::RefCell::new(Vec::new());
+        let res = register_all_or_none(
+            &hotkeys,
+            |h| {
+                if h == hotkeys[2] {
+                    return Err("taken");
+                }
+                registered.borrow_mut().push(h);
+                Ok(())
+            },
+            |h| {
+                registered.borrow_mut().retain(|r| *r != h);
+                Ok(())
+            },
+        );
+        assert_eq!(res, Err("taken"));
+        assert!(registered.borrow().is_empty());
     }
 }

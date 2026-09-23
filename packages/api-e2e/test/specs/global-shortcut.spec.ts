@@ -94,6 +94,35 @@ describePlugin('global-shortcut', { desktopOnly: true }, () => {
     )
   })
 
+  it('registering a list is all-or-nothing', async () => {
+    const result = await tauri(async (api) => {
+      const taken = 'CommandOrControl+Shift+F8'
+      const fresh = 'CommandOrControl+Shift+F7'
+      await api.globalShortcut.register(taken, () => {})
+      let rejected = false
+      try {
+        await api.globalShortcut.register([fresh, taken], () => {})
+      } catch {
+        rejected = true
+      }
+      return {
+        rejected,
+        fresh: await api.globalShortcut.isRegistered(fresh),
+        taken: await api.globalShortcut.isRegistered(taken),
+        // the rolled back shortcut can be registered again
+        retry: await api.globalShortcut
+          .register(fresh, () => {})
+          .then(() => true)
+      }
+    })
+    expect(result).toEqual({
+      rejected: true,
+      fresh: false,
+      taken: true,
+      retry: true
+    })
+  })
+
   it('rejects shortcuts that cannot be parsed', async () => {
     const message = await tauriError((api) =>
       api.globalShortcut.register('NotAKey+Nope', () => {})
