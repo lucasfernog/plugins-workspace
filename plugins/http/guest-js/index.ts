@@ -124,6 +124,17 @@ export interface DangerousSettings {
 const ERROR_REQUEST_CANCELLED = 'Request cancelled'
 
 /**
+ * Releases the Rust side of a response body once its stream is garbage collected,
+ * for bodies that are never read to the end, cancelled or aborted.
+ */
+const bodyRegistry =
+  typeof FinalizationRegistry === 'undefined'
+    ? undefined
+    : new FinalizationRegistry<number>((rid) => {
+        invoke('plugin:http|fetch_cancel_body', { rid }).catch(() => {})
+      })
+
+/**
  * Fetch a resource from the network. It returns a `Promise` that resolves to the
  * `Response` to that `Request`, whether it is successful or not.
  *
@@ -256,9 +267,12 @@ export async function fetch(
   })
 
   let bodyDropped = false
+  // unregisters the body from `bodyRegistry`; must not reference the stream
+  const bodyToken = {}
   const dropBody = () => {
     if (bodyDropped) return Promise.resolve()
     bodyDropped = true
+    bodyRegistry?.unregister(bodyToken)
     return invoke('plugin:http|fetch_cancel_body', { rid: responseRid }).catch(
       () => {}
     )
@@ -286,6 +300,9 @@ export async function fetch(
 
     // close when the signal to close (last byte is 1) is sent from the IPC.
     if (lastByte === 1) {
+      // the Rust side releases the body once it is fully read
+      bodyDropped = true
+      bodyRegistry?.unregister(bodyToken)
       controller.close()
       return
     }
@@ -311,6 +328,14 @@ export async function fetch(
           void dropBody()
         }
       })
+
+  if (body === null) {
+    // there is nothing to read, so release the response right away
+    void dropBody()
+  } else {
+    // release the response if the body is never read to the end
+    bodyRegistry?.register(body, responseRid, bodyToken)
+  }
 
   const res = new Response(body, {
     status,

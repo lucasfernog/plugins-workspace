@@ -129,6 +129,46 @@ describePlugin('http', () => {
     expect(message).toMatch(/abort|cancel/i)
   })
 
+  it('fetch releases the request resources once it is sent or aborted', async () => {
+    const result = await tauri(async (api, url) => {
+      const invoke = api.core.invoke
+      const clientConfig = { method: 'GET', url, headers: [], data: null }
+      const errorOf = async (cmd: string, args: Record<string, unknown>) => {
+        try {
+          await invoke(cmd, args)
+          return null
+        } catch (e) {
+          return String(e)
+        }
+      }
+
+      // sent: the request is gone once the response is received
+      const sent = await invoke<number>('plugin:http|fetch', { clientConfig })
+      const response = await invoke<{ rid: number }>('plugin:http|fetch_send', {
+        rid: sent
+      })
+      await invoke('plugin:http|fetch_cancel_body', { rid: response.rid })
+      const cancelAfterSend = await errorOf('plugin:http|fetch_cancel', {
+        rid: sent
+      })
+
+      // aborted before being sent: the request is gone right away
+      const aborted = await invoke<number>('plugin:http|fetch', {
+        clientConfig
+      })
+      const firstCancel = await errorOf('plugin:http|fetch_cancel', {
+        rid: aborted
+      })
+      const sendAfterCancel = await errorOf('plugin:http|fetch_send', {
+        rid: aborted
+      })
+      return { cancelAfterSend, firstCancel, sendAfterCancel }
+    }, echoServer)
+    expect(result.cancelAfterSend).not.toBeNull()
+    expect(result.firstCancel).toBeNull()
+    expect(result.sendAfterCancel).not.toBeNull()
+  })
+
   it('rejects URLs outside the configured scope', async () => {
     const message = await tauriError((api) =>
       api.http.fetch('http://localhost:3999/not-in-scope')

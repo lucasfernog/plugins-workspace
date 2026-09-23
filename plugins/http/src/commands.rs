@@ -410,6 +410,14 @@ pub fn fetch_cancel<R: Runtime>(webview: Webview<R>, rid: ResourceId) -> crate::
     if let Some(abort_tx) = Arc::into_inner(abort_tx) {
         abort_tx.abort();
     }
+    // when `fetch_send` has not taken the abort receiver yet, nothing will consume the request
+    // anymore (the frontend does not send an aborted request), so it is released here
+    if resources_table
+        .take::<AbortRecveiver>(req.abort_rx_rid)
+        .is_ok()
+    {
+        let _ = resources_table.take::<FetchRequest>(rid);
+    }
     Ok(())
 }
 
@@ -425,20 +433,26 @@ pub async fn fetch_send<R: Runtime>(
         (req, abort_rx)
     };
 
-    let Some(abort_rx) = Arc::into_inner(abort_rx) else {
-        return Err(Error::RequestCanceled);
-    };
-
-    let mut fut = req.fut.lock().await;
-
-    let res = tokio::select! {
-        res = fut.as_mut() => res?,
-        _ = abort_rx.0 => {
-            let mut resources_table = webview.resources_table();
-            resources_table.close(rid)?;
-            return Err(Error::RequestCanceled);
+    let res = match Arc::into_inner(abort_rx) {
+        Some(abort_rx) => {
+            let mut fut = req.fut.lock().await;
+            tokio::select! {
+                res = fut.as_mut() => Some(res),
+                _ = abort_rx.0 => None,
+            }
         }
+        None => None,
     };
+
+    // the request can only be sent once, so it is released whatever the outcome, together
+    // with its abort sender (which `fetch_cancel` may have taken already)
+    {
+        let mut resources_table = webview.resources_table();
+        let _ = resources_table.take::<FetchRequest>(rid);
+        let _ = resources_table.take::<AbortSender>(req.abort_tx_rid);
+    }
+
+    let res = res.ok_or(Error::RequestCanceled)??;
 
     #[cfg(feature = "tracing")]
     tracing::trace!("{:?}", res);
