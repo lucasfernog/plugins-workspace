@@ -89,6 +89,17 @@ impl ConnectionManager {
     fn connections(&self) -> std::sync::MutexGuard<'_, HashMap<Id, Arc<Mutex<WebSocketWriter>>>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
+
+    /// Removes the connection `id` if it still refers to `writer`.
+    fn remove(&self, id: Id, writer: &Arc<Mutex<WebSocketWriter>>) {
+        let mut connections = self.connections();
+        if connections
+            .get(&id)
+            .is_some_and(|current| Arc::ptr_eq(current, writer))
+        {
+            connections.remove(&id);
+        }
+    }
 }
 
 #[cfg(any(
@@ -215,52 +226,49 @@ async fn connect<R: Runtime>(
     let (ws_stream, _) = connect_async_with_config(request, config.map(Into::into), false).await?;
 
     // Register the writer before resolving, so a `send` issued right after `connect` finds it.
-    let (write, read) = ws_stream.split();
+    let (write, mut read) = ws_stream.split();
+    let writer = Arc::new(Mutex::new(write));
     window
         .state::<ConnectionManager>()
         .connections()
-        .insert(id, Arc::new(Mutex::new(write)));
+        .insert(id, writer.clone());
 
     tauri::async_runtime::spawn(async move {
-        read.for_each(move |message| {
-            let window_ = window.clone();
-            let on_message_ = on_message.clone();
-            async move {
-                if let Ok(Message::Close(_)) = message {
-                    window_
-                        .state::<ConnectionManager>()
-                        .connections()
-                        .remove(&id);
-                }
-
-                let response = match message {
-                    Ok(Message::Text(t)) => {
-                        serde_json::to_value(WebSocketMessage::Text(t.to_string())).unwrap()
-                    }
-                    Ok(Message::Binary(t)) => {
-                        serde_json::to_value(WebSocketMessage::Binary(t.to_vec())).unwrap()
-                    }
-                    Ok(Message::Ping(t)) => {
-                        serde_json::to_value(WebSocketMessage::Ping(t.to_vec())).unwrap()
-                    }
-                    Ok(Message::Pong(t)) => {
-                        serde_json::to_value(WebSocketMessage::Pong(t.to_vec())).unwrap()
-                    }
-                    Ok(Message::Close(t)) => {
-                        serde_json::to_value(WebSocketMessage::Close(t.map(|v| CloseFrame {
-                            code: v.code.into(),
-                            reason: v.reason.to_string(),
-                        })))
-                        .unwrap()
-                    }
-                    Ok(Message::Frame(_)) => serde_json::Value::Null, // This value can't be recieved.
-                    Err(e) => serde_json::to_value(Error::from(e)).unwrap(),
-                };
-
-                let _ = on_message_.send(response);
+        while let Some(message) = read.next().await {
+            if let Ok(Message::Close(_)) = message {
+                window.state::<ConnectionManager>().remove(id, &writer);
             }
-        })
-        .await;
+
+            let response = match message {
+                Ok(Message::Text(t)) => {
+                    serde_json::to_value(WebSocketMessage::Text(t.to_string())).unwrap()
+                }
+                Ok(Message::Binary(t)) => {
+                    serde_json::to_value(WebSocketMessage::Binary(t.to_vec())).unwrap()
+                }
+                Ok(Message::Ping(t)) => {
+                    serde_json::to_value(WebSocketMessage::Ping(t.to_vec())).unwrap()
+                }
+                Ok(Message::Pong(t)) => {
+                    serde_json::to_value(WebSocketMessage::Pong(t.to_vec())).unwrap()
+                }
+                Ok(Message::Close(t)) => {
+                    serde_json::to_value(WebSocketMessage::Close(t.map(|v| CloseFrame {
+                        code: v.code.into(),
+                        reason: v.reason.to_string(),
+                    })))
+                    .unwrap()
+                }
+                Ok(Message::Frame(_)) => serde_json::Value::Null, // This value can't be recieved.
+                Err(e) => serde_json::to_value(Error::from(e)).unwrap(),
+            };
+
+            let _ = on_message.send(response);
+        }
+
+        // The stream has ended (close handshake, error, or the peer going away without a Close
+        // frame): the connection can no longer be used, so forget it.
+        window.state::<ConnectionManager>().remove(id, &writer);
     });
 
     Ok(id)

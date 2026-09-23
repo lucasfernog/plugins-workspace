@@ -30,6 +30,8 @@ export const WEBSOCKET_FIXTURE_URL = `ws://127.0.0.1:${FIXTURE_SERVER_PORT}/ws`
 export const WEBSOCKET_CLOSE_REQUEST = 'close-me'
 export const WEBSOCKET_CLOSE_CODE = 4000
 export const WEBSOCKET_CLOSE_REASON = 'closed by the fixture server'
+/** Text message that makes the `/ws` endpoint drop the connection without a close frame. */
+export const WEBSOCKET_TERMINATE_REQUEST = 'terminate-me'
 
 export interface FixtureServer {
   close(): void
@@ -48,7 +50,9 @@ export interface FixtureServer {
  *   and the utf-8 `body`).
  * - `ws /ws` — a WebSocket echo endpoint: text and binary messages are sent
  *   back as-is, and {@link WEBSOCKET_CLOSE_REQUEST} makes the server close the
- *   connection with {@link WEBSOCKET_CLOSE_CODE}. On `/ws/headers` the server
+ *   connection with {@link WEBSOCKET_CLOSE_CODE}, while
+ *   {@link WEBSOCKET_TERMINATE_REQUEST} makes it drop the TCP connection
+ *   without a close handshake. On `/ws/headers` the server
  *   first sends the upgrade request's headers as a JSON text message.
  */
 export function startFixtureServer(): Promise<FixtureServer> {
@@ -121,6 +125,12 @@ export function startFixtureServer(): Promise<FixtureServer> {
           && data.toString('utf8') === WEBSOCKET_CLOSE_REQUEST
         ) {
           ws.close(WEBSOCKET_CLOSE_CODE, WEBSOCKET_CLOSE_REASON)
+        } else if (
+          !isBinary
+          && Buffer.isBuffer(data)
+          && data.toString('utf8') === WEBSOCKET_TERMINATE_REQUEST
+        ) {
+          ws.terminate()
         } else {
           ws.send(data, { binary: isBinary })
         }

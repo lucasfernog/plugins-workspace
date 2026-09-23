@@ -8,7 +8,8 @@ import {
   WEBSOCKET_FIXTURE_URL,
   WEBSOCKET_CLOSE_REQUEST,
   WEBSOCKET_CLOSE_CODE,
-  WEBSOCKET_CLOSE_REASON
+  WEBSOCKET_CLOSE_REASON,
+  WEBSOCKET_TERMINATE_REQUEST
 } from '../helpers/server.js'
 
 // Every test talks to the fixture server's `/ws` echo endpoint (through
@@ -135,6 +136,39 @@ describePlugin('websocket', () => {
       type: 'Close',
       data: { code: WEBSOCKET_CLOSE_CODE, reason: WEBSOCKET_CLOSE_REASON }
     })
+    expect(result.sendError).toMatch(/connection not found/)
+  })
+
+  it('a connection dropped without a close frame reports an error and ends', async () => {
+    const result = await tauri(
+      async (api, url, terminateRequest) => {
+        const ws = await api.websocket.connect(url)
+        // stream errors reach the listeners as a plain string, not a `Message`
+        const error = await new Promise<unknown>((resolve, reject) => {
+          setTimeout(() => reject(new Error('error not received')), 5000)
+          ws.addListener((message: unknown) => {
+            if (typeof message === 'string') resolve(message)
+          })
+          ws.send(terminateRequest).catch(reject)
+        })
+        // the connection is forgotten right after the error is delivered; until
+        // then a send fails on the dead stream itself
+        let sendError = ''
+        for (let attempt = 0; attempt < 20; attempt++) {
+          try {
+            await ws.send('after drop')
+          } catch (e) {
+            sendError = String(e)
+            if (/connection not found/.test(sendError)) break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+        return { errorType: typeof error, sendError }
+      },
+      WEBSOCKET_FIXTURE_URL,
+      WEBSOCKET_TERMINATE_REQUEST
+    )
+    expect(result.errorType).toBe('string')
     expect(result.sendError).toMatch(/connection not found/)
   })
 
