@@ -164,4 +164,5 @@ async function download(
   })
 }
 
+export type { ProgressPayload, ProgressHandler }
 export { download, upload, HttpMethod }
