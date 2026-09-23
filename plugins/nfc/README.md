@@ -50,13 +50,21 @@ First you need to register the core plugin with Tauri:
 `src-tauri/src/lib.rs`
 
 ```rust
-fn main() {
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_nfc::init())
+        .setup(|app| {
+            // the plugin only exists on Android and iOS
+            #[cfg(mobile)]
+            app.handle().plugin(tauri_plugin_nfc::init())?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
+
+The crate is empty on desktop platforms, so the registration must be gated behind `#[cfg(mobile)]` for the app to keep compiling there.
 
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
