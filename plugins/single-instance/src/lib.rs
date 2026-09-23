@@ -4,9 +4,23 @@
 
 //! Ensure a single instance of your tauri app is running.
 //!
+//! When a second instance starts, it sends its command line arguments and working directory to
+//! the first instance, which runs the callback passed to [`init`] (or [`Builder::callback`]),
+//! and exits. See [`init`] for caveats.
+//!
+//! How instances find each other:
+//!
+//! - **Windows**: a named mutex and a hidden message window, both named after the bundle
+//!   identifier.
+//! - **Linux**: the D-Bus session bus name `<identifier>.SingleInstance` (see
+//!   [`Builder::dbus_id`]). Without a session bus the app runs without single-instance
+//!   protection.
+//! - **macOS**: a Unix socket named after the identifier in the per-user temporary directory.
+//!
 //! ## Cargo features
 //!
 //! - **semver**: Allows the app with SemVer incompatible versions to run alongside each other.
+//!   It appends the SemVer-compatible part of the version to the mutex, D-Bus and socket names.
 //! - **deep-link**: Trigger [`tauri-plugin-deep-link`](https://crates.io/crates/tauri-plugin-deep-link) event before invoking the single-instance callback.
 
 #![doc(
@@ -39,13 +53,31 @@ pub(crate) type SingleInstanceCallback<R> =
 /// [`Builder::build`]. Use [`Builder`] directly if you need to set a custom [`Builder::dbus_id`].
 ///
 /// `f` is called with the app handle, the second instance's command line arguments
-/// (as collected by [`std::env::args`], so the first element is the executable path) and its
-/// current working directory. If the `deep-link` feature is enabled, the arguments are first
-/// forwarded to [`tauri-plugin-deep-link`](https://crates.io/crates/tauri-plugin-deep-link)
-/// before `f` runs.
+/// (as collected by [`std::env::args_os`], converted lossily to UTF-8, so the first element is
+/// the executable path) and its current working directory. If the `deep-link` feature is
+/// enabled, the arguments are first forwarded to
+/// [`tauri-plugin-deep-link`](https://crates.io/crates/tauri-plugin-deep-link) before `f` runs.
 ///
 /// The second instance never reaches [`tauri::Builder::run`]: it hands its arguments and working
 /// directory off to the first instance and exits immediately.
+///
+/// # Caveats
+///
+/// - **Treat the arguments as untrusted input.** Any process running as the same user can
+///   deliver arguments to `f` through the plugin's IPC channel (a window message on Windows,
+///   D-Bus on Linux, a Unix socket on macOS). Validate them before acting on them, and don't
+///   forward them to the frontend unfiltered.
+/// - `f` runs on a different thread depending on the platform: the main thread on Windows, a
+///   D-Bus executor thread on Linux and an async runtime worker on macOS. Use
+///   [`AppHandle::run_on_main_thread`] for work that must happen on the main thread, and keep `f`
+///   short since it blocks the delivery of later notifications.
+/// - On Windows, a second instance running at a lower integrity level than the first one (for
+///   example not elevated, while the first instance runs as administrator) can't reach it: its
+///   arguments are dropped and it exits.
+/// - Register the plugin on the [`tauri::Builder`] before other plugins, not from a `setup`
+///   hook: windows declared in `tauri.conf.json` are created before `setup` runs, so a second
+///   instance would briefly show them.
+/// - The crate is empty on Android and iOS, so gate the call with `#[cfg(desktop)]`.
 pub fn init<R: Runtime, F: FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static>(
     f: F,
 ) -> TauriPlugin<R> {
@@ -96,6 +128,8 @@ impl<R: Runtime> Builder<R> {
 
     /// Function to call when a secondary instance was opened by the user and killed by the plugin.
     /// If the `deep-link` feature is enabled, the plugin triggers the deep-link plugin before executing the callback.
+    ///
+    /// See [`init`] for the callback's arguments and caveats.
     pub fn callback<F: FnMut(&AppHandle<R>, Vec<String>, String) + Send + Sync + 'static>(
         mut self,
         mut f: F,
@@ -114,7 +148,13 @@ impl<R: Runtime> Builder<R> {
     /// For example `com.mycompany.myapp` will result in the plugin registering its D-Bus service on `com.mycompany.myapp.SingleInstance`.
     /// Usually you want the same base ID across all components in your app.
     ///
-    /// Defaults to the app's bundle identifier set in tauri.conf.json.
+    /// Defaults to the app's bundle identifier set in tauri.conf.json. With the `semver` feature,
+    /// a version suffix is appended after `.SingleInstance`, e.g. `_1_x_x`. Characters that are
+    /// not valid in a D-Bus name are replaced with `_`.
+    ///
+    /// Set this when your Flatpak or Snap app ID differs from the Tauri identifier, since the
+    /// sandbox only lets the app own names under its app ID. Versions of this plugin before
+    /// 2.4.0 used `org.<identifier with . and - replaced by _>.SingleInstance`.
     pub fn dbus_id(mut self, dbus_id: impl Into<String>) -> Self {
         self.dbus_id = Some(dbus_id.into());
         self
