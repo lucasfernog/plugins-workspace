@@ -32,8 +32,29 @@ use std::{
 
 // Using 2 separate files so that we don't have to think about write conflicts and not break backwards compat.
 const SCOPE_STATE_FILENAME: &str = ".persisted-scope";
-#[cfg(feature = "protocol-asset")]
 const ASSET_SCOPE_STATE_FILENAME: &str = ".persisted-scope-asset";
+
+/// All files the plugin writes under the app data directory (state files and their temporary files).
+fn state_files(app_dir: &Path) -> Vec<PathBuf> {
+    [SCOPE_STATE_FILENAME, ASSET_SCOPE_STATE_FILENAME]
+        .into_iter()
+        .flat_map(|name| {
+            let path = app_dir.join(name);
+            [temp_state_path(&path), path]
+        })
+        .collect()
+}
+
+/// Forbids access to every state file through `scope`, so the webview can't read or tamper
+/// with the persisted grants of either scope (for instance through the fs plugin when the
+/// app allows writing to the app data directory).
+fn forbid_state_files(scope: &tauri::fs::Scope, app_dir: &Path) {
+    for path in state_files(app_dir) {
+        if let Err(e) = scope.forbid_file(&path) {
+            log::warn!("failed to forbid access to {}: {e}", path.display());
+        }
+    }
+}
 
 // Most of these patterns are just added to try to fix broken files in the wild.
 // After a while we can hopefully reduce it to something like [r"[?]", r"[*]", r"\\?\\\?\"]
@@ -258,13 +279,13 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 let asset_scope_state_path = app_dir.join(ASSET_SCOPE_STATE_FILENAME);
 
                 if let Some(fs_scope) = &fs_scope {
-                     let _ = fs_scope.forbid_file(&fs_scope_state_path);
+                    forbid_state_files(fs_scope, &app_dir);
                 } else {
                     #[cfg(debug_assertions)]
                     eprintln!("Please make sure to register the `fs` plugin before the `persisted-scope` plugin!");
                 }
                 #[cfg(feature = "protocol-asset")]
-                let _ = asset_protocol_scope.forbid_file(&asset_scope_state_path);
+                forbid_state_files(&asset_protocol_scope, &app_dir);
 
                 // We're trying to fix broken .persisted-scope files seamlessly, so we'll be running this on the values read on the saved file.
                 // We will still save some semi-broken values because the scope events are quite spammy and we don't want to reduce runtime performance any further.
@@ -356,6 +377,20 @@ mod tests {
         assert!(read_state(&path).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn state_files_cover_both_scopes_and_temp_files() {
+        let dir = Path::new("/data/app");
+        let files = state_files(dir);
+        for name in [
+            ".persisted-scope",
+            ".persisted-scope.tmp",
+            ".persisted-scope-asset",
+            ".persisted-scope-asset.tmp",
+        ] {
+            assert!(files.contains(&dir.join(name)), "missing {name}");
+        }
     }
 
     #[test]
