@@ -50,17 +50,17 @@ type PasswordHashFn = dyn Fn(&str) -> Vec<u8> + Send + Sync;
 type FalliblePasswordHashFn = dyn Fn(&str) -> std::result::Result<Vec<u8>, String> + Send + Sync;
 
 #[derive(Default)]
-struct StrongholdCollection(Arc<Mutex<HashMap<PathBuf, Stronghold>>>);
+struct StrongholdCollection(Arc<Mutex<HashMap<PathBuf, Arc<Stronghold>>>>);
 
 impl StrongholdCollection {
     /// Locks the collection. A panic while the lock was held must not turn every
     /// later command into a panic, so a poisoned lock is recovered.
-    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Stronghold>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Arc<Stronghold>>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
-struct PasswordHashFunction(Box<FalliblePasswordHashFn>);
+struct PasswordHashFunction(Arc<FalliblePasswordHashFn>);
 
 /// Errors of the `initialize` command.
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +69,8 @@ enum InitializeError {
     Stronghold(#[from] Error),
     #[error("{0}")]
     PasswordHash(String),
+    #[error("failed to initialize the stronghold: {0}")]
+    Task(#[from] tauri::Error),
 }
 
 impl serde::Serialize for InitializeError {
@@ -281,12 +283,21 @@ async fn initialize(
     snapshot_path: PathBuf,
     mut password: String,
 ) -> std::result::Result<(), InitializeError> {
-    let hash = (hash_function.0)(&password);
-    password.zeroize();
-    let hash = hash.map_err(InitializeError::PasswordHash)?;
-    let stronghold = Stronghold::new(snapshot_path.clone(), hash)?;
+    let hash_function = hash_function.0.clone();
+    let path = snapshot_path.clone();
+    // hashing the password (argon2) and decrypting the snapshot are CPU and I/O bound,
+    // so they must not block the async runtime
+    let stronghold = tauri::async_runtime::spawn_blocking(move || {
+        let hash = hash_function(&password);
+        password.zeroize();
+        let hash = hash.map_err(InitializeError::PasswordHash)?;
+        Stronghold::new(path, hash).map_err(InitializeError::from)
+    })
+    .await??;
 
-    collection.lock().insert(snapshot_path, stronghold);
+    collection
+        .lock()
+        .insert(snapshot_path, Arc::new(stronghold));
 
     Ok(())
 }
@@ -296,10 +307,12 @@ async fn destroy(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
 ) -> Result<()> {
-    let mut collection = collection.lock();
-    if let Some(stronghold) = collection.remove(&snapshot_path) {
+    // the lock is released before saving, so encrypting and writing the snapshot does
+    // not block the commands of every other stronghold
+    let stronghold = collection.lock().remove(&snapshot_path);
+    if let Some(stronghold) = stronghold {
         if let Err(e) = stronghold.save() {
-            collection.insert(snapshot_path, stronghold);
+            collection.lock().entry(snapshot_path).or_insert(stronghold);
             return Err(e);
         }
     }
@@ -308,8 +321,8 @@ async fn destroy(
 
 #[tauri::command]
 async fn save(collection: State<'_, StrongholdCollection>, snapshot_path: PathBuf) -> Result<()> {
-    let collection = collection.lock();
-    if let Some(stronghold) = collection.get(&snapshot_path) {
+    let stronghold = collection.lock().get(&snapshot_path).cloned();
+    if let Some(stronghold) = stronghold {
         stronghold.save()?;
     }
     Ok(())
@@ -528,9 +541,9 @@ impl Builder {
             app.manage(PasswordHashFunction(match password_hash_function {
                 #[cfg(feature = "kdf")]
                 PasswordHashFunctionKind::Argon2(path) => {
-                    Box::new(move |p| kdf::try_argon2(p, &path).map_err(|e| e.to_string()))
+                    Arc::new(move |p| kdf::try_argon2(p, &path).map_err(|e| e.to_string()))
                 }
-                PasswordHashFunctionKind::Custom(f) => Box::new(move |p| Ok(f(p))),
+                PasswordHashFunctionKind::Custom(f) => Arc::new(move |p| Ok(f(p))),
             }));
             Ok(())
         });
