@@ -122,7 +122,7 @@ type Family = 'unix' | 'windows'
  * @example
  * ```typescript
  * import { family } from '@tauri-apps/plugin-os';
- * const family = family();
+ * const osFamily = family();
  * ```
  *
  * @returns The operating system family.
@@ -183,8 +183,8 @@ function exeExtension(): string {
  * @example
  * ```typescript
  * import { locale } from '@tauri-apps/plugin-os';
- * const locale = await locale();
- * if (locale) {
+ * const lang = await locale();
+ * if (lang) {
  *    // use the locale string here
  * }
  * ```
