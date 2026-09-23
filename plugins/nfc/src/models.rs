@@ -100,11 +100,11 @@ pub struct ScanResponse {
 #[derive(Debug, Default, Serialize)]
 pub struct UriFilter {
     /// Only match URIs with this scheme, e.g. `https`.
-    scheme: Option<String>,
+    pub scheme: Option<String>,
     /// Only match URIs with this authority (host), e.g. `tauri.app`.
-    host: Option<String>,
+    pub host: Option<String>,
     /// Only match URIs whose path starts with this prefix, e.g. `/docs`.
-    path_prefix: Option<String>,
+    pub path_prefix: Option<String>,
 }
 
 /// The NFC technologies a tag can support, mirroring the `android.nfc.tech` classes.
