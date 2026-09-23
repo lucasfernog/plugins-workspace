@@ -344,7 +344,7 @@ impl<R: Runtime> MessageDialogBuilder<R> {
         };
 
         show_message_dialog(self, move |res| {
-            let sucess = match res {
+            let success = match res {
                 MessageDialogResult::Ok | MessageDialogResult::Yes => true,
                 MessageDialogResult::Custom(s) => {
                     ok_label.map_or(s == OK, |ok_label| ok_label == s)
@@ -352,7 +352,7 @@ impl<R: Runtime> MessageDialogBuilder<R> {
                 _ => false,
             };
 
-            f(sucess)
+            f(success)
         })
     }
 
