@@ -27,7 +27,13 @@ impl<'de> Deserialize<'de> for MessageDialogKind {
             "info" => MessageDialogKind::Info,
             "warning" => MessageDialogKind::Warning,
             "error" => MessageDialogKind::Error,
-            _ => MessageDialogKind::Info,
+            // kept lenient for backwards compatibility, but make the typo visible
+            _ => {
+                log::warn!(
+                    "unknown message dialog kind `{s}`, expected `info`, `warning` or `error`; using `info`"
+                );
+                MessageDialogKind::Info
+            }
         })
     }
 }
@@ -105,5 +111,23 @@ impl From<String> for MessageDialogResult {
             "Cancel" => Self::Cancel,
             _ => Self::Custom(value),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kind(value: &str) -> MessageDialogKind {
+        serde_json::from_value(serde_json::Value::String(value.into())).unwrap()
+    }
+
+    #[test]
+    fn deserializes_message_dialog_kind() {
+        assert_eq!(kind("info"), MessageDialogKind::Info);
+        assert_eq!(kind("Warning"), MessageDialogKind::Warning);
+        assert_eq!(kind("ERROR"), MessageDialogKind::Error);
+        // unknown values are still accepted and fall back to `Info`
+        assert_eq!(kind("warn"), MessageDialogKind::Info);
     }
 }
