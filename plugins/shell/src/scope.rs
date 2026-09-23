@@ -57,6 +57,20 @@ impl From<Vec<String>> for ExecuteArgs {
     }
 }
 
+/// Compiles a scope validator regex.
+///
+/// Unless `raw` is set, the validator must match the whole value: it is wrapped in a
+/// non-capturing group before being anchored, so alternations such as `a|b` become
+/// `^(?:a|b)$` instead of `^a|b$` (which would only anchor the first branch at the start
+/// and the last branch at the end).
+pub(crate) fn validator_regex(validator: &str, raw: bool) -> Result<Regex, regex::Error> {
+    if raw {
+        Regex::new(validator)
+    } else {
+        Regex::new(&format!("^(?:{validator})$"))
+    }
+}
+
 /// A configured scoped shell command.
 #[derive(Debug, Clone)]
 pub struct ScopeAllowedCommand {
@@ -90,13 +104,8 @@ impl ScopeObject for ScopeAllowedCommand {
                         crate::scope::ScopeAllowedArg::Fixed(fixed)
                     }
                     crate::scope_entry::ShellAllowedArg::Var { validator, raw } => {
-                        let regex = if raw {
-                            validator
-                        } else {
-                            format!("^{validator}$")
-                        };
-                        let validator = Regex::new(&regex)
-                            .unwrap_or_else(|e| panic!("invalid regex {regex}: {e}"));
+                        let validator = validator_regex(&validator, raw)
+                            .unwrap_or_else(|e| panic!("invalid regex {validator}: {e}"));
                         crate::scope::ScopeAllowedArg::Var { validator }
                     }
                 });
@@ -318,5 +327,36 @@ impl ShellScope<'_> {
         };
 
         Ok(command.args(args))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validator_regex;
+
+    #[test]
+    fn validator_matches_the_whole_value() {
+        let regex = validator_regex(r"\S+", false).unwrap();
+        assert!(regex.is_match("value"));
+        assert!(!regex.is_match("two words"));
+    }
+
+    #[test]
+    fn validator_alternation_is_fully_anchored() {
+        let regex = validator_regex("--foo|--bar", false).unwrap();
+        assert!(regex.is_match("--foo"));
+        assert!(regex.is_match("--bar"));
+        assert!(!regex.is_match("--foo; rm -rf /"));
+        assert!(!regex.is_match("anything--bar"));
+
+        let open = validator_regex("https://.*|mailto:.*", false).unwrap();
+        assert!(open.is_match("https://tauri.app"));
+        assert!(!open.is_match("file:///etc/passwd#mailto:x"));
+    }
+
+    #[test]
+    fn raw_validator_is_not_anchored() {
+        let regex = validator_regex("foo", true).unwrap();
+        assert!(regex.is_match("xx foo xx"));
     }
 }

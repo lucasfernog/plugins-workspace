@@ -25,8 +25,8 @@ pub enum ShellScopeEntryAllowedArg {
         /// This will require the argument value passed to this variable to match the `validator` regex
         /// before it will be executed.
         ///
-        /// The regex string is by default surrounded by `^...$` to match the full string.
-        /// For example the `https?://\w+` regex would be registered as `^https?://\w+$`.
+        /// The regex string is by default surrounded by `^(?:...)$` to match the full string.
+        /// For example the `https?://\w+` regex would be registered as `^(?:https?://\w+)$`.
         ///
         /// [regex]: <https://docs.rs/regex/latest/regex/#syntax>
         validator: String,

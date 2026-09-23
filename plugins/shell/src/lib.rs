@@ -182,10 +182,9 @@ fn open_scope(open: &config::ShellAllowlistOpen) -> scope::OpenScope {
             Some(Regex::new(r"^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+").unwrap())
         }
         config::ShellAllowlistOpen::Validate(validator) => {
-            let regex = format!("^{validator}$");
-            let validator =
-                Regex::new(&regex).unwrap_or_else(|e| panic!("invalid regex {regex}: {e}"));
-            Some(validator)
+            let regex = scope::validator_regex(validator, false)
+                .unwrap_or_else(|e| panic!("invalid regex {validator}: {e}"));
+            Some(regex)
         }
     };
 
