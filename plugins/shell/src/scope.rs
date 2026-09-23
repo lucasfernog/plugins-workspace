@@ -199,12 +199,9 @@ pub enum Error {
 }
 
 impl OpenScope {
-    /// Open a path in the default (or specified) browser.
-    ///
-    /// The path is validated against the `plugins > shell > open` validation regex, which
+    /// Validates a path against the `plugins > shell > open` validation regex, which
     /// defaults to `^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+`.
-    #[allow(deprecated)]
-    pub fn open(&self, path: &str, with: Option<Program>) -> Result<(), Error> {
+    pub fn validate(&self, path: &str) -> Result<(), Error> {
         // ensure we pass validation if the configuration has one
         if let Some(regex) = &self.open {
             if !regex.is_match(path) {
@@ -220,6 +217,16 @@ impl OpenScope {
                 validation: "tauri^".to_string(), // purposefully impossible regex
             });
         }
+        Ok(())
+    }
+
+    /// Open a path in the default (or specified) browser.
+    ///
+    /// The path is validated against the `plugins > shell > open` validation regex, which
+    /// defaults to `^((mailto:\w+)|(tel:\w+)|(https?://\w+)).+`.
+    #[allow(deprecated)]
+    pub fn open(&self, path: &str, with: Option<Program>) -> Result<(), Error> {
+        self.validate(path)?;
 
         // The prevention of argument escaping is handled by the usage of std::process::Command::arg by
         // the `open` dependency. This behavior should be re-confirmed during upgrades of `open`.

@@ -316,5 +316,21 @@ pub async fn open<R: Runtime>(
     path: String,
     with: Option<Program>,
 ) -> crate::Result<()> {
-    crate::open::open(Some(&shell.open_scope), path, with)
+    #[cfg(desktop)]
+    {
+        crate::open::open(Some(&shell.open_scope), path, with)
+    }
+
+    // The `open` crate has no way to open anything on Android and iOS,
+    // so the native plugin does it, as for the Rust `Shell::open`.
+    #[cfg(mobile)]
+    {
+        let _ = with;
+        shell.open_scope.validate(&path)?;
+        shell
+            .mobile_plugin_handle
+            .run_mobile_plugin_async::<()>("open", path)
+            .await
+            .map_err(Into::into)
+    }
 }
