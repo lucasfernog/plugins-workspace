@@ -17,6 +17,8 @@ use tauri::{
 
 mod commands;
 mod config;
+#[cfg(any(target_os = "linux", test))]
+mod desktop_entry;
 mod error;
 
 pub use error::{Error, Result};
@@ -169,6 +171,8 @@ mod imp {
 
 #[cfg(not(target_os = "android"))]
 mod imp {
+    #[cfg(target_os = "linux")]
+    use crate::desktop_entry;
     use std::sync::Mutex;
     #[cfg(target_os = "linux")]
     use std::{
@@ -311,32 +315,43 @@ mod imp {
 
                 let mime_type = format!("x-scheme-handler/{}", _protocol.as_ref());
 
-                if let Ok(mut desktop_file) = ini::Ini::load_from_file(&target_file) {
-                    if let Some(section) = desktop_file.section_mut(Some("Desktop Entry")) {
-                        let old_mimes = section.remove("MimeType").unwrap_or_default();
-                        let mut change = false;
+                // The file is edited line by line rather than with an INI parser, which would
+                // strip the quotes around the `Exec` path.
+                const GROUP: &str = "Desktop Entry";
+                if let Some(mut content) = std::fs::read_to_string(&target_file)
+                    .ok()
+                    .filter(|content| desktop_entry::has_group(content, GROUP))
+                {
+                    let mut change = false;
 
-                        // if the mime type is not present, append it to the list
-                        if !old_mimes.split(';').any(|mime| mime == mime_type) {
-                            section.append("MimeType", format!("{mime_type};{old_mimes}"));
+                    // if the mime type is not present, prepend it to the list
+                    let old_mimes =
+                        desktop_entry::get(&content, GROUP, "MimeType").unwrap_or_default();
+                    if !old_mimes.split(';').any(|mime| mime == mime_type) {
+                        let mimes = format!("{mime_type};{old_mimes}");
+                        if let Some(updated) =
+                            desktop_entry::set(&content, GROUP, "MimeType", Some(&mimes))
+                        {
+                            content = updated;
                             change = true;
-                        } else {
-                            section.insert("MimeType".to_string(), old_mimes);
                         }
+                    }
 
-                        // if the exec command doesnt match, update to the new one
-                        let old_exec = section.remove("Exec").unwrap_or_default();
-                        if old_exec != qualified_exec {
-                            section.append("Exec", qualified_exec);
+                    // if the exec command doesnt match, update to the new one
+                    if desktop_entry::get(&content, GROUP, "Exec").as_deref()
+                        != Some(qualified_exec.as_str())
+                    {
+                        if let Some(updated) =
+                            desktop_entry::set(&content, GROUP, "Exec", Some(&qualified_exec))
+                        {
+                            content = updated;
                             change = true;
-                        } else {
-                            section.insert("Exec".to_string(), old_exec.to_string());
                         }
+                    }
 
-                        // if any property has changed, rewrite the .desktop file
-                        if change {
-                            desktop_file.write_to_file(&target_file)?;
-                        }
+                    // if any property has changed, rewrite the .desktop file
+                    if change {
+                        std::fs::write(&target_file, content)?;
                     }
                 } else {
                     let mut file = File::create(target_file)?;
@@ -427,23 +442,26 @@ mod imp {
                 // index, so the app would otherwise still be the handler.
                 let applications = self.app.path().data_dir()?.join("applications");
                 let desktop_file_path = applications.join(&file_name);
-                // Only the `MimeType` key is touched: the file may carry other changes.
-                if let Ok(mut desktop_file) = ini::Ini::load_from_file(&desktop_file_path) {
-                    if let Some(section) = desktop_file.section_mut(Some("Desktop Entry")) {
-                        let mime_types = section
-                            .get("MimeType")
-                            .unwrap_or_default()
+                // Only the `MimeType` key is touched: the file may carry other changes. It is
+                // edited line by line rather than with an INI parser, which would strip the
+                // quotes around the `Exec` path.
+                if let Ok(content) = std::fs::read_to_string(&desktop_file_path) {
+                    const GROUP: &str = "Desktop Entry";
+                    let old_mimes =
+                        desktop_entry::get(&content, GROUP, "MimeType").unwrap_or_default();
+                    if old_mimes.split(';').any(|mime| mime == mime_type) {
+                        let mime_types = old_mimes
                             .split(';')
                             .filter(|mime| !mime.is_empty() && *mime != mime_type)
-                            .map(ToString::to_string)
                             .collect::<Vec<_>>();
-                        if mime_types.is_empty() {
-                            section.remove("MimeType");
-                        } else {
-                            section.insert("MimeType", mime_types.join(";"));
+                        let mime_types =
+                            (!mime_types.is_empty()).then(|| format!("{};", mime_types.join(";")));
+                        if let Some(updated) =
+                            desktop_entry::set(&content, GROUP, "MimeType", mime_types.as_deref())
+                        {
+                            std::fs::write(&desktop_file_path, updated)?;
                         }
                     }
-                    desktop_file.write_to_file(&desktop_file_path)?;
 
                     // Without the refreshed index `xdg-mime` may keep reporting the app as the
                     // handler, but the scheme is unregistered as far as the app can tell, so a
