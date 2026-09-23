@@ -119,5 +119,3 @@ export async function selectionFeedback(): Promise<Result<null, Error>> {
 }
 
 export { ImpactFeedbackStyle, NotificationFeedbackType } from './bindings'
-
-// export { events };
