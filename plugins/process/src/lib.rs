@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-//! This plugin provides APIs to access the current process. To spawn child processes, see the [`shell`](https://github.com/tauri-apps/tauri-plugin-shell) plugin.
+//! Exposes the current process' exit and restart operations to JavaScript
+//! (`exit` and `relaunch` in `@tauri-apps/plugin-process`).
+//!
+//! Rust code does not need this plugin: call [`AppHandle::exit`](tauri::AppHandle::exit)
+//! and [`AppHandle::request_restart`](tauri::AppHandle::request_restart) directly.
+//!
+//! To spawn child processes, see the [`shell`](https://github.com/tauri-apps/tauri-plugin-shell) plugin.
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
