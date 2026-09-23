@@ -33,20 +33,21 @@ tauri-plugin-persisted-scope = { git = "https://github.com/tauri-apps/plugins-wo
 
 ## Usage
 
-First you need to register the core plugin with Tauri:
+First you need to register the core plugin with Tauri. The [`fs`](../fs) plugin must be registered **before** this plugin, otherwise the filesystem scope is not saved or restored (a warning is only printed in debug builds):
 
 `src-tauri/src/lib.rs`
 
 ```rust
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_persisted_scope::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 ```
 
-Afterwards the plugin will automatically save and restore filesystem and asset scopes.
+Afterwards the plugin will automatically save and restore the `fs` plugin scope. Only runtime changes to the scope are persisted, for example paths picked with the dialog plugin, dropped onto a window, or allowed from Rust with `app.fs_scope()`. Scopes defined in capability files are not affected.
 
 ## Contributing
 
