@@ -165,7 +165,7 @@ impl Config {
 
     /// Command long description which will be shown on the help information.
     pub fn long_description(&self) -> Option<&String> {
-        self.description.as_ref()
+        self.long_description.as_ref()
     }
 
     /// Adds additional help information to be displayed in addition to auto-generated help.
