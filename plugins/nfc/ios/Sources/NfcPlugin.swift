@@ -139,9 +139,14 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             return
           }
 
+          guard let current = self.session else {
+            // the session was closed in the meantime (e.g. timeout)
+            session.invalidate()
+            return
+          }
           self.processTag(
             session: session, tag: ndefTag, metadata: tagMetadata(tag),
-            mode: self.session!.tagProcessMode)
+            mode: current.tagProcessMode)
         }
       }
     )
@@ -184,9 +189,14 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             metadata["id"] = byteArrayFromData(t.identifier)
           }
 
+          guard let current = self.session else {
+            // the session was closed in the meantime (e.g. timeout)
+            session.invalidate()
+            return
+          }
           self.processTag(
             session: session, tag: tag, metadata: metadata,
-            mode: self.session!.tagProcessMode)
+            mode: current.tagProcessMode)
         }
       }
     )
@@ -263,9 +273,9 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             alertMessage: self.session?.successfulWriteAlertMessage)
           break
         case .read:
-          if self.session?.keepAlive == true {
-            self.session!.tagStatus = status
-            self.session!.tag = tag
+          if let current = self.session, current.keepAlive {
+            current.tagStatus = status
+            current.tag = tag
           }
           self.readNDEFTag(
             session: session, status: status, tag: tag, metadata: metadata,
