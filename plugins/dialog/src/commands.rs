@@ -125,7 +125,7 @@ pub(crate) async fn open<R: Runtime>(
     options: OpenDialogOptions,
 ) -> Result<OpenResponse> {
     let mut dialog_builder = dialog.file();
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(desktop)]
     {
         dialog_builder = dialog_builder.set_parent(&window);
     }
