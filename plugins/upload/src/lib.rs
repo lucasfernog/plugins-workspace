@@ -108,7 +108,7 @@ async fn download(
         } else {
             client.get(&url)
         };
-        // Loop trought the headers keys and values
+        // Loop through the headers keys and values
         // and add them to the request object.
         for (key, value) in headers {
             request = request.header(&key, value);
