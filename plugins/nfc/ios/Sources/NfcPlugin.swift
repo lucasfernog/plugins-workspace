@@ -333,7 +333,7 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
       [self] (message, error) in
       if let error = error {
         let code = (error as NSError).code
-        if code != 403 {
+        if code != NFCReaderError.Code.ndefReaderSessionErrorZeroLengthMessage.rawValue {
           self.closeSession(session, error: "Failed to read: \(error)")
           return
         }
