@@ -89,6 +89,57 @@ impl<R: Runtime> Geolocation<R> {
             .map_err(Into::into)
     }
 
+    // Non-blocking variants used by the IPC commands, so a pending location or permission
+    // request doesn't tie up an async runtime worker thread.
+
+    pub(crate) async fn get_current_position_async(
+        &self,
+        options: Option<PositionOptions>,
+    ) -> crate::Result<Position> {
+        self.0
+            .run_mobile_plugin_async("getCurrentPosition", options.unwrap_or_default())
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn watch_position_async(
+        &self,
+        options: PositionOptions,
+        channel: Channel,
+    ) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin_async("watchPosition", WatchPayload { options, channel })
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn clear_watch_async(&self, channel_id: u32) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin_async("clearWatch", ClearWatchPayload { channel_id })
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn check_permissions_async(&self) -> crate::Result<PermissionStatus> {
+        self.0
+            .run_mobile_plugin_async("checkPermissions", ())
+            .await
+            .map_err(Into::into)
+    }
+
+    pub(crate) async fn request_permissions_async(
+        &self,
+        permissions: Option<Vec<PermissionType>>,
+    ) -> crate::Result<PermissionStatus> {
+        self.0
+            .run_mobile_plugin_async(
+                "requestPermissions",
+                serde_json::json!({ "permissions": permissions }),
+            )
+            .await
+            .map_err(Into::into)
+    }
+
     /// Returns the current [`PermissionStatus`] for the geolocation APIs. Errors if location services are disabled on the device.
     pub fn check_permissions(&self) -> crate::Result<PermissionStatus> {
         self.0

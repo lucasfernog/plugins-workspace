@@ -71,6 +71,38 @@ impl<R: Runtime> Geolocation<R> {
         Ok(())
     }
 
+    // Counterparts of the mobile non-blocking variants used by the IPC commands.
+
+    pub(crate) async fn get_current_position_async(
+        &self,
+        options: Option<PositionOptions>,
+    ) -> crate::Result<Position> {
+        self.get_current_position(options)
+    }
+
+    pub(crate) async fn watch_position_async(
+        &self,
+        options: PositionOptions,
+        channel: Channel,
+    ) -> crate::Result<()> {
+        self.watch_position_inner(options, channel)
+    }
+
+    pub(crate) async fn clear_watch_async(&self, channel_id: u32) -> crate::Result<()> {
+        self.clear_watch(channel_id)
+    }
+
+    pub(crate) async fn check_permissions_async(&self) -> crate::Result<PermissionStatus> {
+        self.check_permissions()
+    }
+
+    pub(crate) async fn request_permissions_async(
+        &self,
+        permissions: Option<Vec<PermissionType>>,
+    ) -> crate::Result<PermissionStatus> {
+        self.request_permissions(permissions)
+    }
+
     /// Not implemented on desktop platforms; always resolves to the default [`PermissionStatus`] (both permissions in the [`Prompt`](tauri::plugin::PermissionState::Prompt) state).
     pub fn check_permissions(&self) -> crate::Result<PermissionStatus> {
         Ok(PermissionStatus::default())
