@@ -20,6 +20,8 @@ use tauri::{
 
 use std::env::current_exe;
 
+mod escape;
+
 type Result<T> = std::result::Result<T, Error>;
 
 /// The strategy used to register the application for auto start on macOS.
@@ -219,6 +221,17 @@ impl Builder {
                     .unwrap_or_else(|| &app.package_info().name);
                 builder.set_app_name(app_name);
 
+                // auto-launch joins the path and arguments with spaces into the `Exec` key of
+                // the desktop entry on Linux, so quote them here.
+                #[cfg(target_os = "linux")]
+                builder.set_args(
+                    &self
+                        .args
+                        .iter()
+                        .map(|arg| escape::desktop_entry_exec_arg(arg))
+                        .collect::<Vec<_>>(),
+                );
+                #[cfg(not(target_os = "linux"))]
                 builder.set_args(&self.args);
 
                 let current_exe = current_exe()?;
@@ -250,14 +263,13 @@ impl Builder {
                 }
 
                 #[cfg(target_os = "linux")]
-                if let Some(appimage) = app
-                    .env()
-                    .appimage
-                    .and_then(|p| p.to_str().map(|s| s.to_string()))
                 {
-                    builder.set_app_path(&appimage);
-                } else {
-                    builder.set_app_path(&current_exe.display().to_string());
+                    let app_path = app
+                        .env()
+                        .appimage
+                        .and_then(|p| p.to_str().map(|s| s.to_string()))
+                        .unwrap_or_else(|| current_exe.display().to_string());
+                    builder.set_app_path(&escape::desktop_entry_exec_arg(&app_path));
                 }
 
                 app.manage(AutoLaunchManager(
