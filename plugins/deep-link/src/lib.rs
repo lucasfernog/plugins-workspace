@@ -427,14 +427,19 @@ mod imp {
 
                 // stop being the default handler
                 let mimeapps_path = self.app.path().config_dir()?.join("mimeapps.list");
-                if mimeapps_path.exists() {
-                    let mut mimeapps = ini::Ini::load_from_file(&mimeapps_path)?;
-                    if let Some(section) = mimeapps.section_mut(Some("Default Applications")) {
-                        if section.get(&mime_type).unwrap_or_default() == file_name {
-                            section.remove(&mime_type);
+                // This file is shared with every other app: it is only rewritten when the app
+                // actually was a default handler, and edited line by line to keep the rest of
+                // it (comments included) as is.
+                match std::fs::read_to_string(&mimeapps_path) {
+                    Ok(mimeapps) => {
+                        if let Some(updated) =
+                            desktop_entry::remove_default_handler(&mimeapps, &mime_type, &file_name)
+                        {
+                            std::fs::write(&mimeapps_path, updated)?;
                         }
                     }
-                    mimeapps.write_to_file(&mimeapps_path)?;
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
                 }
 
                 // Stop declaring the scheme in the handler's `.desktop` file too: the desktop

@@ -104,6 +104,50 @@ pub fn set(content: &str, group: &str, key: &str, value: Option<&str>) -> Option
     Some(join(&out, content))
 }
 
+/// Removes `desktop_file` from the `mime_type` default handlers listed in the
+/// `[Default Applications]` group of a `mimeapps.list` file.
+///
+/// Returns the new content, or `None` when `desktop_file` was not a default handler for
+/// `mime_type` and the file must not be rewritten.
+pub fn remove_default_handler(
+    content: &str,
+    mime_type: &str,
+    desktop_file: &str,
+) -> Option<String> {
+    let (lines, range) = group_range(content, "Default Applications");
+    let (start, end) = range?;
+
+    let mut changed = false;
+    let mut out = Vec::with_capacity(lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        if (start..end).contains(&i) {
+            if let Some((key, value)) = key_value(line).filter(|(k, _)| *k == mime_type) {
+                let handlers = value
+                    .split(';')
+                    .map(str::trim)
+                    .filter(|h| !h.is_empty())
+                    .collect::<Vec<_>>();
+                let remaining = handlers
+                    .iter()
+                    .filter(|h| **h != desktop_file)
+                    .copied()
+                    .collect::<Vec<_>>();
+                if remaining.len() != handlers.len() {
+                    changed = true;
+                    if !remaining.is_empty() {
+                        let trailing = if value.ends_with(';') { ";" } else { "" };
+                        out.push(format!("{key}={}{trailing}", remaining.join(";")));
+                    }
+                    continue;
+                }
+            }
+        }
+        out.push(line.to_string());
+    }
+
+    changed.then(|| join(&out, content))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +206,41 @@ mod tests {
         );
 
         assert_eq!(set(DESKTOP, "Missing", "MimeType", Some("x")), None);
+    }
+
+    #[test]
+    fn remove_default_handler_only_changes_matching_entries() {
+        let mimeapps = "# keep me\n[Default Applications]\nx-scheme-handler/a=app-handler.desktop\nx-scheme-handler/b=other.desktop;app-handler.desktop;\nx-scheme-handler/c=myapp-handler.desktop\ntext/plain=editor.desktop\n\n[Added Associations]\nx-scheme-handler/a=app-handler.desktop;\n";
+
+        let out =
+            remove_default_handler(mimeapps, "x-scheme-handler/a", "app-handler.desktop").unwrap();
+        assert_eq!(
+            out,
+            mimeapps.replacen("x-scheme-handler/a=app-handler.desktop\n", "", 1)
+        );
+
+        let out =
+            remove_default_handler(mimeapps, "x-scheme-handler/b", "app-handler.desktop").unwrap();
+        assert_eq!(
+            out,
+            mimeapps.replace(
+                "x-scheme-handler/b=other.desktop;app-handler.desktop;",
+                "x-scheme-handler/b=other.desktop;"
+            )
+        );
+
+        // not the handler (only a suffix match) or unknown mime type: nothing to write
+        assert_eq!(
+            remove_default_handler(mimeapps, "x-scheme-handler/c", "app-handler.desktop"),
+            None
+        );
+        assert_eq!(
+            remove_default_handler(mimeapps, "x-scheme-handler/d", "app-handler.desktop"),
+            None
+        );
+        assert_eq!(
+            remove_default_handler("[Added Associations]\n", "x", "app-handler.desktop"),
+            None
+        );
     }
 }
