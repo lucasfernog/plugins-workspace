@@ -984,7 +984,7 @@ interface RenameOptions {
  * @example
  * ```typescript
  * import { rename, BaseDirectory } from '@tauri-apps/plugin-fs';
- * await rename('avatar.png', 'deleted.png', { oldPathBaseDir: BaseDirectory.App, newPathBaseDir: BaseDirectory.AppLocalData });
+ * await rename('avatar.png', 'deleted.png', { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppLocalData });
  * ```
  *
  * @param oldPath The path of the file or directory to rename.
