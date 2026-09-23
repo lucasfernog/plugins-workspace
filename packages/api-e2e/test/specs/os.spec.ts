@@ -86,6 +86,15 @@ describePlugin('os', () => {
     expect(info.exeExtension).toBe(platform === 'win32' ? 'exe' : '')
   })
 
+  it('version is known', async () => {
+    const version = await tauri((api) => api.os.version())
+    // `os_info` reports `Unknown` when it cannot detect the version (which it
+    // did on iOS before 3.14); the exact value has nothing to compare against.
+    expect(typeof version).toBe('string')
+    expect(version).not.toBe('')
+    expect(version).not.toBe('Unknown')
+  })
+
   it('locale is null or a language tag', async () => {
     const locale = await tauri((api) => api.os.locale())
     // The plugin forwards the environment's POSIX locale as-is, so a host with
