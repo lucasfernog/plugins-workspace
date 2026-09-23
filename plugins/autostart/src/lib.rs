@@ -21,6 +21,8 @@ use tauri::{
 use std::env::current_exe;
 
 mod escape;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -61,6 +63,12 @@ impl Serialize for Error {
     }
 }
 
+/// Resolves the home directory, which `auto_launch` unwraps (panicking) on macOS and Linux.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn home_dir() -> Result<std::path::PathBuf> {
+    dirs::home_dir().ok_or_else(|| Error::Anyhow("failed to resolve the home directory".into()))
+}
+
 /// Manages the auto start (launch at login) state of the application.
 ///
 /// An instance is created and managed as Tauri state when the plugin is built; access it
@@ -79,6 +87,15 @@ impl AutoLaunchManager {
     /// Returns [`Error::Anyhow`] if the platform-specific registration fails, for example
     /// when the application path does not exist or is not absolute.
     pub fn enable(&self) -> Result<()> {
+        // `auto_launch` unwraps the home directory to find the Launch Agent.
+        #[cfg(target_os = "macos")]
+        if matches!(self.macos_launcher, MacosLauncher::LaunchAgent) {
+            home_dir()?;
+        }
+
+        #[cfg(target_os = "linux")]
+        linux::create_autostart_dir()?;
+
         self.inner
             .enable()
             .map_err(|e| e.to_string())
@@ -98,6 +115,9 @@ impl AutoLaunchManager {
             return macos::delete_login_item(self.inner.get_app_name());
         }
 
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        home_dir()?;
+
         match self.inner.disable() {
             // On Windows, disabling deletes the app's `Run` registry value, which fails with
             // "not found" when autostart is already disabled. The Launch Agent (macOS) and
@@ -113,6 +133,13 @@ impl AutoLaunchManager {
     ///
     /// Returns [`Error::Anyhow`] if the platform-specific check fails.
     pub fn is_enabled(&self) -> Result<bool> {
+        #[cfg(target_os = "macos")]
+        if matches!(self.macos_launcher, MacosLauncher::LaunchAgent) {
+            home_dir()?;
+        }
+        #[cfg(target_os = "linux")]
+        home_dir()?;
+
         self.inner
             .is_enabled()
             .map_err(|e| e.to_string())
