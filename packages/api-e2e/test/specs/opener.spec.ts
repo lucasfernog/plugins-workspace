@@ -35,6 +35,18 @@ describePlugin('opener', () => {
     expect(message).toMatch(/Not allowed to open path/)
   })
 
+  it('openPath rejects missing paths that escape the scope with ..', async () => {
+    const message = await tauriError(async (api) => {
+      // not `path.join`, which would normalize the `..` away
+      const sep = api.path.sep()
+      const appData = await api.path.appDataDir()
+      return api.opener.openPath(
+        [appData, 'missing-e2e', '..', '..', 'escaped-e2e'].join(sep)
+      )
+    })
+    expect(message).toMatch(/Not allowed to open path/)
+  })
+
   it('revealItemInDir rejects paths that do not exist', async () => {
     const message = await tauriError(async (api) =>
       api.opener.revealItemInDir(

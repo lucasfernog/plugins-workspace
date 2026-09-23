@@ -92,6 +92,17 @@ impl Entry {
     }
 }
 
+/// Whether `path` has a `..` component that the scope check cannot resolve.
+///
+/// Existing paths are canonicalized before they are matched against the scope, but a path that
+/// does not exist is matched as is, so `$HOME/**` would match `/home/user/../../etc/x` while
+/// the program opening it resolves the `..` components itself.
+fn has_unresolved_parent_dir(path: &Path) -> bool {
+    path.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+        && !path.exists()
+}
+
 #[derive(Debug)]
 pub struct Scope<'a, R: Runtime, M: Manager<R>> {
     allowed: Vec<&'a Arc<Entry>>,
@@ -124,6 +135,10 @@ impl<'a, R: Runtime, M: Manager<R>> Scope<'a, R, M> {
     }
 
     pub fn is_path_allowed(&self, path: &Path, with: Option<&str>) -> crate::Result<bool> {
+        if has_unresolved_parent_dir(path) {
+            return Ok(false);
+        }
+
         let fs_scope = tauri::fs::Scope::new(
             self.manager,
             &tauri::utils::config::FsScope::Scope {
@@ -137,5 +152,21 @@ impl<'a, R: Runtime, M: Manager<R>> Scope<'a, R, M> {
         )?;
 
         Ok(fs_scope.is_allowed(path) && self.allowed.iter().any(|e| e.matches_path_program(with)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_paths_with_parent_dir_are_rejected() {
+        let dir = std::env::temp_dir();
+        assert!(has_unresolved_parent_dir(
+            &dir.join("opener-missing-dir/../../x")
+        ));
+        assert!(!has_unresolved_parent_dir(&dir.join("opener-missing-file")));
+        // existing paths are canonicalized by the fs scope
+        assert!(!has_unresolved_parent_dir(&dir.join("..")));
     }
 }
