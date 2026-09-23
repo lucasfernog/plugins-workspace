@@ -153,7 +153,7 @@ fn get_matches_internal(config: &Config, matches: &ArgMatches) -> Matches {
 fn map_matches(config: &Config, matches: &ArgMatches, cli_matches: &mut Matches) {
     if let Some(args) = config.args() {
         for arg in args {
-            let (occurrences, value) = if arg.takes_value {
+            let (occurrences, value) = if arg.accepts_values() {
                 if arg.multiple {
                     matches
                         .get_many::<String>(&arg.name)
@@ -242,7 +242,7 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
 
     let action = if arg.multiple {
         ArgAction::Append
-    } else if arg.takes_value {
+    } else if arg.accepts_values() {
         ArgAction::Set
     } else {
         ArgAction::Count
@@ -292,4 +292,66 @@ fn get_arg(arg_name: String, arg: &Arg) -> ClapArg {
     clap_arg = clap_arg.global(arg.global);
 
     clap_arg
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package_info() -> PackageInfo {
+        PackageInfo {
+            name: "app".into(),
+            version: "1.2.3".parse().unwrap(),
+            authors: "Tauri",
+            description: "package description",
+            crate_name: "app",
+        }
+    }
+
+    fn config(value: serde_json::Value) -> Config {
+        serde_json::from_value(value).expect("invalid CLI config")
+    }
+
+    fn parse(config: &Config, args: &[&str]) -> crate::Result<Matches> {
+        let args = std::iter::once("app")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect();
+        get_matches(config, &package_info(), Some(args))
+    }
+
+    fn arg<'a>(matches: &'a Matches, name: &str) -> &'a ArgData {
+        matches
+            .args
+            .get(name)
+            .unwrap_or_else(|| panic!("missing arg `{name}`"))
+    }
+
+    #[test]
+    fn value_options_imply_takes_value() {
+        let config = config(serde_json::json!({
+            "args": [
+                { "name": "input", "index": 1 },
+                { "name": "theme", "possibleValues": ["light", "dark"] },
+                { "name": "pair", "numberOfValues": 2, "multiple": true },
+                { "name": "few", "maxValues": 2, "multiple": true },
+                { "name": "many", "minValues": 1, "multiple": true },
+            ]
+        }));
+
+        let matches = parse(
+            &config,
+            &[
+                "file.txt", "--theme", "dark", "--pair", "a", "b", "--few", "c", "--many", "d", "e",
+            ],
+        )
+        .unwrap();
+        assert_eq!(arg(&matches, "input").value, serde_json::json!("file.txt"));
+        assert_eq!(arg(&matches, "theme").value, serde_json::json!("dark"));
+        assert_eq!(arg(&matches, "pair").value, serde_json::json!(["a", "b"]));
+        assert_eq!(arg(&matches, "few").value, serde_json::json!(["c"]));
+        assert_eq!(arg(&matches, "many").value, serde_json::json!(["d", "e"]));
+
+        assert!(parse(&config, &["--theme", "blue"]).is_err());
+    }
 }

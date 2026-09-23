@@ -122,6 +122,22 @@ pub struct Arg {
     pub global: bool,
 }
 
+impl Arg {
+    /// Whether the argument takes a value: either `takes_value` is set, or the argument is
+    /// positional or uses an option that only makes sense for values.
+    ///
+    /// Clap rejects those options on a flag (a debug assertion that panics as soon as the
+    /// arguments are parsed), so they imply `takes_value` instead.
+    pub(crate) fn accepts_values(&self) -> bool {
+        self.takes_value
+            || self.index.is_some()
+            || self.possible_values.is_some()
+            || self.number_of_values.is_some()
+            || self.min_values.is_some()
+            || self.max_values.is_some()
+    }
+}
+
 /// describes a CLI configuration
 #[derive(Debug, PartialEq, Eq, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
