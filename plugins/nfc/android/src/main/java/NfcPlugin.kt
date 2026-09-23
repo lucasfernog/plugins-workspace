@@ -15,6 +15,8 @@ import android.nfc.Tag
 import android.nfc.tech.Ndef
 import android.nfc.tech.NdefFormatable
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Parcelable
 import android.os.PatternMatcher
 import android.webkit.WebView
@@ -254,7 +256,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                         } finally {
                             if (this.session?.keepAlive != true) {
                                 this.session = null
-                                disableNFCInForeground()
+                                disableNFCInForegroundIfIdle()
                             }
                         }
                     }
@@ -348,7 +350,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 } finally {
                     if (this.session?.keepAlive != true) {
                         this.session = null
-                        disableNFCInForeground()
+                        disableNFCInForegroundIfIdle()
                     }
                 }
             } ?: run {
@@ -401,7 +403,7 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
             if (this.session?.keepAlive != true) {
                 this.session = null
             }
-            // TODO this crashes? disableNFCInForeground()
+            disableNFCInForegroundIfIdle()
         }
     }
 
@@ -429,27 +431,29 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
         if (ndefTag !== null) {
             // We have to connect first to check maxSize.
             try {
-                ndefTag.connect()
-            } catch (e: IOException) {
-                throw Exception("Couldn't connect to NFC tag", e)
-            }
-
-            if (ndefTag.maxSize < message.toByteArray().size) {
-                throw Exception("The message is too large for the provided NFC tag")
-            } else if (!ndefTag.isWritable) {
-                throw Exception("NFC tag is read-only")
-            } else {
                 try {
-                    ndefTag.writeNdefMessage(message)
-                } catch (e: Exception) {
-                    throw Exception("Couldn't write message to NFC tag", e)
+                    ndefTag.connect()
+                } catch (e: IOException) {
+                    throw Exception("Couldn't connect to NFC tag", e)
                 }
-            }
 
-            try {
-                ndefTag.close()
-            } catch (e: IOException) {
-                Logger.error("failed to close tag", e)
+                if (ndefTag.maxSize < message.toByteArray().size) {
+                    throw Exception("The message is too large for the provided NFC tag")
+                } else if (!ndefTag.isWritable) {
+                    throw Exception("NFC tag is read-only")
+                } else {
+                    try {
+                        ndefTag.writeNdefMessage(message)
+                    } catch (e: Exception) {
+                        throw Exception("Couldn't write message to NFC tag", e)
+                    }
+                }
+            } finally {
+                try {
+                    ndefTag.close()
+                } catch (e: IOException) {
+                    Logger.error("failed to close tag", e)
+                }
             }
 
             return
@@ -463,12 +467,12 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
                 ndefFormatableTag.format(message)
             } catch (e: Exception) {
                 throw Exception("Couldn't format tag as Ndef", e)
-            }
-
-            try {
-                ndefFormatableTag.close()
-            } catch (e: IOException) {
-                Logger.error("failed to close tag", e)
+            } finally {
+                try {
+                    ndefFormatableTag.close()
+                } catch (e: IOException) {
+                    Logger.error("failed to close tag", e)
+                }
             }
 
             return
@@ -497,6 +501,22 @@ class NfcPlugin(private val activity: Activity) : Plugin(activity) {
     private fun disableNFCInForeground() {
         activity.runOnUiThread {
             nfcAdapter?.disableForegroundDispatch(activity)
+        }
+    }
+
+    // Disables the foreground dispatch once a session has ended.
+    // The call is posted to the main looper instead of running right away because onNewIntent
+    // runs while the activity is paused, and disableForegroundDispatch throws unless the activity is resumed.
+    // It is skipped if a new session started in the meantime.
+    private fun disableNFCInForegroundIfIdle() {
+        Handler(Looper.getMainLooper()).post {
+            if (session == null) {
+                try {
+                    nfcAdapter?.disableForegroundDispatch(activity)
+                } catch (e: IllegalStateException) {
+                    Logger.warn("NFC", "failed to disable foreground dispatch: $e")
+                }
+            }
         }
     }
 }
