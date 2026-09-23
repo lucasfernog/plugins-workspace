@@ -87,10 +87,13 @@ export async function moveWindow(to: Position): Promise<void> {
 }
 
 /**
- * Moves the `Window` to the given {@link Position} using `WindowExt.move_window_constrained()`
+ * Moves the current window to the given {@link Position}, keeping it on screen.
  *
- * This move operation constrains the window to the screen dimensions in case of
- * tray-icon positions.
+ * For the `Tray*` positions the window is constrained to the monitor the tray icon is on, so
+ * it is not cut off at the screen edges. Other positions behave exactly like {@link moveWindow}.
+ *
+ * Versions of the Rust crate up to 2.3.4 only register this command when the `tray-icon`
+ * Cargo feature of `tauri-plugin-positioner` is enabled.
  *
  * @example
  * ```typescript
