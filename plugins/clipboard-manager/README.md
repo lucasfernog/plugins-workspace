@@ -2,13 +2,13 @@
 
 Read and write to the system clipboard.
 
-| Platform | Supported |
-| -------- | --------- |
-| Linux    | ✓         |
-| Windows  | ✓         |
-| macOS    | ✓         |
-| Android  | ✓         |
-| iOS      | ✓         |
+| Platform | Supported | Notes                                                                                         |
+| -------- | --------- | --------------------------------------------------------------------------------------------- |
+| Linux    | ✓         |                                                                                               |
+| Windows  | ✓         |                                                                                               |
+| macOS    | ✓         |                                                                                               |
+| Android  | partial   | Plain text only (no HTML or images). `clear` writes an empty string below Android 9 (API 28). |
+| iOS      | partial   | Plain text only (no HTML or images). The `writeText` label is ignored.                        |
 
 ## Install
 
