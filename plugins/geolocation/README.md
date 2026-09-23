@@ -126,9 +126,11 @@ import {
   checkPermissions,
   requestPermissions,
   getCurrentPosition,
-  watchPosition
+  watchPosition,
+  clearWatch
 } from '@tauri-apps/plugin-geolocation'
 
+// `checkPermissions` and `requestPermissions` reject when the device's location services are turned off.
 let permissions = await checkPermissions()
 if (
   permissions.location === 'prompt'
@@ -140,12 +142,19 @@ if (
 if (permissions.location === 'granted') {
   const pos = await getCurrentPosition()
 
-  await watchPosition(
+  const watchId = await watchPosition(
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
-    (pos) => {
-      console.log(pos)
+    (pos, error) => {
+      if (error) {
+        console.error(error)
+      } else {
+        console.log(pos)
+      }
     }
   )
+
+  // later, to stop watching
+  await clearWatch(watchId)
 }
 ```
 
