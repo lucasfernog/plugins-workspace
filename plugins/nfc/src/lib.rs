@@ -42,6 +42,8 @@ struct IsAvailableResponse {
 #[derive(Serialize)]
 struct WriteRequest {
     records: Vec<NfcRecord>,
+    #[serde(flatten)]
+    options: WriteOptions,
 }
 
 impl<R: Runtime> Nfc<R> {
@@ -89,8 +91,52 @@ impl<R: Runtime> Nfc<R> {
     /// connected tag on Android, when the tag is read-only, when it cannot hold the message or
     /// when it does not support the NDEF format.
     pub fn write(&self, records: Vec<NfcRecord>) -> crate::Result<()> {
+        self.write_with_options(records, WriteOptions::default())
+    }
+
+    /// Writes the given NDEF records to an NFC tag, blocking until the write completes or fails.
+    ///
+    /// Unlike [`Self::write`], this can set [`WriteOptions::kind`], so on Android it can scan
+    /// for the tag to write to by itself instead of requiring a kept-alive [`Self::scan`] session,
+    /// and the messages displayed in the iOS UI.
+    ///
+    /// When a [`Self::scan`] session is still active (e.g. kept alive), the records are written to
+    /// its tag and [`WriteOptions::kind`] is ignored.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use tauri_plugin_nfc::{NfcExt, NfcRecord, NFCTypeNameFormat, ScanKind, WriteOptions};
+    ///
+    /// fn write_url<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri_plugin_nfc::Result<()> {
+    ///     // well known URI record, `0x04` is the `https://` prefix code
+    ///     let mut payload = vec![0x04];
+    ///     payload.extend_from_slice(b"tauri.app");
+    ///     let record = NfcRecord {
+    ///         format: NFCTypeNameFormat::NfcWellKnown,
+    ///         kind: vec![0x55],
+    ///         id: vec![],
+    ///         payload,
+    ///     };
+    ///     app.nfc().write_with_options(
+    ///         vec![record],
+    ///         WriteOptions::new()
+    ///             .kind(ScanKind::Ndef { mime_type: None, uri: None, tech_list: None })
+    ///             .message("Hold your device near the tag"),
+    ///     )
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::write`].
+    pub fn write_with_options(
+        &self,
+        records: Vec<NfcRecord>,
+        options: WriteOptions,
+    ) -> crate::Result<()> {
         self.0
-            .run_mobile_plugin("write", WriteRequest { records })
+            .run_mobile_plugin("write", WriteRequest { records, options })
             .map_err(Into::into)
     }
 }

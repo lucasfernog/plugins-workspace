@@ -18,6 +18,61 @@ pub struct ScanRequest {
     pub keep_session_alive: bool,
 }
 
+/// Options of the [`Nfc::write_with_options`](crate::Nfc::write_with_options) API.
+///
+/// Create it with [`WriteOptions::new`] (or [`Default`]) and the builder methods.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct WriteOptions {
+    /// The kind of scan to perform to find the tag to write to, when there is no
+    /// kept-alive [`Nfc::scan`](crate::Nfc::scan) session.
+    ///
+    /// Required on Android in that case. On iOS a [`ScanKind::Ndef`] scan is performed when it is not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ScanKind>,
+    /// Message displayed in the UI while scanning for the tag. **iOS only**.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Message displayed in the UI when the tag has been read. **iOS only**.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub successful_read_message: Option<String>,
+    /// Message displayed in the UI when the message has been written. **iOS only**.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub success_message: Option<String>,
+}
+
+impl WriteOptions {
+    /// Creates empty write options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the kind of scan to perform to find the tag to write to. See [`Self::kind`].
+    pub fn kind(mut self, kind: ScanKind) -> Self {
+        self.kind.replace(kind);
+        self
+    }
+
+    /// Sets the message displayed in the UI while scanning for the tag. **iOS only**.
+    pub fn message(mut self, message: impl Into<String>) -> Self {
+        self.message.replace(message.into());
+        self
+    }
+
+    /// Sets the message displayed in the UI when the tag has been read. **iOS only**.
+    pub fn successful_read_message(mut self, message: impl Into<String>) -> Self {
+        self.successful_read_message.replace(message.into());
+        self
+    }
+
+    /// Sets the message displayed in the UI when the message has been written. **iOS only**.
+    pub fn success_message(mut self, message: impl Into<String>) -> Self {
+        self.success_message.replace(message.into());
+        self
+    }
+}
+
 /// An NDEF record to be written to a tag.
 ///
 /// Use [`NFCTypeNameFormat`] to describe how [`Self::kind`] must be interpreted.
@@ -233,6 +288,31 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&tag).unwrap(),
             serde_json::json!({ "tag": { "mimeType": "text/plain", "uri": null } })
+        );
+    }
+
+    #[test]
+    fn write_options_are_serialized_as_the_native_side_expects() {
+        assert_eq!(
+            serde_json::to_value(WriteOptions::new()).unwrap(),
+            serde_json::json!({})
+        );
+        let options = WriteOptions::new()
+            .kind(ScanKind::Tag {
+                mime_type: None,
+                uri: None,
+            })
+            .message("Hold your device near the tag")
+            .successful_read_message("Tag found")
+            .success_message("Tag written");
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            serde_json::json!({
+                "kind": { "tag": { "mimeType": null, "uri": null } },
+                "message": "Hold your device near the tag",
+                "successfulReadMessage": "Tag found",
+                "successMessage": "Tag written"
+            })
         );
     }
 }
