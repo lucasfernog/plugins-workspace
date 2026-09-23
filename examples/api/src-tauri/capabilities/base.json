@@ -143,6 +143,9 @@
     "stronghold:allow-destroy",
     "stronghold:allow-remove-secret",
     "stronghold:allow-remove-store-record",
-    "websocket:default"
+    {
+      "identifier": "websocket:default",
+      "deny": ["ws://127.0.0.1:*/ws/denied"]
+    }
   ]
 }

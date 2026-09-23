@@ -164,6 +164,16 @@ describePlugin('websocket', () => {
     expect(error).toMatch(/refused|connect/i)
   })
 
+  it('URLs denied by the scope are rejected', async () => {
+    // the example's capability denies `ws://127.0.0.1:*/ws/denied` and has no
+    // allow entries, so every other URL stays allowed
+    const error = await tauriError(
+      (api, url) => api.websocket.connect(url),
+      `${WEBSOCKET_FIXTURE_URL}/denied`
+    )
+    expect(error).toMatch(/not allowed on the configured scope/)
+  })
+
   it('invalid URLs and header names are rejected', async () => {
     const url = await tauriError((api) => api.websocket.connect('not a url'))
     expect(url).toMatch(/invalid uri/i)

@@ -6998,7 +6998,9 @@ dependencies = [
  "http",
  "log",
  "rand 0.9.4",
+ "regex",
  "rustls",
+ "schemars",
  "serde",
  "serde_json",
  "tauri",
@@ -7006,6 +7008,8 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-tungstenite",
+ "url",
+ "urlpattern",
 ]
 
 [[package]]

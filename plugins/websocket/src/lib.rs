@@ -12,6 +12,13 @@
 //! - **native-tls-vendored**: Enables the `vendored` feature of `native-tls`.
 //!
 //! At least one TLS feature is required for `wss://`; plain `ws://` works without one.
+//!
+//! ## Scope
+//!
+//! The `connect` command accepts an optional URL scope (`allow` / `deny` entries on the
+//! `websocket:default` or `websocket:allow-connect` permission, as URL patterns). Without any entry
+//! every URL is allowed. Once an `allow` entry is configured only matching URLs can be opened, and
+//! `deny` entries always take precedence.
 
 #![doc(
     html_logo_url = "https://github.com/tauri-apps/tauri/raw/dev/app-icon.png",
@@ -22,7 +29,7 @@ use futures_util::{stream::SplitSink, SinkExt, StreamExt};
 use http::header::{HeaderName, HeaderValue};
 use serde::{ser::Serializer, Deserialize, Serialize};
 use tauri::{
-    ipc::Channel,
+    ipc::{Channel, CommandScope, GlobalScope},
     plugin::{Builder as PluginBuilder, TauriPlugin},
     Manager, Runtime, State, Window,
 };
@@ -42,11 +49,14 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::{
     tungstenite::{
         client::IntoClientRequest,
+        http::Uri,
         protocol::{CloseFrame as ProtocolCloseFrame, WebSocketConfig},
         Message,
     },
     Connector, MaybeTlsStream, WebSocketStream,
 };
+
+mod scope;
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -66,6 +76,8 @@ enum Error {
     InvalidHeaderValue(#[from] tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue),
     #[error(transparent)]
     InvalidHeaderName(#[from] tokio_tungstenite::tungstenite::http::header::InvalidHeaderName),
+    #[error("url not allowed on the configured scope: {0}")]
+    UrlNotAllowed(String),
 }
 
 impl Serialize for Error {
@@ -160,15 +172,54 @@ enum WebSocketMessage {
     Close(Option<CloseFrame>),
 }
 
+/// Checks the URI the connection will be made to against the scope.
+///
+/// The URI is re-parsed as a WHATWG URL for the pattern match; if the two parsers disagree on the
+/// host or port the URI is rejected, so a parser differential cannot be used to bypass the scope.
+fn is_uri_allowed(scope: &scope::Scope, uri: &Uri) -> bool {
+    let Ok(url) = url::Url::parse(&uri.to_string()) else {
+        return false;
+    };
+    let same_host = match (url.host_str(), uri.host()) {
+        (Some(a), Some(b)) => a
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .eq_ignore_ascii_case(b.trim_start_matches('[').trim_end_matches(']')),
+        _ => false,
+    };
+    let same_port = url.port_or_known_default() == uri.port_u16().or(url.port_or_known_default());
+    same_host && same_port && scope.is_allowed(&url)
+}
+
 #[tauri::command]
 async fn connect<R: Runtime>(
     window: Window<R>,
     url: String,
     on_message: Channel<serde_json::Value>,
     config: Option<ConnectionConfig>,
+    command_scope: CommandScope<scope::Entry>,
+    global_scope: GlobalScope<scope::Entry>,
 ) -> Result<Id> {
     let id = rand::random();
     let mut request = url.into_client_request()?;
+
+    let scope = scope::Scope::new(
+        command_scope
+            .allows()
+            .iter()
+            .chain(global_scope.allows())
+            .cloned()
+            .collect(),
+        command_scope
+            .denies()
+            .iter()
+            .chain(global_scope.denies())
+            .cloned()
+            .collect(),
+    );
+    if scope.is_configured() && !is_uri_allowed(&scope, request.uri()) {
+        return Err(Error::UrlNotAllowed(request.uri().to_string()));
+    }
 
     if let Some(headers) = config.as_ref().and_then(|c| c.headers.as_ref()) {
         for (k, v) in headers {
@@ -327,5 +378,32 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn scope_is_checked_against_the_request_uri() {
+        let scope = scope::Scope::new(
+            vec![Arc::new(
+                "wss://example.com/*".parse::<scope::Entry>().unwrap(),
+            )],
+            vec![],
+        );
+        let check = |url: &str| {
+            let request = url.into_client_request().unwrap();
+            is_uri_allowed(&scope, request.uri())
+        };
+        assert!(check("wss://example.com/socket"));
+        assert!(check("wss://EXAMPLE.com/socket"));
+        assert!(check("wss://example.com:443/socket"));
+        assert!(!check("wss://example.com:8443/socket"));
+        assert!(!check("ws://example.com/socket"));
+        assert!(!check("wss://evil.example.org/socket"));
+        assert!(!check("wss://example.com@evil.example.org/socket"));
     }
 }

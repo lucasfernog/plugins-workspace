@@ -26,6 +26,11 @@ ios = { level = "full", notes = "" }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+url = { workspace = true }
+urlpattern = "0.3"
+regex = "1"
 
 [dependencies]
 serde = { workspace = true }
@@ -35,6 +40,9 @@ log = { workspace = true }
 thiserror = { workspace = true }
 http = "1"
 rand = "0.9"
+url = { workspace = true }
+urlpattern = "0.3"
+regex = "1"
 futures-util = "0.3"
 tokio = { version = "1", features = ["net", "sync"] }
 tokio-tungstenite = { version = "0.29" }
