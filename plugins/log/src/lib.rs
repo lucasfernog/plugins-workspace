@@ -275,8 +275,8 @@ impl RotatingFile {
                 let entry = entry.ok()?;
                 let path = entry.path();
                 let old_file_name = path.file_name()?.to_string_lossy().into_owned();
-                let date = self.archived_file_date(&old_file_name)?.to_string();
-                Some((path, date))
+                let key = self.archive_sort_key(&old_file_name)?;
+                Some((path, key))
             })
             .collect::<Vec<_>>();
 
@@ -291,18 +291,27 @@ impl RotatingFile {
         Ok(())
     }
 
-    /// Returns the date part of `file_name` if it names a log file archived by this rotator, i.e.
-    /// `{self.file_name}_{date}.log` where `date` matches [`LOG_DATE_FORMAT`].
+    /// Returns a key ordering the log files archived by this rotator from oldest to newest, or `None` if
+    /// `file_name` is not one of them.
     ///
-    /// Returns `None` for any other file, including the active log file and the files of other targets whose
-    /// name starts with this target's name (e.g. `app_webview.log` for the `app` target).
-    fn archived_file_date<'a>(&self, file_name: &'a str) -> Option<&'a str> {
-        let date = file_name
+    /// Archives are named `{self.file_name}_{date}.log`, where `date` matches [`LOG_DATE_FORMAT`]. When a file is
+    /// rotated more than once within the same second, the older archives of that second are moved to
+    /// `{self.file_name}_{date}.log.bak`, then `.log.bak.1`, `.log.bak.2`... (see [`Self::rename_file_to_dated`]).
+    ///
+    /// Any other file is ignored, including the active log file and the files of other targets whose name starts
+    /// with this target's name (e.g. `app_webview.log` for the `app` target).
+    fn archive_sort_key(&self, file_name: &str) -> Option<(String, usize)> {
+        let rest = file_name
             .strip_prefix(self.file_name.as_str())?
-            .strip_prefix('_')?
-            .strip_suffix(".log")?;
+            .strip_prefix('_')?;
+        let (date, suffix) = rest.split_once(".log")?;
         time::PrimitiveDateTime::parse(date, LOG_DATE_FORMAT).ok()?;
-        Some(date)
+        let order = match suffix {
+            "" => usize::MAX,
+            ".bak" => 0,
+            _ => suffix.strip_prefix(".bak.")?.parse().ok()?,
+        };
+        Some((date.to_string(), order))
     }
 
     fn rename_file_to_dated(&self) -> Result<(), Error> {
@@ -315,13 +324,20 @@ impl RotatingFile {
                 .unwrap(),
         ));
         if to.is_file() {
-            // designated rotated log file name already exists
-            // highly unlikely but defensively handle anyway by adding .bak to filename
-            let mut to_bak = to.clone();
-            to_bak.set_file_name(format!(
-                "{}.bak",
-                to_bak.file_name().unwrap().to_string_lossy()
-            ));
+            // The designated rotated log file name already exists, since the file was already rotated within the
+            // same second. Move the older archive to the first free `.bak`, `.bak.1`, `.bak.2`... name so it is not
+            // overwritten.
+            let to_name = to.file_name().unwrap().to_string_lossy().into_owned();
+            let to_bak = (0..)
+                .map(|n| {
+                    self.dir.join(if n == 0 {
+                        format!("{to_name}.bak")
+                    } else {
+                        format!("{to_name}.bak.{n}")
+                    })
+                })
+                .find(|path| !path.exists())
+                .expect("unbounded iterator");
             fs::rename(&to, to_bak)?;
         }
         fs::rename(&self.path, &to)?;
@@ -1022,6 +1038,73 @@ mod tests {
                 "app_webview.log".to_string(),
                 "app_webview_2020-01-01_00-00-00.log".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn archive_sort_key_orders_same_second_archives() {
+        let dir = TestDir::new("sort-key");
+        let file = rotating_file(&dir, "app", RotationStrategy::KeepAll);
+        let mut names = vec![
+            "app_2020-01-01_00-00-01.log",
+            "app_2020-01-01_00-00-00.log",
+            "app_2020-01-01_00-00-00.log.bak.2",
+            "app_2020-01-01_00-00-00.log.bak",
+            "app_2020-01-01_00-00-00.log.bak.1",
+        ];
+        names.sort_by_key(|name| file.archive_sort_key(name).unwrap());
+        assert_eq!(
+            names,
+            vec![
+                "app_2020-01-01_00-00-00.log.bak",
+                "app_2020-01-01_00-00-00.log.bak.1",
+                "app_2020-01-01_00-00-00.log.bak.2",
+                "app_2020-01-01_00-00-00.log",
+                "app_2020-01-01_00-00-01.log",
+            ]
+        );
+        for name in [
+            "app.log",
+            "app_notes.log",
+            "app_2020-01-01_00-00-00.log.bak.x",
+            "app_2020-01-01_00-00-00.txt",
+        ] {
+            assert_eq!(file.archive_sort_key(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn keep_all_does_not_overwrite_archives_rotated_within_a_second() {
+        let dir = TestDir::new("keep-all-burst");
+        let mut file = rotating_file(&dir, "app", RotationStrategy::KeepAll);
+        let records = ["record-0", "record-1", "record-2", "record-3", "record-4"];
+        for record in records {
+            write_record(&mut file, record);
+        }
+        let files = dir.files();
+        assert_eq!(files.len(), records.len(), "{files:?}");
+        let contents = files
+            .iter()
+            .map(|name| fs::read_to_string(dir.0.join(name)).unwrap())
+            .collect::<String>();
+        for record in records {
+            assert!(contents.contains(record), "{record} lost: {files:?}");
+        }
+    }
+
+    #[test]
+    fn keep_some_counts_same_second_archives() {
+        let dir = TestDir::new("keep-some-burst");
+        let mut file = rotating_file(&dir, "app", RotationStrategy::KeepSome(2));
+        for record in ["record-0", "record-1", "record-2", "record-3", "record-4"] {
+            write_record(&mut file, record);
+        }
+        let files = dir.files();
+        // the active file and 2 archives
+        assert_eq!(files.len(), 3, "{files:?}");
+        assert_eq!(
+            fs::read_to_string(dir.0.join("app.log")).unwrap(),
+            "record-4"
         );
     }
 }
