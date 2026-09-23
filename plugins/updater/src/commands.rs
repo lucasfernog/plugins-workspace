@@ -145,14 +145,13 @@ pub(crate) async fn install<R: Runtime>(
         .resources_table()
         .get::<DownloadedBytes>(bytes_rid)?;
 
+    let mut update = (*update).clone();
     if let Some(restart_after_install) = restart_after_install {
-        let update = (*update).clone();
-        update
-            .restart_after_install(restart_after_install)
-            .install(&bytes.0)?;
-    } else {
-        update.install(&bytes.0)?;
+        update = update.restart_after_install(restart_after_install);
     }
+    // extracting the update, waiting for a privilege escalation prompt and running the package
+    // manager can take a while, and would stall the async runtime
+    tauri::async_runtime::spawn_blocking(move || update.install(&bytes.0)).await??;
 
     let _ = webview.resources_table().close(bytes_rid);
     Ok(())
@@ -189,8 +188,8 @@ pub(crate) async fn download_and_install<R: Runtime>(
 
     let mut first_chunk = true;
 
-    update
-        .download_and_install(
+    let bytes = update
+        .download(
             |chunk_length, content_length| {
                 if first_chunk {
                     first_chunk = !first_chunk;
@@ -203,6 +202,8 @@ pub(crate) async fn download_and_install<R: Runtime>(
             },
         )
         .await?;
+    // see `install`
+    tauri::async_runtime::spawn_blocking(move || update.install(bytes)).await??;
 
     Ok(())
 }
