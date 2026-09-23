@@ -23,7 +23,8 @@ import com.google.android.gms.location.Priority
 
 public class Geolocation(private val context: Context) {
     private var fusedLocationClient: FusedLocationProviderClient? = null
-    private var locationCallback: LocationCallback? = null
+    // One callback per watcher (keyed by its channel id), so several watchers can run at once.
+    private val locationCallbacks = HashMap<Long, LocationCallback>()
 
 
     fun isLocationServicesEnabled(): Boolean {
@@ -68,12 +69,14 @@ public class Geolocation(private val context: Context) {
         }
     }
 
+    @Synchronized
     @SuppressLint("MissingPermission")
-    fun requestLocationUpdates(enableHighAccuracy: Boolean, timeout: Long, successCallback: (location: Location) -> Unit, errorCallback: (error: String) -> Unit) {
+    fun requestLocationUpdates(id: Long, enableHighAccuracy: Boolean, timeout: Long, successCallback: (location: Location) -> Unit, errorCallback: (error: String) -> Unit) {
         val resultCode = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context);
         if (resultCode == ConnectionResult.SUCCESS) {
-            clearLocationUpdates()
-            fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            clearLocationUpdates(id)
+            val client = fusedLocationClient ?: LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient = client
 
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
@@ -95,7 +98,7 @@ public class Geolocation(private val context: Context) {
                     .setPriority(prio)
                     .build()
 
-                locationCallback =
+                val locationCallback =
                     object : LocationCallback() {
                         override fun onLocationResult(locationResult: LocationResult) {
                             val lastLocation = locationResult.lastLocation
@@ -107,7 +110,8 @@ public class Geolocation(private val context: Context) {
                         }
                     }
 
-                fusedLocationClient?.requestLocationUpdates(locationRequest, locationCallback!!, null)
+                client.requestLocationUpdates(locationRequest, locationCallback, null)
+                locationCallbacks[id] = locationCallback
             } else {
                 errorCallback("Location disabled.")
             }
@@ -116,11 +120,20 @@ public class Geolocation(private val context: Context) {
         }
     }
 
-    fun clearLocationUpdates() {
-        if (locationCallback != null) {
-            fusedLocationClient?.removeLocationUpdates(locationCallback!!)
-            locationCallback = null
+    /** Stops the location updates of the watcher with the given id. */
+    @Synchronized
+    fun clearLocationUpdates(id: Long) {
+        val callback = locationCallbacks.remove(id) ?: return
+        fusedLocationClient?.removeLocationUpdates(callback)
+    }
+
+    /** Stops the location updates of every watcher. */
+    @Synchronized
+    fun clearAllLocationUpdates() {
+        for (callback in locationCallbacks.values) {
+            fusedLocationClient?.removeLocationUpdates(callback)
         }
+        locationCallbacks.clear()
     }
 
     @SuppressLint("MissingPermission")

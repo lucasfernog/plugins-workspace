@@ -20,6 +20,7 @@ import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.util.concurrent.ConcurrentHashMap
 
 @InvokeArg
 class PositionOptions {
@@ -61,7 +62,8 @@ private const val ALIAS_COARSE_LOCATION: String = "coarseLocation"
 )
 class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
     private lateinit var implementation: Geolocation
-    private var watchers = hashMapOf<Long, Pair<Invoke, WatchArgs>>()
+    // Commands and lifecycle callbacks run on different threads.
+    private val watchers = ConcurrentHashMap<Long, WatchArgs>()
 
     override fun load(webView: WebView) {
         super.load(webView)
@@ -71,14 +73,14 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
     override fun onPause() {
         super.onPause()
         // Clear all location updates on pause to avoid possible background location calls
-        implementation.clearLocationUpdates()
+        implementation.clearAllLocationUpdates()
     }
 
     override fun onResume() {
         super.onResume()
         // resume watchers
-        for ((watcher, args) in watchers.values) {
-            startWatch(watcher, args)
+        for (args in watchers.values) {
+            startWatch(args)
         }
     }
 
@@ -125,17 +127,18 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
     @Command
     fun watchPosition(invoke: Invoke) {
         val args = invoke.parseArgs(WatchArgs::class.java)
-        startWatch(invoke, args)
+        startWatch(args)
     }
 
-    private fun startWatch(invoke: Invoke, args: WatchArgs) {
+    private fun startWatch(args: WatchArgs) {
         implementation.requestLocationUpdates(
+            args.channel.id,
             args.options.enableHighAccuracy,
             args.options.timeout,
             { location -> args.channel.send(convertLocation(location)) },
             { error -> args.channel.sendObject(error) })
 
-        watchers[args.channel.id] = Pair(invoke, args)
+        watchers[args.channel.id] = args
     }
 
     @Command
@@ -143,10 +146,7 @@ class GeolocationPlugin(private val activity: Activity): Plugin(activity) {
         val args = invoke.parseArgs(ClearWatchArgs::class.java)
 
         watchers.remove(args.channelId)
-
-        if (watchers.isEmpty()) {
-            implementation.clearLocationUpdates()
-        }
+        implementation.clearLocationUpdates(args.channelId)
 
         invoke.resolve()
     }
