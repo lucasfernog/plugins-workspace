@@ -137,14 +137,19 @@ export default class WebSocket {
       })
     }
 
-    if (config?.headers) {
-      config.headers = Array.from(new Headers(config.headers).entries())
-    }
+    // the Rust side expects the headers as a list of `[name, value]` pairs;
+    // convert them on a copy so the caller's `config` is left untouched
+    const invokeConfig = config?.headers
+      ? {
+          ...config,
+          headers: Array.from(new Headers(config.headers).entries())
+        }
+      : config
 
     return await invoke<number>('plugin:websocket|connect', {
       url,
       onMessage,
-      config
+      config: invokeConfig
     }).then((id) => new WebSocket(id, listeners))
   }
 

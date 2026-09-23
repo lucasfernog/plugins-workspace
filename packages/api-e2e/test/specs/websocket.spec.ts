@@ -80,6 +80,16 @@ describePlugin('websocket', () => {
     expect(headers['x-e2e-header']).toBe('from the plugin')
   })
 
+  it('leaves the config object passed to connect untouched', async () => {
+    const headers = await tauri(async (api, url) => {
+      const config = { headers: { 'x-e2e-header': 'unchanged' } }
+      const ws = await api.websocket.connect(url, config)
+      await ws.disconnect()
+      return config.headers
+    }, WEBSOCKET_FIXTURE_URL)
+    expect(headers).toEqual({ 'x-e2e-header': 'unchanged' })
+  })
+
   it('a listener stops receiving once removed', async () => {
     const counts = await tauri(async (api, url) => {
       const ws = await api.websocket.connect(url)
