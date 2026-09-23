@@ -414,8 +414,11 @@ export async function scan(
 /**
  * Write to an NFC tag.
  *
- * If you did not previously call {@link scan} with {@link ScanOptions.keepSessionAlive} set to true,
- * it will first scan the tag then write to it.
+ * If a previous {@link scan} call with {@link ScanOptions.keepSessionAlive} set to true has
+ * scanned a tag, the records are written to that tag.
+ * Otherwise a new scan is started to find the tag to write to, using {@link WriteOptions.kind}:
+ * on Android `kind` is then required and the call rejects without it,
+ * on iOS it defaults to an `ndef` scan.
  *
  * @example
  * ```typescript
