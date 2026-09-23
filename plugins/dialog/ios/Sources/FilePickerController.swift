@@ -19,83 +19,6 @@ public class FilePickerController: NSObject {
 		viewControllerToPresent.dismiss(animated: true, completion: completion)
 	}
 
-	public func getModifiedAtFromUrl(_ url: URL) -> Int? {
-		do {
-			let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-			if let modifiedDateInSec = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 {
-					return Int(modifiedDateInSec * 1000.0)
-			} else {
-					return nil
-			}
-		} catch let error as NSError {
-			Logger.error("getModifiedAtFromUrl failed", error.localizedDescription)
-			return nil
-    }
-  }
-
-	public func getMimeTypeFromUrl(_ url: URL) -> String {
-		let fileExtension = url.pathExtension as CFString
-		guard let extUTI = UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, fileExtension, nil)?.takeUnretainedValue() else {
-			return ""
-		}
-		guard let mimeUTI = UTTypeCopyPreferredTagWithClass(extUTI, kUTTagClassMIMEType) else {
-			return ""
-		}
-		return mimeUTI.takeRetainedValue() as String
-	}
-
-	public func getSizeFromUrl(_ url: URL) throws -> Int {
-		let values = try url.resourceValues(forKeys: [.fileSizeKey])
-		return values.fileSize ?? 0
-	}
-
-	public func getVideoDuration(_ url: URL) -> Int {
-		let asset = AVAsset(url: url)
-		let duration = asset.duration
-		let durationTime = CMTimeGetSeconds(duration)
-		return Int(round(durationTime))
-	}
-
-	public func getImageDimensions(_ url: URL) -> (Int?, Int?) {
-		if let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) {
-			if let imageProperties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as Dictionary? {
-				return getHeightAndWidthFromImageProperties(imageProperties)
-			}
-		}
-		return (nil, nil)
-	}
-
-	public func getVideoDimensions(_ url: URL) -> (Int?, Int?) {
-		guard let track = AVURLAsset(url: url).tracks(withMediaType: AVMediaType.video).first else { return (nil, nil) }
-		let size = track.naturalSize.applying(track.preferredTransform)
-		let height = abs(Int(size.height))
-		let width = abs(Int(size.width))
-		return (height, width)
-	}
-
-	private func getHeightAndWidthFromImageProperties(_ properties: [NSObject: AnyObject]) -> (Int?, Int?) {
-		let width = properties[kCGImagePropertyPixelWidth] as? Int
-		let height = properties[kCGImagePropertyPixelHeight] as? Int
-		let orientation = properties[kCGImagePropertyOrientation] as? Int ?? UIImage.Orientation.up.rawValue
-		switch orientation {
-		case UIImage.Orientation.left.rawValue, UIImage.Orientation.right.rawValue, UIImage.Orientation.leftMirrored.rawValue, UIImage.Orientation.rightMirrored.rawValue:
-			return (width, height)
-		default:
-			return (height, width)
-		}
-	}
-
-	private func getFileUrlByPath(_ path: String) -> URL? {
-		guard let url = URL.init(string: path) else {
-			return nil
-		}
-		if FileManager.default.fileExists(atPath: url.path) {
-			return url
-		} else {
-			return nil
-		}
-	}
-    
 	/// ## In which cases do we need to save a copy of a file selected by a user to the app sandbox?
 	/// In short, only when the file is **not** selected using UIDocumentPickerDelegate.
 	/// For the rest of the cases, we need to write a copy of the file to the app sandbox. 
@@ -126,21 +49,11 @@ public class FilePickerController: NSObject {
 		try FileManager.default.copyItem(at: sourceUrl, to: targetUrl)
 		return targetUrl
 	}
-
-	private func deleteFile(_ url: URL) throws {
-		if FileManager.default.fileExists(atPath: url.path) {
-			try FileManager.default.removeItem(atPath: url.path)
-		}
-	}
 }
 
 extension FilePickerController: UIDocumentPickerDelegate {
 	public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-		do {
-			self.plugin.onFilePickerEvent(.selected(urls))
-		} catch {
-			self.plugin.onFilePickerEvent(.error("Failed to create a temporary copy of the file"))
-		}
+		self.plugin.onFilePickerEvent(.selected(urls))
 	}
 
 	public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
