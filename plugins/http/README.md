@@ -67,6 +67,25 @@ const response = await fetch('http://localhost:3003/users/2', {
 })
 ```
 
+### Differences with the browser `fetch`
+
+The request is sent by the Rust backend, so it is not subject to CORS, and it differs from the browser `fetch` in a
+few ways:
+
+- Headers the [Fetch spec forbids](https://fetch.spec.whatwg.org/#forbidden-request-header) (`Host`, `Cookie`,
+  `Origin`, `Content-Length`, `Sec-*`, `Proxy-*`...) are silently dropped unless the `unsafe-headers` Cargo feature is
+  enabled (a warning is printed in debug builds only).
+- An `Origin` header with the origin of the webview (`tauri://localhost` for the `tauri` scheme) is added to every
+  request. With `unsafe-headers`, the frontend can set its own `Origin`, or remove it by setting it to an empty string.
+- The default `User-Agent` is `tauri-plugin-http/<version>`.
+- `set-cookie` response headers are readable from `response.headers`.
+- The `redirect`, `credentials`, `cache`, `mode`, `referrer`, `referrerPolicy`, `integrity` and `keepalive` request
+  options are ignored; use `maxRedirections` to control redirects. `response.redirected` is always `false` and
+  `response.statusText` is the standard reason phrase of the status code.
+- Request bodies are fully buffered before being sent, so streaming uploads and upload progress are not supported.
+- A response body keeps its connection open on the Rust side until it is read to the end or cancelled: read or
+  `cancel()` the bodies of the responses you do not need.
+
 ## Permissions and scope
 
 The `http:default` permission allows all the commands `fetch` uses, but **no URL**: every request fails with
