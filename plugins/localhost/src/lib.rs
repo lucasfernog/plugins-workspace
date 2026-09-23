@@ -111,10 +111,16 @@ impl Builder {
     /// `Content-Security-Policy` (when the asset has one) and a `Cache-Control: no-cache` header,
     /// then invoking the [`Self::on_request`] hook (if any) before writing the response.
     ///
+    /// # Errors
+    ///
+    /// The server binds to `host:port` while the plugin is set up. If that fails (for example
+    /// because the port is already in use), plugin setup returns an error and the app fails to
+    /// start, instead of running without a server and loading whatever else listens on that port.
+    /// (Earlier versions only panicked the background thread and the app kept running.)
+    ///
     /// # Panics
     ///
-    /// Panics on the background thread if the server fails to bind to `host:port`, or if it fails
-    /// to send a response for a request.
+    /// Panics on the background thread if it fails to send a response for a request.
     pub fn build<R: Runtime>(mut self) -> TauriPlugin<R> {
         let port = self.port;
         let host = self.host.unwrap_or("localhost".to_string());
@@ -123,9 +129,10 @@ impl Builder {
         PluginBuilder::new("localhost")
             .setup(move |app, _api| {
                 let asset_resolver = app.asset_resolver();
+                let server = Server::http(format!("{host}:{port}")).map_err(|e| {
+                    format!("failed to start the localhost server on {host}:{port}: {e}")
+                })?;
                 std::thread::spawn(move || {
-                    let server =
-                        Server::http(format!("{host}:{port}")).expect("Unable to spawn server");
                     for req in server.incoming_requests() {
                         let path = req
                             .url()
