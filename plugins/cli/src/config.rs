@@ -31,11 +31,14 @@ pub struct Arg {
     /// - Use a short and no space such as -ovalue
     #[serde(default, alias = "takes-value")]
     pub takes_value: bool,
-    /// Specifies that the argument may have an unknown number of multiple values. Without any other settings, this argument may appear only once.
+    /// Specifies that the argument may be passed multiple times, and its matches collect the
+    /// values of every occurrence in an array.
     ///
-    /// For example, --opt val1 val2 is allowed, but --opt val1 val2 --opt val3 is not.
+    /// Each occurrence takes a single value unless `number_of_values`, `min_values` or `max_values`
+    /// is set. For example, `--opt val1 --opt val2` is allowed, but `--opt val1 val2` is not.
     ///
-    /// NOTE: Setting this requires `takes_value` to be set to true.
+    /// NOTE: A flag (an argument that takes no value) can always be repeated, e.g. `-vvv`,
+    /// and reports the count in its `occurrences`, so this has no effect on it.
     #[serde(default)]
     pub multiple: bool,
     /// Specifies how many values are required to satisfy this argument. For example, if you had a
