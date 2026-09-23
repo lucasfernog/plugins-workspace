@@ -67,8 +67,12 @@ export enum Position {
 }
 
 /**
- * Moves the `Window` to the given {@link Position} using `WindowExt.move_window()`
- * All positions are relative to the **current** screen.
+ * Moves the current window to the given {@link Position}.
+ *
+ * Screen positions are relative to the monitor the window is currently on. The `Tray*`
+ * positions need the `tray-icon` Cargo feature of `tauri-plugin-positioner`, and reject with
+ * `Tray position not set` until the tray icon's position was reported, either from Rust with
+ * `on_tray_event` or from JavaScript with {@link handleIconState}.
  *
  * @example
  * ```typescript
@@ -116,6 +120,9 @@ export async function moveWindowConstrained(to: Position): Promise<void> {
  * `action` callback passed to `TrayIcon.new()`), forwarding every {@link TrayIconEvent} it
  * receives so that {@link moveWindow} and {@link moveWindowConstrained} can later position the
  * window relative to the tray icon.
+ *
+ * Requires the `tray-icon` Cargo feature of `tauri-plugin-positioner`. Tray icon events are not
+ * emitted on Linux, so the tray positions can't be used there.
  *
  * @example
  * ```typescript
