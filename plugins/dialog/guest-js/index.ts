@@ -48,11 +48,12 @@ interface OpenDialogOptions {
   title?: string
   /**
    * The filters of the dialog.
-   * On mobile platforms, if either:
+   * On iOS, if either:
    * A) the {@linkcode pickerMode} is set to `media`, `image`, or `video`
    * -- or --
    * B) the filters include **only** either image or video mime types, the media picker will be displayed.
    * Otherwise, the document picker will be displayed.
+   * On Android, the system file picker is always used, restricted to the MIME types of the filters.
    */
   filters?: DialogFilter[]
   /**
@@ -65,7 +66,11 @@ interface OpenDialogOptions {
   defaultPath?: string
   /** Whether the dialog allows multiple selection or not. */
   multiple?: boolean
-  /** Whether the dialog is a directory selection or not. */
+  /**
+   * Whether the dialog is a directory selection or not.
+   *
+   * Not supported on Android and iOS, where the promise rejects.
+   */
   directory?: boolean
   /**
    * If `directory` is true, indicates that it will be read recursively later.
@@ -77,7 +82,8 @@ interface OpenDialogOptions {
   /**
    * The preferred mode of the dialog.
    * This is meant for mobile platforms (iOS and Android) which have distinct file and media pickers.
-   * If not provided, the dialog will automatically choose the best mode based on the MIME types or extensions of the {@linkcode filters}.
+   * On iOS, if not provided, the media picker is used when the {@linkcode filters} only contain image or video types.
+   * On Android, the system file picker is always used, and `image`, `video` and `media` only restrict the MIME types it offers.
    * On desktop, this option is ignored.
    */
   pickerMode?: PickerMode
@@ -140,7 +146,7 @@ interface SaveDialogOptions {
  * The preferred mode of the dialog.
  * This is meant for mobile platforms (iOS and Android) which have distinct file and media pickers.
  * On desktop, this option is ignored.
- * If not provided, the dialog will automatically choose the best mode based on the MIME types or extensions of the {@linkcode filters}.
+ * See {@linkcode OpenDialogOptions.pickerMode} for how it is used on each platform.
  *
  * **Note:** This option is only supported on iOS 14 and above. This parameter is ignored on iOS 13 and below.
  */

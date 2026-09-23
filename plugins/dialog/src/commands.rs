@@ -45,6 +45,7 @@ pub struct OpenDialogOptions {
     #[serde(default)]
     multiple: bool,
     /// Whether the dialog is a directory selection (`true` value) or file selection (`false` value).
+    /// Directory selection is not supported on mobile.
     #[serde(default)]
     directory: bool,
     /// The initial path of the dialog.
@@ -59,7 +60,7 @@ pub struct OpenDialogOptions {
     /// The preferred mode of the dialog.
     /// This is meant for mobile platforms (iOS and Android) which have distinct file and media pickers.
     /// On desktop, this option is ignored.
-    /// If not provided, the dialog will automatically choose the best mode based on the MIME types of the filters.
+    /// See [`FileDialogBuilder::set_picker_mode`].
     #[serde(default)]
     #[cfg_attr(mobile, allow(dead_code))]
     picker_mode: Option<PickerMode>,

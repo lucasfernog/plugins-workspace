@@ -514,7 +514,10 @@ impl<R: Runtime> FileDialogBuilder<R> {
     /// Set the picker mode of the dialog.
     /// This is meant for mobile platforms (iOS and Android) which have distinct file and media pickers.
     /// On desktop, this option is ignored.
-    /// If not provided, the dialog will automatically choose the best mode based on the MIME types of the filters.
+    ///
+    /// On iOS, if not provided, the media picker is used when the filters only contain image or
+    /// video types. On Android, the system file picker is always used, and the media modes only
+    /// restrict the MIME types it offers.
     pub fn set_picker_mode(mut self, mode: PickerMode) -> Self {
         self.picker_mode.replace(mode);
         self
