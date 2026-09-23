@@ -60,8 +60,7 @@ interface OpenDialogOptions {
    * If it's a directory path, the dialog interface will change to that folder.
    * If it's not an existing directory, the file name will be set to the dialog's file name input and the dialog will be set to the parent folder.
    *
-   * On mobile the file name is always used on the dialog's file name input.
-   * If not provided, Android uses `(invalid).txt` as default file name.
+   * Ignored on Android and iOS.
    */
   defaultPath?: string
   /** Whether the dialog allows multiple selection or not. */
@@ -128,8 +127,9 @@ interface SaveDialogOptions {
    * If it's a directory path, the dialog interface will change to that folder.
    * If it's not an existing directory, the file name will be set to the dialog's file name input and the dialog will be set to the parent folder.
    *
-   * On mobile the file name is always used on the dialog's file name input.
-   * If not provided, Android uses `(invalid).txt` as default file name.
+   * On Android and iOS only the file name is used, as the suggested name of the new file.
+   * If not provided, iOS suggests `file`, and Android lets the document provider choose,
+   * which may result in a placeholder name such as `(invalid).txt`.
    */
   defaultPath?: string
   /** Whether to allow creating directories in the dialog. Enabled by default. **macOS Only** */
