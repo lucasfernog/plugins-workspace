@@ -16,7 +16,7 @@
 use std::{
     collections::HashMap,
     fmt,
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
@@ -58,6 +58,61 @@ impl StrongholdCollection {
     fn lock(&self) -> MutexGuard<'_, HashMap<PathBuf, Arc<Stronghold>>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    fn get(&self, snapshot_path: &Path) -> Option<Arc<Stronghold>> {
+        self.lock().get(&collection_key(snapshot_path)).cloned()
+    }
+
+    fn insert(&self, snapshot_path: &Path, stronghold: Arc<Stronghold>) {
+        self.lock()
+            .insert(collection_key(snapshot_path), stronghold);
+    }
+
+    fn remove(&self, snapshot_path: &Path) -> Option<Arc<Stronghold>> {
+        self.lock().remove(&collection_key(snapshot_path))
+    }
+
+    /// Puts `stronghold` back unless another instance was initialized for the path meanwhile.
+    fn restore(&self, snapshot_path: &Path, stronghold: Arc<Stronghold>) {
+        self.lock()
+            .entry(collection_key(snapshot_path))
+            .or_insert(stronghold);
+    }
+}
+
+/// Returns the key identifying the snapshot file at `path` in [`StrongholdCollection`].
+///
+/// Different spellings of the same file (`./vault.hold`, `dir/../vault.hold`, a path
+/// through a symlink, ...) must map to the same in-memory instance, otherwise each
+/// spelling gets its own instance and saving one overwrites the changes of the other.
+/// The file itself (and its parent directories) might not exist yet, so the deepest
+/// existing ancestor is canonicalized and the remaining components are appended to it.
+fn collection_key(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        let existing = if current.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            current
+        };
+        if let Ok(mut key) = std::fs::canonicalize(existing) {
+            key.extend(missing.iter().rev());
+            return key;
+        }
+        match (current.parent(), current.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                current = parent;
+            }
+            _ => break,
+        }
+    }
+    // nothing could be canonicalized (e.g. a `..` after a missing directory): only drop
+    // the `.` components, which never change the file a path points to
+    path.components()
+        .filter(|c| !matches!(c, Component::CurDir))
+        .collect()
 }
 
 struct PasswordHashFunction(Arc<FalliblePasswordHashFn>);
@@ -295,9 +350,7 @@ async fn initialize(
     })
     .await??;
 
-    collection
-        .lock()
-        .insert(snapshot_path, Arc::new(stronghold));
+    collection.insert(&snapshot_path, Arc::new(stronghold));
 
     Ok(())
 }
@@ -309,10 +362,9 @@ async fn destroy(
 ) -> Result<()> {
     // the lock is released before saving, so encrypting and writing the snapshot does
     // not block the commands of every other stronghold
-    let stronghold = collection.lock().remove(&snapshot_path);
-    if let Some(stronghold) = stronghold {
+    if let Some(stronghold) = collection.remove(&snapshot_path) {
         if let Err(e) = stronghold.save() {
-            collection.lock().entry(snapshot_path).or_insert(stronghold);
+            collection.restore(&snapshot_path, stronghold);
             return Err(e);
         }
     }
@@ -321,8 +373,7 @@ async fn destroy(
 
 #[tauri::command]
 async fn save(collection: State<'_, StrongholdCollection>, snapshot_path: PathBuf) -> Result<()> {
-    let stronghold = collection.lock().get(&snapshot_path).cloned();
-    if let Some(stronghold) = stronghold {
+    if let Some(stronghold) = collection.get(&snapshot_path) {
         stronghold.save()?;
     }
     Ok(())
@@ -441,7 +492,6 @@ fn get_stronghold(
     collection: State<'_, StrongholdCollection>,
     snapshot_path: PathBuf,
 ) -> Result<iota_stronghold::Stronghold> {
-    let collection = collection.lock();
     if let Some(stronghold) = collection.get(&snapshot_path) {
         Ok(stronghold.inner().clone())
     } else {
@@ -454,7 +504,6 @@ fn get_client(
     snapshot_path: PathBuf,
     client: BytesDto,
 ) -> Result<Client> {
-    let collection = collection.lock();
     if let Some(stronghold) = collection.get(&snapshot_path) {
         stronghold.get_client(client).map_err(Into::into)
     } else {
@@ -569,5 +618,52 @@ impl Builder {
                 execute_procedure,
             ])
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_key_unifies_spellings_of_the_same_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "tauri-plugin-stronghold-key-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let canonical_dir = std::fs::canonicalize(&dir).unwrap();
+
+        // the snapshot file does not exist yet
+        let expected = canonical_dir.join("vault.hold");
+        assert_eq!(collection_key(&dir.join("vault.hold")), expected);
+        assert_eq!(collection_key(&dir.join(".").join("vault.hold")), expected);
+        assert_eq!(
+            collection_key(&dir.join("sub").join("..").join("vault.hold")),
+            expected
+        );
+
+        // missing parent directories are kept as they are
+        assert_eq!(
+            collection_key(&dir.join("missing").join("vault.hold")),
+            canonical_dir.join("missing").join("vault.hold")
+        );
+
+        // the key does not change once the file is created
+        std::fs::write(dir.join("vault.hold"), b"").unwrap();
+        assert_eq!(collection_key(&dir.join("vault.hold")), expected);
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn collection_key_resolves_relative_paths_against_the_working_directory() {
+        let cwd = std::fs::canonicalize(".").unwrap();
+        let name = format!(
+            "tauri-plugin-stronghold-missing-{}.hold",
+            std::process::id()
+        );
+        assert_eq!(collection_key(Path::new(&name)), cwd.join(&name));
+        assert_eq!(collection_key(&Path::new(".").join(&name)), cwd.join(&name));
     }
 }

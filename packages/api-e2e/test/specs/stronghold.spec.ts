@@ -107,6 +107,32 @@ describePlugin('stronghold', () => {
     expect(result).toEqual({ removed: [1, 2, 3], after: null })
   })
 
+  it('different spellings of a snapshot path share one instance', async () => {
+    const result = await tauri(
+      async (api, dir, password, clientName) => {
+        const base = await api.path.join(await api.path.appDataDir(), dir)
+        const path = await api.path.join(base, 'spelling.stronghold')
+        // `join` normalizes its result, so the other spelling is built by hand
+        const sep = api.path.sep()
+        const other = `${base}${sep}.${sep}spelling.stronghold`
+
+        const stronghold = await api.stronghold.Stronghold.load(path, password)
+        await (await stronghold.createClient(clientName))
+          .getStore()
+          .insert('key', [4, 5, 6])
+        const value = await new api.stronghold.Client(other, clientName)
+          .getStore()
+          .get('key')
+        await stronghold.unload()
+        return value && Array.from(value)
+      },
+      dir,
+      password,
+      clientName
+    )
+    expect(result).toEqual([4, 5, 6])
+  })
+
   it('a snapshot cannot be opened with the wrong password', async () => {
     const path = await tauri(
       async (api, dir, password, clientName) => {
