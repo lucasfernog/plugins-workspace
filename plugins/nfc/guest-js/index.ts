@@ -193,7 +193,12 @@ export interface TagRecord {
 export interface Tag {
   /** The tag identifier bytes, as reported by the operating system. */
   id: number[]
-  /** The technologies the tag supports, e.g. `["android.nfc.tech.Ndef"]` on Android. */
+  /**
+   * The technologies the tag supports.
+   *
+   * - **Android**: the `android.nfc.tech` class names, e.g. `["android.nfc.tech.NfcA", "android.nfc.tech.Ndef"]`.
+   * - **iOS**: a single tag type, one of `"MiFare"`, `"ISO15693"`, `"ISO7816Compatible"`, `"FeliCa"` or `"Unknown"`.
+   */
   kind: string[]
   /** The NDEF records stored on the tag. Empty when the tag holds no NDEF message. */
   records: TagRecord[]
