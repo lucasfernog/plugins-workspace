@@ -166,6 +166,8 @@ impl Builder {
                                 }
                             }
                             respond(req, resp);
+                        } else {
+                            respond(req, HttpResponse::empty(404));
                         }
                     }
                 });
