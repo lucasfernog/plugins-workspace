@@ -98,18 +98,25 @@ fn main() {
 }
 ```
 
-Then, for instance, grant the plugin the permission to check or request permissions from the user and to read the device position
+Then grant the plugin the permissions for the commands your app uses. The plugin has no `default` permission set, so each command must be allowed explicitly. For instance, to check or request permissions from the user, read the device position and start and stop watching it:
 
-`src-tauri/capabilities/default.json`
+`src-tauri/capabilities/mobile.json`
 
 ```json
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-capability",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
   "permissions": [
     "core:default",
     "geolocation:allow-check-permissions",
     "geolocation:allow-request-permissions",
     "geolocation:allow-get-current-position",
     "geolocation:allow-watch-position",
+    "geolocation:allow-clear-watch"
   ]
+}
 ```
 
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
