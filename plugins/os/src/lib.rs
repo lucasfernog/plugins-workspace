@@ -24,6 +24,10 @@ mod error;
 pub use error::Error;
 
 /// The type of the current operating system, as returned by [`type_`].
+///
+/// Serializes to the same lowercase string as its [`Display`] implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum OsType {
     /// Linux and Linux-based systems such as FreeBSD, DragonFly BSD, NetBSD and OpenBSD.
     Linux,
@@ -147,4 +151,24 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::hostname
         ])
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn os_type_serializes_like_display() {
+        use super::OsType;
+        for ty in [
+            OsType::Linux,
+            OsType::Windows,
+            OsType::Macos,
+            OsType::IOS,
+            OsType::Android,
+        ] {
+            assert_eq!(
+                serde_json::to_value(ty).unwrap(),
+                serde_json::Value::String(ty.to_string())
+            );
+        }
+    }
 }
