@@ -1464,13 +1464,26 @@ impl Update {
             let res = (self.context.run_on_main_thread)(Box::new(move || {
                 let mut script =
                     osakit::Script::new_from_source(osakit::Language::AppleScript, &apple_script);
-                script.compile().expect("invalid AppleScript");
-                let r = script.execute();
-                tx.send(r).unwrap();
+                let r = match script.compile() {
+                    Ok(()) => script.execute().map(|_| ()).map_err(|e| e.to_string()),
+                    Err(e) => Err(format!("failed to compile the AppleScript: {e}")),
+                };
+                // the receiver is only gone if the install already gave up on this result
+                let _ = tx.send(r);
             }));
-            let result = rx.recv().unwrap();
+            // if the closure could not be scheduled it was dropped along with `tx`,
+            // so `recv` returns an error instead of blocking forever
+            let result = match res {
+                Ok(()) => rx
+                    .recv()
+                    .unwrap_or_else(|_| Err("the AppleScript was not run".into())),
+                Err(e) => Err(format!(
+                    "failed to run the AppleScript on the main thread: {e}"
+                )),
+            };
 
-            if res.is_err() || result.is_err() {
+            if let Err(e) = result {
+                log::error!("failed to move the new app into place: {e}");
                 std::fs::remove_dir_all(tmp_extract_dir.path()).ok();
                 return Err(Error::Io(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
