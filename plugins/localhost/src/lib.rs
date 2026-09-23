@@ -111,10 +111,12 @@ impl Builder {
     /// `Content-Security-Policy` (when the asset has one) and a `Cache-Control: no-cache` header,
     /// then invoking the [`Self::on_request`] hook (if any) before writing the response.
     ///
+    /// Failing to write a response (for example because the client closed the connection) is
+    /// logged and the server keeps serving other requests.
+    ///
     /// # Panics
     ///
-    /// Panics on the background thread if the server fails to bind to `host:port`, or if it fails
-    /// to send a response for a request.
+    /// Panics on the background thread if the server fails to bind to `host:port`.
     pub fn build<R: Runtime>(mut self) -> TauriPlugin<R> {
         let port = self.port;
         let host = self.host.unwrap_or("localhost".to_string());
@@ -163,12 +165,18 @@ impl Builder {
                                     resp.add_header(h);
                                 }
                             }
-                            req.respond(resp).expect("unable to setup response");
+                            respond(req, resp);
                         }
                     }
                 });
                 Ok(())
             })
             .build()
+    }
+}
+
+fn respond<D: std::io::Read>(req: tiny_http::Request, response: HttpResponse<D>) {
+    if let Err(e) = req.respond(response) {
+        log::warn!("localhost server failed to send a response: {e}");
     }
 }
