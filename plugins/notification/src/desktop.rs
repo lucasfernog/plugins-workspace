@@ -255,7 +255,9 @@ mod imp {
             }
 
             tauri::async_runtime::spawn(async move {
-                let _ = notification.show();
+                if let Err(error) = notification.show() {
+                    log::error!("failed to show notification: {error}");
+                }
             });
 
             Ok(())
@@ -321,7 +323,9 @@ mod imp {
                 if let Some(icon) = app_.default_window_icon() {
                     notification.icon(icon.rgba().to_vec(), icon.width(), icon.height());
                 }
-                let _ = notification.show();
+                if let Err(error) = notification.show() {
+                    log::error!("failed to show notification: {error}");
+                }
             });
 
             Ok(())
