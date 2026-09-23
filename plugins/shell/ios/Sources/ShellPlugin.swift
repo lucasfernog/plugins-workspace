@@ -14,12 +14,15 @@ class ShellPlugin: Plugin {
     @objc public func open(_ invoke: Invoke) throws {
         do {
             let urlString = try invoke.parseArgs(String.self)
-            if let url = URL(string: urlString) {
-                if #available(iOS 10, *) {
-                    UIApplication.shared.open(url, options: [:])
-                } else {
-                    UIApplication.shared.openURL(url)
-                }
+            guard let url = URL(string: urlString) else {
+                invoke.reject("Invalid URL: \(urlString)")
+                return
+            }
+            // Commands run on a background queue, and UIKit must be used from the main thread.
+            // The result of the open is not waited for: the Rust `Shell::open` can be called
+            // from the main thread and waits for this command, so it would never resolve.
+            DispatchQueue.main.async {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
             invoke.resolve()
         } catch {
