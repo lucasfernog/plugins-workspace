@@ -201,13 +201,13 @@ async function locale(): Promise<string | null> {
  * @example
  * ```typescript
  * import { hostname } from '@tauri-apps/plugin-os';
- * const hostname = await hostname();
+ * const host = await hostname();
  * ```
  *
  * @returns A promise resolving to the host name of the operating system.
  * @since 2.0.0
  */
-async function hostname(): Promise<string | null> {
+async function hostname(): Promise<string> {
   return await invoke('plugin:os|hostname')
 }
 

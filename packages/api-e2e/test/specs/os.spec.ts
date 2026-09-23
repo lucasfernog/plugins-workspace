@@ -104,6 +104,6 @@ describePlugin('os', () => {
   itDesktop('hostname matches the host', async () => {
     const hostname = await tauri((api) => api.os.hostname())
     // Windows can report the name in a different case than Node does.
-    expect(hostname!.toLowerCase()).toBe(os.hostname().toLowerCase())
+    expect(hostname.toLowerCase()).toBe(os.hostname().toLowerCase())
   })
 })
