@@ -832,33 +832,32 @@ interface IStore {
   /**
    * Inserts a key-value pair into the store.
    *
-   * @param key
-   * @param value
-   * @returns
+   * @param key The key to insert the value at.
+   * @param value The value to store, which must be serializable to JSON.
    */
   set(key: string, value: unknown): Promise<void>
 
   /**
    * Returns the value for the given `key` or `undefined` if the key does not exist.
    *
-   * @param key
-   * @returns
+   * @param key The key to read the value of.
+   * @returns A promise resolving to the stored value, or `undefined` if the key does not exist.
    */
   get<T>(key: string): Promise<T | undefined>
 
   /**
    * Returns `true` if the given `key` exists in the store.
    *
-   * @param key
-   * @returns
+   * @param key The key to check.
+   * @returns A promise resolving to `true` if the key exists in the store.
    */
   has(key: string): Promise<boolean>
 
   /**
    * Removes a key-value pair from the store.
    *
-   * @param key
-   * @returns
+   * @param key The key to remove.
+   * @returns A promise resolving to `true` if the key existed and was removed.
    */
   delete(key: string): Promise<boolean>
 
@@ -866,7 +865,6 @@ interface IStore {
    * Clears the store, removing all key-value pairs.
    *
    * Note: To clear the storage and reset it to its `default` value, use {@linkcode reset} instead.
-   * @returns
    */
   clear(): Promise<void>
 
@@ -874,35 +872,34 @@ interface IStore {
    * Resets the store to its `default` value.
    *
    * If no default value has been set, this method behaves identical to {@linkcode clear}.
-   * @returns
    */
   reset(): Promise<void>
 
   /**
    * Returns a list of all keys in the store.
    *
-   * @returns
+   * @returns A promise resolving to the list of keys, in arbitrary order.
    */
   keys(): Promise<string[]>
 
   /**
    * Returns a list of all values in the store.
    *
-   * @returns
+   * @returns A promise resolving to the list of values, in arbitrary order.
    */
   values<T>(): Promise<T[]>
 
   /**
    * Returns a list of all entries in the store.
    *
-   * @returns
+   * @returns A promise resolving to the list of key-value pairs, in arbitrary order.
    */
   entries<T>(): Promise<Array<[key: string, value: T]>>
 
   /**
    * Returns the number of key-value pairs in the store.
    *
-   * @returns
+   * @returns A promise resolving to the number of key-value pairs in the store.
    */
   length(): Promise<number>
 
@@ -917,20 +914,20 @@ interface IStore {
    *     to fully match the store with the on-disk state, set {@linkcode ReloadOptions | ignoreDefaults} to `true`
    *   - This method does not emit change events.
    *
-   * @returns
+   * @param options Options to change how the on-disk state is merged into the store.
    */
   reload(options?: ReloadOptions): Promise<void>
 
   /**
    * Saves the store to disk at the store's `path`.
-   * @returns
    */
   save(): Promise<void>
 
   /**
    * Listen to changes on a store key.
-   * @param key
-   * @param cb
+   *
+   * @param key The key to watch for changes.
+   * @param cb Callback invoked with the new value, or `undefined` when the key was removed.
    * @returns A promise resolving to a function to unlisten to the event.
    *
    * @since 2.0.0
@@ -942,7 +939,8 @@ interface IStore {
 
   /**
    * Listen to changes on the store.
-   * @param cb
+   *
+   * @param cb Callback invoked with the changed key and its new value, which is `undefined` when the key was removed.
    * @returns A promise resolving to a function to unlisten to the event.
    *
    * @since 2.0.0
