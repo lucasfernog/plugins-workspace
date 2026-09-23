@@ -7,9 +7,11 @@
  *
  * ## Security
  *
- * This API has a scope configuration that forces you to restrict the URLs that can be accessed using glob patterns.
+ * This API has a scope configuration that forces you to restrict the URLs that can be accessed using
+ * [URL patterns](https://urlpattern.spec.whatwg.org/). The `http:default` permission allows no URL on its own.
  *
- * For instance, this scope configuration only allows making HTTP requests to all subdomains for `tauri.app` except for `https://private.tauri.app`:
+ * For instance, this scope configuration only allows making HTTPS requests to all subdomains of `tauri.app`
+ * (but not to `https://tauri.app` itself) except for `https://private.tauri.app`:
  * ```json
  * {
  *   "permissions": [
@@ -22,6 +24,9 @@
  * }
  * ```
  * Trying to execute any API with a URL not configured on the scope results in a promise rejection due to denied access.
+ *
+ * By default only the requested URL is checked: redirects are followed to any URL unless the `scopeRedirects`
+ * plugin configuration is enabled, and the URLs of the `proxy` option are not checked against the scope.
  *
  * @module
  */
@@ -93,7 +98,7 @@ export interface ClientOptions {
    * instead of being followed.
    */
   maxRedirections?: number
-  /** Timeout in milliseconds */
+  /** Timeout for establishing the connection, in milliseconds */
   connectTimeout?: number
   /**
    * Configuration of a proxy that a Client should pass requests to.
