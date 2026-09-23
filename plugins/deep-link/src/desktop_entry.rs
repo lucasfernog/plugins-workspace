@@ -104,6 +104,13 @@ pub fn set(content: &str, group: &str, key: &str, value: Option<&str>) -> Option
     Some(join(&out, content))
 }
 
+/// Whether the output of `xdg-mime query default <mime type>` lists `desktop_file`.
+pub fn is_default_handler(xdg_mime_output: &str, desktop_file: &str) -> bool {
+    xdg_mime_output
+        .split(|c: char| c == ';' || c.is_whitespace())
+        .any(|h| h == desktop_file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +169,22 @@ mod tests {
         );
 
         assert_eq!(set(DESKTOP, "Missing", "MimeType", Some("x")), None);
+    }
+
+    #[test]
+    fn default_handler_is_matched_exactly() {
+        assert!(is_default_handler(
+            "app-handler.desktop\n",
+            "app-handler.desktop"
+        ));
+        assert!(is_default_handler(
+            "other.desktop;app-handler.desktop;\n",
+            "app-handler.desktop"
+        ));
+        assert!(!is_default_handler(
+            "myapp-handler.desktop\n",
+            "app-handler.desktop"
+        ));
+        assert!(!is_default_handler("", "app-handler.desktop"));
     }
 }

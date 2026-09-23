@@ -527,7 +527,10 @@ mod imp {
                     .output()
                     .inspect_err(crate::error::inspect_command_error("xdg-mime"))?;
 
-                Ok(String::from_utf8_lossy(&output.stdout).contains(&file_name))
+                Ok(desktop_entry::is_default_handler(
+                    &String::from_utf8_lossy(&output.stdout),
+                    &file_name,
+                ))
             }
 
             #[cfg(not(any(windows, target_os = "linux")))]
