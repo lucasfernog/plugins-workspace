@@ -171,7 +171,7 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
           var metadata: JsonObject = [:]
           if tag.isKind(of: NFCFeliCaTag.self) {
             metadata["kind"] = ["FeliCa"]
-            metadata["id"] = nil
+            metadata["id"] = []
           } else if let t = tag as? NFCMiFareTag {
             metadata["kind"] = ["MiFare"]
             metadata["id"] = byteArrayFromData(t.identifier)
@@ -181,6 +181,9 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
           } else if let t = tag as? NFCISO7816Tag {
             metadata["kind"] = ["ISO7816Compatible"]
             metadata["id"] = byteArrayFromData(t.identifier)
+          } else {
+            metadata["kind"] = ["Unknown"]
+            metadata["id"] = []
           }
 
           self.processTag(
