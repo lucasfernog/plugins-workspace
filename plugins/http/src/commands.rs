@@ -485,7 +485,7 @@ pub async fn fetch_read_body<R: Runtime>(
 
     let Some(chunk) = res.chunk().await? else {
         let mut resources_table = webview.resources_table();
-        resources_table.close(rid)?;
+        resources_table.take::<ReqwestResponse>(rid)?;
 
         // return a response with a single byte to indicate that the body is empty
         return Ok(tauri::ipc::Response::new(vec![1]));
@@ -503,8 +503,8 @@ pub async fn fetch_cancel_body<R: Runtime>(
     webview: Webview<R>,
     rid: ResourceId,
 ) -> crate::Result<()> {
-    let mut resources_table = webview.resources_table();
-    resources_table.close(rid)?;
+    // the resource table is shared with other plugins, so only a response may be closed here
+    webview.resources_table().take::<ReqwestResponse>(rid)?;
     Ok(())
 }
 

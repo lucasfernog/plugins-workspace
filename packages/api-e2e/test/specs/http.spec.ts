@@ -129,6 +129,30 @@ describePlugin('http', () => {
     expect(message).toMatch(/abort|cancel/i)
   })
 
+  it('fetch_cancel_body does not close resources of other types', async () => {
+    const result = await tauri(async (api) => {
+      // the resource table is per webview and shared by every plugin
+      const image = await api.image.Image.new(
+        new Uint8Array([0, 0, 0, 255]),
+        1,
+        1
+      )
+      let error: string | null = null
+      try {
+        await api.core.invoke('plugin:http|fetch_cancel_body', {
+          rid: image.rid
+        })
+      } catch (e) {
+        error = String(e)
+      }
+      const size = await image.size()
+      await image.close()
+      return { error, size }
+    })
+    expect(result.error).not.toBeNull()
+    expect(result.size).toEqual({ width: 1, height: 1 })
+  })
+
   it('rejects URLs outside the configured scope', async () => {
     const message = await tauriError((api) =>
       api.http.fetch('http://localhost:3999/not-in-scope')
