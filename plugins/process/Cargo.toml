@@ -20,8 +20,8 @@ exclude = [
 windows = { level = "full", notes = "" }
 linux = { level = "full", notes = "" }
 macos = { level = "full", notes = "" }
-android = { level = "none", notes = "" }
-ios = { level = "none", notes = "" }
+android = { level = "partial", notes = "`exit` works. `relaunch` terminates the app but cannot start it again." }
+ios = { level = "none", notes = "iOS does not allow an app to quit programmatically: `exit` and `relaunch` only emit `ExitRequested`." }
 
 [build-dependencies]
 tauri-plugin = { workspace = true, features = ["build"] }

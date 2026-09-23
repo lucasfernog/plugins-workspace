@@ -7,8 +7,13 @@ This plugin provides APIs to access the current process. To spawn child processe
 | Linux    | ✓         |
 | Windows  | ✓         |
 | macOS    | ✓         |
-| Android  | x         |
+| Android  | partial   |
 | iOS      | x         |
+
+The plugin can be registered on every platform, but on mobile:
+
+- **Android**: `exit` works. `relaunch` terminates the app but cannot start it again, since Android apps are launched by the system, not by spawning their binary.
+- **iOS**: iOS does not allow an app to quit programmatically, so both `exit` and `relaunch` only emit `RunEvent::ExitRequested` and the app keeps running.
 
 ## Install
 
