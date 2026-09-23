@@ -209,16 +209,25 @@ export default class Database {
   /**
    * **close**
    *
-   * Closes the database connection pool.
+   * Closes database connection pools.
+   *
+   * **Warning:** the database to close is given by the `db` argument, not by
+   * the instance this method is called on. Without an argument, the pools of
+   * **all** loaded databases are closed, including databases other windows
+   * or parts of the app are using. Pass {@link Database.path} to close only
+   * this database.
+   *
+   * A closed database can be reopened with {@link Database.load}.
    *
    * @example
    * ```typescript
    * import Database from '@tauri-apps/plugin-sql'
    * const db = await Database.load('sqlite:test.db')
-   * const success = await db.close()
+   * // closes only this database
+   * const success = await db.close(db.path)
    * ```
    *
-   * @param db - Optionally state the name of a database if you are managing more than one. Otherwise, all database pools will be in scope.
+   * @param db - The connection string of the database to close. When omitted, all loaded databases are closed.
    * @returns A promise resolving to `true` once the matching connection pools have been closed.
    */
   async close(db?: string): Promise<boolean> {
