@@ -162,16 +162,18 @@ extension FilePickerController: UIImagePickerControllerDelegate, UINavigationCon
 	}
 
 	public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+		// take the handler now: the result is only delivered after the picker is dismissed
+		let onResult = self.plugin.takeFilePickerHandler()
 		dismissViewController(picker) {
 			if let url = info[.mediaURL] as? URL {
 				do {
 					let temporaryUrl = try self.saveTemporaryFile(url)
-					self.plugin.onFilePickerEvent(.selected([temporaryUrl]))
+					onResult?(.selected([temporaryUrl]))
 				} catch {
-					self.plugin.onFilePickerEvent(.error("Failed to create a temporary copy of the file"))
+					onResult?(.error("Failed to create a temporary copy of the file"))
 				}
 			} else {
-				self.plugin.onFilePickerEvent(.cancelled)
+				onResult?(.cancelled)
 			}
 		}
 	}
@@ -185,6 +187,9 @@ extension FilePickerController: PHPickerViewControllerDelegate {
 			self.plugin.onFilePickerEvent(.cancelled)
 			return
 		}
+		// take the handler now: the files are copied asynchronously, and another picker may be
+		// opened in the meantime
+		let onResult = self.plugin.takeFilePickerHandler()
 		var temporaryUrls: [URL] = []
 		var errorMessage: String?
 		let dispatchGroup = DispatchGroup()
@@ -244,10 +249,10 @@ extension FilePickerController: PHPickerViewControllerDelegate {
 		}
 		dispatchGroup.notify(queue: .main) {
 			if let errorMessage = errorMessage {
-				self.plugin.onFilePickerEvent(.error(errorMessage))
+				onResult?(.error(errorMessage))
 				return
 			}
-			self.plugin.onFilePickerEvent(.selected(temporaryUrls))
+			onResult?(.selected(temporaryUrls))
 		}
 	}
 }

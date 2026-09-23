@@ -57,6 +57,7 @@ enum PickerMode: String, Decodable {
 class DialogPlugin: Plugin {
 
   var filePickerController: FilePickerController!
+  /// Settles the invoke of the file picker currently on screen. Only accessed on the main thread.
   var onFilePickerResult: ((FilePickerEvent) -> Void)? = nil
 
   override init() {
@@ -68,7 +69,7 @@ class DialogPlugin: Plugin {
   @objc public func showFilePicker(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(FilePickerOptions.self)
 
-    onFilePickerResult = { (event: FilePickerEvent) -> Void in
+    let onResult = { (event: FilePickerEvent) -> Void in
       switch event {
       case .selected(let urls):
         invoke.resolve(["files": urls])
@@ -95,7 +96,7 @@ class DialogPlugin: Plugin {
         || args.pickerMode == .video
         || (!filtersIncludeNonMedia && (filtersIncludeImage || filtersIncludeVideo))
       {
-        DispatchQueue.main.async {
+        presentFilePicker(invoke, onResult: onResult) {
           var configuration = PHPickerConfiguration(photoLibrary: PHPhotoLibrary.shared())
           configuration.selectionLimit = (args.multiple ?? false) ? 0 : 1
 
@@ -110,10 +111,10 @@ class DialogPlugin: Plugin {
           let picker = PHPickerViewController(configuration: configuration)
           picker.delegate = self.filePickerController
           picker.modalPresentationStyle = .fullScreen
-          self.presentViewController(picker)
+          return picker
         }
       } else {
-        DispatchQueue.main.async {
+        presentFilePicker(invoke, onResult: onResult) {
           // The UTType.item is the catch-all, allowing for any file type to be selected.
           let contentTypes = parsedTypes.isEmpty ? [UTType.item] : parsedTypes
           let picker: UIDocumentPickerViewController = UIDocumentPickerViewController(
@@ -127,11 +128,11 @@ class DialogPlugin: Plugin {
           picker.delegate = self.filePickerController
           picker.allowsMultipleSelection = args.multiple ?? false
           picker.modalPresentationStyle = .fullScreen
-          self.presentViewController(picker)
+          return picker
         }
       }
     } else {
-      showFilePickerLegacy(args: args)
+      showFilePickerLegacy(invoke, args: args, onResult: onResult)
     }
   }
 
@@ -153,7 +154,7 @@ class DialogPlugin: Plugin {
       try "".write(to: srcPath, atomically: true, encoding: .utf8)
     }
 
-    onFilePickerResult = { (event: FilePickerEvent) -> Void in
+    let onResult = { (event: FilePickerEvent) -> Void in
       switch event {
       case .selected(let urls):
         invoke.resolve(["file": urls.first!])
@@ -164,19 +165,49 @@ class DialogPlugin: Plugin {
       }
     }
 
-    DispatchQueue.main.async {
+    presentFilePicker(invoke, onResult: onResult) {
       let picker = UIDocumentPickerViewController(url: srcPath, in: .exportToService)
       if let defaultPath = args.defaultPath {
         picker.directoryURL = URL(string: defaultPath)
       }
       picker.delegate = self.filePickerController
       picker.modalPresentationStyle = .fullScreen
-      self.presentViewController(picker)
+      return picker
     }
   }
 
   private func presentViewController(_ viewControllerToPresent: UIViewController) {
     self.manager.viewController?.present(viewControllerToPresent, animated: true, completion: nil)
+  }
+
+  /// Presents a file picker on the main thread and routes its result to `onResult`.
+  ///
+  /// The picker delegates do not know which invoke they belong to, so only one picker can be
+  /// pending at a time. UIKit cannot present a second view controller anyway, so a request made
+  /// while something is already presented is rejected instead of being left unanswered.
+  private func presentFilePicker(
+    _ invoke: Invoke, onResult: @escaping (FilePickerEvent) -> Void,
+    makePicker: @escaping () -> UIViewController
+  ) {
+    DispatchQueue.main.async {
+      if self.manager.viewController?.presentedViewController != nil {
+        invoke.reject("Cannot open a file dialog while another dialog is open")
+        return
+      }
+      // A picker that is no longer on screen but never reported a result cannot report one
+      // anymore; settle its invoke instead of leaving it pending forever.
+      self.takeFilePickerHandler()?(.cancelled)
+      self.onFilePickerResult = onResult
+      self.presentViewController(makePicker())
+    }
+  }
+
+  /// Returns the handler of the pending file picker, if any, and clears it so a result is only
+  /// delivered once. Must be called on the main thread.
+  func takeFilePickerHandler() -> ((FilePickerEvent) -> Void)? {
+    let handler = onFilePickerResult
+    onFilePickerResult = nil
+    return handler
   }
 
   @available(iOS 14, *)
@@ -197,7 +228,9 @@ class DialogPlugin: Plugin {
   }
 
   /// This function is only used for iOS < 14, and should be removed if/when the deployment target is raised to 14.
-  private func showFilePickerLegacy(args: FilePickerOptions) {
+  private func showFilePickerLegacy(
+    _ invoke: Invoke, args: FilePickerOptions, onResult: @escaping (FilePickerEvent) -> Void
+  ) {
     let parsedTypes = parseFiltersOptionLegacy(args.filters ?? [])
 
     var filtersIncludeImage: Bool = false
@@ -212,7 +245,7 @@ class DialogPlugin: Plugin {
     }
 
     if !filtersIncludeNonMedia && (filtersIncludeImage || filtersIncludeVideo) {
-      DispatchQueue.main.async {
+      presentFilePicker(invoke, onResult: onResult) {
         let picker = UIImagePickerController()
         picker.delegate = self.filePickerController
 
@@ -221,11 +254,11 @@ class DialogPlugin: Plugin {
         }
 
         picker.modalPresentationStyle = .fullScreen
-        self.presentViewController(picker)
+        return picker
       }
     } else {
       let documentTypes = parsedTypes.isEmpty ? ["public.data"] : parsedTypes
-      DispatchQueue.main.async {
+      presentFilePicker(invoke, onResult: onResult) {
         let picker = UIDocumentPickerViewController(documentTypes: documentTypes, in: .import)
         if let defaultPath = args.defaultPath {
           picker.directoryURL = URL(string: defaultPath)
@@ -234,7 +267,7 @@ class DialogPlugin: Plugin {
         picker.delegate = self.filePickerController
         picker.allowsMultipleSelection = args.multiple ?? false
         picker.modalPresentationStyle = .fullScreen
-        self.presentViewController(picker)
+        return picker
       }
     }
   }
@@ -257,8 +290,9 @@ class DialogPlugin: Plugin {
     return parsedTypes
   }
 
+  /// Delivers the result of the pending file picker. Must be called on the main thread.
   public func onFilePickerEvent(_ event: FilePickerEvent) {
-    self.onFilePickerResult?(event)
+    takeFilePickerHandler()?(event)
   }
 
   @objc public func showMessageDialog(_ invoke: Invoke) throws {
