@@ -91,7 +91,7 @@ const commonSurface: Surface<CommonPluginApi> = {
     'onNotificationReceived',
     'onAction'
   ],
-  opener: ['openUrl', 'openPath', 'revealItemInDir'],
+  opener: ['openUrl', 'openPath', 'revealItemInDir', 'revealItemsInDir'],
   os: [
     'eol',
     'platform',

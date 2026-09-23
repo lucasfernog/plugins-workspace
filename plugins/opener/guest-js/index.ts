@@ -97,3 +97,26 @@ export async function revealItemInDir(path: string | string[]): Promise<void> {
   const paths = typeof path === 'string' ? [path] : path
   return invoke('plugin:opener|reveal_item_in_dir', { paths })
 }
+
+/**
+ * Reveal multiple paths with the system's default explorer.
+ *
+ * Same as {@linkcode revealItemInDir} with an array of paths.
+ *
+ * #### Platform-specific:
+ *
+ * - **Android / iOS:** Unsupported.
+ *
+ * @example
+ * ```typescript
+ * import { revealItemsInDir } from '@tauri-apps/plugin-opener';
+ * await revealItemsInDir([ '/path/to/file', '/path/to/another/file' ]);
+ * ```
+ *
+ * @param paths The paths to reveal.
+ *
+ * @since 2.6.0
+ */
+export async function revealItemsInDir(paths: string[]): Promise<void> {
+  return invoke('plugin:opener|reveal_item_in_dir', { paths })
+}

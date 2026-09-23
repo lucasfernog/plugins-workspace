@@ -46,6 +46,16 @@ describePlugin('opener', () => {
     expect(message).toMatch(/Not allowed to reveal path/)
   })
 
+  it('revealItemsInDir checks every path against the scope', async () => {
+    const message = await tauriError(async (api) =>
+      api.opener.revealItemsInDir([
+        await api.path.appDataDir(),
+        await api.path.join(await api.path.homeDir(), 'e2e')
+      ])
+    )
+    expect(message).toMatch(/Not allowed to reveal path/)
+  })
+
   it('revealItemInDir rejects paths that do not exist', async () => {
     const message = await tauriError(async (api) =>
       api.opener.revealItemInDir(
