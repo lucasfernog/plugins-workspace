@@ -196,40 +196,56 @@ fn calculate_position<R: Runtime>(
     window: &Window<R>,
     pos: Position,
 ) -> Result<PhysicalPosition<i32>> {
-    use Position::*;
+    let window_size = window.outer_size()?;
+    let window_size = PhysicalSize::<i32> {
+        width: window_size.width as i32,
+        height: window_size.height as i32,
+    };
+
+    // Tray positions only depend on the tray icon's rect, so they don't need the window's
+    // monitor, which may be unknown while the window is hidden.
+    // Only read the tray state for tray positions, so screen positions keep working when the
+    // plugin is not registered.
+    #[cfg(feature = "tray-icon")]
+    if pos.is_tray() {
+        let (tray_position, tray_size) = tray_rect(window)?
+            .ok_or_else(|| tauri::Error::Io(std::io::Error::other("Tray position not set")))?;
+        return Ok(tray_relative_position(
+            pos,
+            PhysicalPosition::new(tray_position.x as i32, tray_position.y as i32),
+            PhysicalSize::new(tray_size.width as i32, tray_size.height as i32),
+            window_size,
+        ));
+    }
 
     let screen = window.current_monitor()?.ok_or_else(|| {
         tauri::Error::Io(std::io::Error::other("No monitor found for the window"))
     })?;
-    // Only use the screen_position for the Tray independent positioning,
-    // because a tray event may not be called on the currently active monitor.
-    let screen_position = screen.position();
     let screen_size = PhysicalSize::<i32> {
         width: screen.size().width as i32,
         height: screen.size().height as i32,
     };
-    let window_size = PhysicalSize::<i32> {
-        width: window.outer_size()?.width as i32,
-        height: window.outer_size()?.height as i32,
-    };
-    // Only read the tray state for tray positions, so screen positions keep working when the
-    // plugin is not registered.
-    #[cfg(feature = "tray-icon")]
-    let (tray_position, tray_size) = if pos.is_tray() {
-        tray_rect(window)?
-    } else {
-        None
-    }
-    .map(|(pos, size)| {
-        (
-            Some((pos.x as i32, pos.y as i32)),
-            Some((size.width as i32, size.height as i32)),
-        )
-    })
-    .unwrap_or_default();
 
-    let physical_pos = match pos {
-        TopLeft => *screen_position,
+    Ok(screen_relative_position(
+        pos,
+        *screen.position(),
+        screen_size,
+        window_size,
+    ))
+}
+
+/// Top-left position of a window of `window_size` at a screen `pos` on the monitor at
+/// `screen_position` with `screen_size`.
+fn screen_relative_position(
+    pos: Position,
+    screen_position: PhysicalPosition<i32>,
+    screen_size: PhysicalSize<i32>,
+    window_size: PhysicalSize<i32>,
+) -> PhysicalPosition<i32> {
+    use Position::*;
+
+    match pos {
+        TopLeft => screen_position,
         TopRight => PhysicalPosition {
             x: screen_position.x + (screen_size.width - window_size.width),
             y: screen_position.y,
@@ -263,107 +279,125 @@ fn calculate_position<R: Runtime>(
             y: screen_position.y + (screen_size.height / 2) - (window_size.height / 2),
         },
         #[cfg(feature = "tray-icon")]
-        TrayLeft => {
-            if let (Some((tray_x, tray_y)), Some((_, _tray_height))) = (tray_position, tray_size) {
-                let y = tray_y - window_size.height;
-                // Choose y value based on the target OS
-                #[cfg(target_os = "windows")]
-                let y = if y < 0 { tray_y + _tray_height } else { y };
-
-                #[cfg(target_os = "macos")]
-                let y = if y < 0 { tray_y } else { y };
-
-                PhysicalPosition { x: tray_x, y }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
+        TrayLeft | TrayBottomLeft | TrayRight | TrayBottomRight | TrayCenter | TrayBottomCenter => {
+            unreachable!("tray positions are resolved by tray_relative_position")
         }
-        #[cfg(feature = "tray-icon")]
-        TrayBottomLeft => {
-            if let Some((tray_x, tray_y)) = tray_position {
-                PhysicalPosition {
-                    x: tray_x,
-                    y: tray_y,
-                }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
-        }
-        #[cfg(feature = "tray-icon")]
-        TrayRight => {
-            if let (Some((tray_x, tray_y)), Some((tray_width, _tray_height))) =
-                (tray_position, tray_size)
-            {
-                let y = tray_y - window_size.height;
-                // Choose y value based on the target OS
-                #[cfg(target_os = "windows")]
-                let y = if y < 0 { tray_y + _tray_height } else { y };
+    }
+}
 
-                #[cfg(target_os = "macos")]
-                let y = if y < 0 { tray_y } else { y };
+/// Top-left position of a window of `window_size` at a tray `pos`, relative to the tray icon at
+/// `tray_position` with `tray_size`.
+#[cfg(feature = "tray-icon")]
+fn tray_relative_position(
+    pos: Position,
+    tray_position: PhysicalPosition<i32>,
+    tray_size: PhysicalSize<i32>,
+    window_size: PhysicalSize<i32>,
+) -> PhysicalPosition<i32> {
+    use Position::*;
 
-                PhysicalPosition {
-                    x: tray_x + tray_width,
-                    y,
-                }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
-        }
-        #[cfg(feature = "tray-icon")]
-        TrayBottomRight => {
-            if let (Some((tray_x, tray_y)), Some((tray_width, _))) = (tray_position, tray_size) {
-                PhysicalPosition {
-                    x: tray_x + tray_width,
-                    y: tray_y,
-                }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
-        }
-        #[cfg(feature = "tray-icon")]
-        TrayCenter => {
-            if let (Some((tray_x, tray_y)), Some((tray_width, _tray_height))) =
-                (tray_position, tray_size)
-            {
-                let x = tray_x + tray_width / 2 - window_size.width / 2;
-                let y = tray_y - window_size.height;
-                // Choose y value based on the target OS
-                #[cfg(target_os = "windows")]
-                let y = if y < 0 { tray_y + _tray_height } else { y };
+    let PhysicalPosition {
+        x: tray_x,
+        y: tray_y,
+    } = tray_position;
+    let PhysicalSize {
+        width: tray_width,
+        height: _tray_height,
+    } = tray_size;
 
-                #[cfg(target_os = "macos")]
-                let y = if y < 0 { tray_y } else { y };
+    // Above the tray icon; falls back to below it when there is no room above.
+    let above = || {
+        let y = tray_y - window_size.height;
+        // Choose y value based on the target OS
+        #[cfg(target_os = "windows")]
+        let y = if y < 0 { tray_y + _tray_height } else { y };
 
-                PhysicalPosition { x, y }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
-        }
-        #[cfg(feature = "tray-icon")]
-        TrayBottomCenter => {
-            if let (Some((tray_x, tray_y)), Some((tray_width, _))) = (tray_position, tray_size) {
-                PhysicalPosition {
-                    x: tray_x + (tray_width / 2) - (window_size.width / 2),
-                    y: tray_y,
-                }
-            } else {
-                return Err(tauri::Error::Io(std::io::Error::other(
-                    "Tray position not set",
-                )));
-            }
-        }
+        #[cfg(target_os = "macos")]
+        let y = if y < 0 { tray_y } else { y };
+
+        y
     };
 
-    Ok(physical_pos)
+    match pos {
+        TrayLeft => PhysicalPosition {
+            x: tray_x,
+            y: above(),
+        },
+        TrayBottomLeft => PhysicalPosition {
+            x: tray_x,
+            y: tray_y,
+        },
+        TrayRight => PhysicalPosition {
+            x: tray_x + tray_width,
+            y: above(),
+        },
+        TrayBottomRight => PhysicalPosition {
+            x: tray_x + tray_width,
+            y: tray_y,
+        },
+        TrayCenter => PhysicalPosition {
+            x: tray_x + tray_width / 2 - window_size.width / 2,
+            y: above(),
+        },
+        TrayBottomCenter => PhysicalPosition {
+            x: tray_x + (tray_width / 2) - (window_size.width / 2),
+            y: tray_y,
+        },
+        TopLeft | TopRight | BottomLeft | BottomRight | TopCenter | BottomCenter | LeftCenter
+        | RightCenter | Center => {
+            unreachable!("screen positions are resolved by screen_relative_position")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WINDOW: PhysicalSize<i32> = PhysicalSize {
+        width: 400,
+        height: 300,
+    };
+
+    #[test]
+    fn screen_positions_are_relative_to_the_monitor() {
+        // a secondary monitor to the right of and above the primary one
+        let origin = PhysicalPosition::new(1920, -200);
+        let size = PhysicalSize::new(1280, 1024);
+        let at = |pos| screen_relative_position(pos, origin, size, WINDOW);
+
+        assert_eq!(at(Position::TopLeft), PhysicalPosition::new(1920, -200));
+        assert_eq!(at(Position::TopRight), PhysicalPosition::new(2800, -200));
+        assert_eq!(at(Position::BottomLeft), PhysicalPosition::new(1920, 524));
+        assert_eq!(at(Position::BottomRight), PhysicalPosition::new(2800, 524));
+        assert_eq!(at(Position::TopCenter), PhysicalPosition::new(2360, -200));
+        assert_eq!(at(Position::BottomCenter), PhysicalPosition::new(2360, 524));
+        assert_eq!(at(Position::LeftCenter), PhysicalPosition::new(1920, 162));
+        assert_eq!(at(Position::RightCenter), PhysicalPosition::new(2800, 162));
+        assert_eq!(at(Position::Center), PhysicalPosition::new(2360, 162));
+    }
+
+    #[cfg(feature = "tray-icon")]
+    #[test]
+    fn tray_positions_are_relative_to_the_tray_icon() {
+        let tray = PhysicalPosition::new(1000, 800);
+        let tray_size = PhysicalSize::new(20, 30);
+        let at = |pos| tray_relative_position(pos, tray, tray_size, WINDOW);
+
+        assert_eq!(at(Position::TrayLeft), PhysicalPosition::new(1000, 500));
+        assert_eq!(at(Position::TrayRight), PhysicalPosition::new(1020, 500));
+        assert_eq!(at(Position::TrayCenter), PhysicalPosition::new(810, 500));
+        assert_eq!(
+            at(Position::TrayBottomLeft),
+            PhysicalPosition::new(1000, 800)
+        );
+        assert_eq!(
+            at(Position::TrayBottomRight),
+            PhysicalPosition::new(1020, 800)
+        );
+        assert_eq!(
+            at(Position::TrayBottomCenter),
+            PhysicalPosition::new(810, 800)
+        );
+    }
 }
