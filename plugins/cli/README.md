@@ -118,7 +118,8 @@ const matches = await getMatches()
 if (matches.subcommand?.name === 'run') {
   // `./your-app run $ARGS` was executed
   const args = matches.subcommand?.matches.args
-  if ('debug' in args) {
+  // every argument defined in the configuration is in `args`, check its value
+  if (args.debug?.value === true) {
     // `./your-app run --debug` was executed
   }
 } else {
