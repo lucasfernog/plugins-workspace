@@ -16,8 +16,9 @@ pub struct HapticsOptions {
 /// The style of an impact-feedback haptic.
 ///
 /// On iOS this maps directly to a `UIImpactFeedbackGenerator.FeedbackStyle` case. On Android,
-/// which has no equivalent system API, each style instead plays a distinct vibration waveform of
-/// increasing intensity. Has no effect on desktop platforms. Defaults to `Medium`.
+/// which has no equivalent system API, each style instead plays a distinct vibration waveform.
+/// Devices without amplitude control only vary the length of the vibration. Has no effect on
+/// desktop platforms. Defaults to `Medium`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "camelCase")]
