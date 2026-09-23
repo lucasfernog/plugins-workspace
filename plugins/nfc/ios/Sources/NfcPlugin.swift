@@ -135,6 +135,7 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
             ndefTag = tag as NFCNDEFTag
             break
           default:
+            self.closeSession(session, error: "Unsupported tag type")
             return
           }
 
@@ -303,10 +304,12 @@ class NfcPlugin: Plugin, NFCTagReaderSessionDelegate, NFCNDEFReaderSessionDelega
 
             }
           })
+      } else {
+        session.invalidate()
       }
       break
     default:
-      return
+      self.closeSession(session, error: "Unknown NDEF status of the tag")
     }
   }
 
