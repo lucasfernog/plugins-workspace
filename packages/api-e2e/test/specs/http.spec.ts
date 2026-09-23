@@ -4,6 +4,7 @@
 
 import { expect } from '@wdio/globals'
 import { tauri, tauriError, describePlugin } from '../helpers/index.js'
+import { FIXTURE_SERVER_URL } from '../helpers/server.js'
 
 // The example spawns an echo server on this port: it replies with the request
 // body and the request headers, and sets a `session-token` cookie on requests
@@ -127,6 +128,52 @@ describePlugin('http', () => {
       await api.http.fetch(`${url}/aborted`, { signal: controller.signal })
     }, echoServer)
     expect(message).toMatch(/abort|cancel/i)
+  })
+
+  it('an aborted fetch rejects with an AbortError', async () => {
+    const result = await tauri(
+      async (api, echoServer, fixtureServer) => {
+        const describe = (e: unknown) => ({
+          name: e instanceof Error ? e.name : typeof e,
+          message: e instanceof Error ? e.message : String(e),
+          isError: e instanceof Error
+        })
+
+        // already aborted
+        const aborted = new AbortController()
+        aborted.abort()
+        let before: ReturnType<typeof describe> | null = null
+        try {
+          await api.http.fetch(`${echoServer}/aborted`, {
+            signal: aborted.signal
+          })
+        } catch (e) {
+          before = describe(e)
+        }
+
+        // aborted while the Rust side waits for the response
+        const controller = new AbortController()
+        setTimeout(() => controller.abort(), 200)
+        let during: ReturnType<typeof describe> | null = null
+        try {
+          await api.http.fetch(`${fixtureServer}/slow/10000`, {
+            signal: controller.signal
+          })
+        } catch (e) {
+          during = describe(e)
+        }
+        return { before, during }
+      },
+      echoServer,
+      FIXTURE_SERVER_URL
+    )
+    for (const error of [result.before, result.during]) {
+      expect(error).toEqual({
+        name: 'AbortError',
+        message: 'Request cancelled',
+        isError: true
+      })
+    }
   })
 
   it('rejects URLs outside the configured scope', async () => {

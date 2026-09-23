@@ -124,6 +124,14 @@ export interface DangerousSettings {
 const ERROR_REQUEST_CANCELLED = 'Request cancelled'
 
 /**
+ * The error an aborted `fetch` rejects with: an `AbortError` like with the
+ * standard `fetch`, keeping the message of the `Error` it used to be.
+ */
+function abortError(): Error {
+  return new DOMException(ERROR_REQUEST_CANCELLED, 'AbortError')
+}
+
+/**
  * Fetch a resource from the network. It returns a `Promise` that resolves to the
  * `Response` to that `Request`, whether it is successful or not.
  *
@@ -154,7 +162,7 @@ export async function fetch(
   // Optimistically check for abort signal and avoid doing any work
   const signal = init?.signal
   if (signal?.aborted) {
-    throw new Error(ERROR_REQUEST_CANCELLED)
+    throw abortError()
   }
 
   const maxRedirections = init?.maxRedirections
@@ -208,7 +216,7 @@ export async function fetch(
 
   // Optimistically check for abort signal and avoid doing any work on the Rust side
   if (signal?.aborted) {
-    throw new Error(ERROR_REQUEST_CANCELLED)
+    throw abortError()
   }
 
   const rid = await invoke<number>('plugin:http|fetch', {
@@ -232,7 +240,7 @@ export async function fetch(
   if (signal?.aborted) {
     // we don't care about the result of this promise
     void abort()
-    throw new Error(ERROR_REQUEST_CANCELLED)
+    throw abortError()
   }
 
   signal?.addEventListener('abort', () => void abort())
@@ -245,15 +253,24 @@ export async function fetch(
     rid: number
   }
 
+  let sendResponse: FetchSendResponse
+  try {
+    sendResponse = await invoke<FetchSendResponse>('plugin:http|fetch_send', {
+      rid
+    })
+  } catch (e) {
+    // the Rust side rejects an aborted request with a plain string
+    if (signal?.aborted) throw abortError()
+    throw e
+  }
+
   const {
     status,
     statusText,
     url,
     headers: responseHeaders,
     rid: responseRid
-  } = await invoke<FetchSendResponse>('plugin:http|fetch_send', {
-    rid
-  })
+  } = sendResponse
 
   let bodyDropped = false
   const dropBody = () => {
@@ -262,6 +279,13 @@ export async function fetch(
     return invoke('plugin:http|fetch_cancel_body', { rid: responseRid }).catch(
       () => {}
     )
+  }
+
+  // aborted after the response was received, but before the body stream
+  // could listen for it
+  if (signal?.aborted) {
+    void dropBody()
+    throw abortError()
   }
 
   const readChunk = async (
@@ -301,7 +325,7 @@ export async function fetch(
         start: (controller) => {
           // listen for abort events to cancel reading
           signal?.addEventListener('abort', () => {
-            controller.error(ERROR_REQUEST_CANCELLED)
+            controller.error(abortError())
             void dropBody()
           })
         },
