@@ -244,9 +244,6 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
     private fun configureCamera(formats: List<Int>) {
         activity
             .runOnUiThread {
-                val vibrator =
-                    activity.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                this.vibrator = vibrator
                 if (previewView == null) {
                     throw Exception("Something went wrong configuring the BarcodeScanner")
                 }
@@ -317,15 +314,27 @@ class BarcodeScannerPlugin(private val activity: Activity) : Plugin(activity),
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun getVibrator(): Vibrator {
+        return vibrator
+            ?: (activity.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator).also {
+                vibrator = it
+            }
+    }
+
+    @Suppress("DEPRECATION")
     @Command
     fun vibrate(invoke: Invoke) {
+        val vibrator = getVibrator()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator!!.vibrate(
+            vibrator.vibrate(
                 VibrationEffect.createOneShot(
                     50,
                     VibrationEffect.DEFAULT_AMPLITUDE
                 )
             )
+        } else {
+            vibrator.vibrate(50)
         }
         invoke.resolve()
     }
