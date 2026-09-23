@@ -14,11 +14,17 @@ import { invoke, Channel, Resource } from '@tauri-apps/api/core'
 /** Options used when checking for updates */
 interface CheckOptions {
   /**
-   * The headers to send along with the update check request.
+   * The headers to send along with the update check request, in addition to the ones
+   * set with the Rust `Builder::header`.
+   *
+   * They are also sent with the download request, even when the download URL points to
+   * another host than the update endpoint, unless {@linkcode DownloadOptions.headers} is passed.
    */
   headers?: HeadersInit
   /**
-   * Timeout in milliseconds
+   * Timeout of the update check request in milliseconds, covering the whole request.
+   *
+   * It is not reused for the download, see {@linkcode DownloadOptions.timeout}.
    */
   timeout?: number
   /**
@@ -26,7 +32,9 @@ interface CheckOptions {
    */
   proxy?: string
   /**
-   * Target identifier for the running application. This is sent to the backend.
+   * Target identifier for the running application, which replaces the default target:
+   * it is used for the `{{target}}` variable of the endpoint URLs and as the key looked up
+   * in the `platforms` object of a static update manifest.
    */
   target?: string
 }
@@ -35,10 +43,16 @@ interface CheckOptions {
 interface DownloadOptions {
   /**
    * The headers to send along with the update download request.
+   *
+   * When passed, they replace all the headers of the download request, including the
+   * ones sent with the update check and the ones set with the Rust `Builder::header`.
    */
   headers?: HeadersInit
   /**
-   * Timeout in milliseconds
+   * Timeout of the download request in milliseconds.
+   *
+   * It covers the whole request, including downloading the update, so it must leave
+   * enough time for the full download. By default the download does not time out.
    */
   timeout?: number
 }
