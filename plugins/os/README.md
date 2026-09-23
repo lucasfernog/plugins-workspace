@@ -59,8 +59,11 @@ fn main() {
 Afterwards all the plugin's APIs are available through the JavaScript guest bindings:
 
 ```javascript
-import { version } from '@tauri-apps/plugin-os'
-const osVersion = await version()
+import { version, hostname } from '@tauri-apps/plugin-os'
+// synchronous: the value is injected when the page loads
+const osVersion = version()
+// asynchronous: goes through IPC and needs the `os:allow-hostname` permission
+const host = await hostname()
 ```
 
 ## Contributing
