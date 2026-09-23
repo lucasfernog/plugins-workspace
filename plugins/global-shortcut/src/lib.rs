@@ -473,16 +473,33 @@ impl<R: Runtime> Builder<R> {
                 let shortcuts = Arc::new(Mutex::new(store));
                 let shortcuts_ = shortcuts.clone();
 
+                let handler = handler.map(Arc::new);
                 let app_handle = app.clone();
                 GlobalHotKeyEvent::set_event_handler(Some(move |e: GlobalHotKeyEvent| {
-                    if let Some(shortcut) = shortcuts_.lock().unwrap().get(&e.id) {
-                        if let Some(handler) = &shortcut.handler {
-                            handler(&app_handle, &shortcut.shortcut, e);
+                    // Handlers run on the main thread with the shortcuts lock released, so they
+                    // can call back into the plugin (e.g. to unregister the shortcut). On Windows
+                    // and macOS events are already delivered on the main thread, so this runs
+                    // synchronously; on Linux they come from global-hotkey's X11 thread, which
+                    // must stay free to process the (un)registration requests.
+                    let shortcuts = shortcuts_.clone();
+                    let handler = handler.clone();
+                    let app_handle_ = app_handle.clone();
+                    let _ = app_handle.run_on_main_thread(move || {
+                        let Some((shortcut, shortcut_handler)) = shortcuts
+                            .lock()
+                            .unwrap()
+                            .get(&e.id)
+                            .map(|s| (s.shortcut, s.handler.clone()))
+                        else {
+                            return;
+                        };
+                        if let Some(shortcut_handler) = shortcut_handler {
+                            shortcut_handler(&app_handle_, &shortcut, e);
                         }
                         if let Some(handler) = &handler {
-                            handler(&app_handle, &shortcut.shortcut, e);
+                            handler(&app_handle_, &shortcut, e);
                         }
-                    }
+                    });
                 }));
 
                 app.manage(GlobalShortcut {
