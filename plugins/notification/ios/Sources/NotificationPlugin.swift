@@ -214,6 +214,11 @@ class NotificationPlugin: Plugin {
     }
   }
 
+  // the `permission_state` command, also implemented by the Android plugin
+  @objc func permissionState(_ invoke: Invoke) {
+    checkPermissions(invoke)
+  }
+
   @objc func cancel(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(CancelArgs.self)
 

@@ -67,6 +67,20 @@ describePlugin('notification', () => {
     }
   )
 
+  itOn(
+    ['android', 'ios'],
+    'the permission_state command reports the permission without prompting',
+    async () => {
+      const result = await tauri((api) =>
+        api.core.invoke<{ permissionState: string }>(
+          'plugin:notification|permission_state'
+        )
+      )
+      // not granted by the suite, but Android < 13 has no runtime permission to grant
+      expect(['granted', 'denied', 'prompt']).toContain(result.permissionState)
+    }
+  )
+
   itOn('android', 'channels can be created, listed and removed', async () => {
     const result = await tauri(async (api) => {
       const { Importance, Visibility } = api.notification
