@@ -24,7 +24,7 @@ use serde::{ser::Serializer, Deserialize, Serialize};
 use tauri::{
     ipc::Channel,
     plugin::{Builder as PluginBuilder, TauriPlugin},
-    Manager, Runtime, State, Window,
+    Manager, RunEvent, Runtime, State, Window, WindowEvent,
 };
 use tokio::{net::TcpStream, sync::Mutex};
 #[cfg(any(
@@ -42,7 +42,7 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::{
     tungstenite::{
         client::IntoClientRequest,
-        protocol::{CloseFrame as ProtocolCloseFrame, WebSocketConfig},
+        protocol::{frame::coding::CloseCode, CloseFrame as ProtocolCloseFrame, WebSocketConfig},
         Message,
     },
     Connector, MaybeTlsStream, WebSocketStream,
@@ -78,32 +78,103 @@ impl Serialize for Error {
     }
 }
 
-/// The writer half of every open connection.
+type SharedWriter = Arc<Mutex<WebSocketWriter>>;
+
+/// An open connection.
+struct Connection {
+    /// The writer half, with its own lock so a slow connection does not block the others.
+    writer: SharedWriter,
+    /// Label of the window whose webview opened the connection.
+    window: String,
+    /// The task forwarding received messages to the webview.
+    reader: Option<tauri::async_runtime::JoinHandle<()>>,
+}
+
+impl Connection {
+    /// Sends a "going away" close frame and stops forwarding messages.
+    async fn close(self) {
+        if let Some(reader) = self.reader {
+            reader.abort();
+        }
+        let _ = self
+            .writer
+            .lock()
+            .await
+            .send(Message::Close(Some(ProtocolCloseFrame {
+                code: CloseCode::Away,
+                reason: "".into(),
+            })))
+            .await;
+    }
+}
+
+/// Every open connection.
 ///
-/// The map lock is only held to look up, insert or remove an entry, never across network I/O;
-/// each writer has its own lock, so a slow connection does not block sends on the others.
+/// The map lock is only held to look up, insert or remove an entry, never across network I/O.
 #[derive(Default)]
-struct ConnectionManager(std::sync::Mutex<HashMap<Id, Arc<Mutex<WebSocketWriter>>>>);
+struct ConnectionManager(std::sync::Mutex<HashMap<Id, Connection>>);
 
 impl ConnectionManager {
-    fn connections(&self) -> std::sync::MutexGuard<'_, HashMap<Id, Arc<Mutex<WebSocketWriter>>>> {
+    fn connections(&self) -> std::sync::MutexGuard<'_, HashMap<Id, Connection>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Registers `writer` under a new random id that no open connection uses.
-    fn insert(&self, writer: Arc<Mutex<WebSocketWriter>>) -> Id {
-        insert_with_unique_id(&mut self.connections(), writer, rand::random)
+    /// Registers `writer`, opened by `window`, under a new random id that no open connection uses.
+    fn insert(&self, writer: SharedWriter, window: String) -> Id {
+        insert_with_unique_id(
+            &mut self.connections(),
+            Connection {
+                writer,
+                window,
+                reader: None,
+            },
+            rand::random,
+        )
+    }
+
+    /// Stores the reader task of the connection `id`, or aborts it if the connection is gone.
+    fn set_reader(
+        &self,
+        id: Id,
+        writer: &SharedWriter,
+        reader: tauri::async_runtime::JoinHandle<()>,
+    ) {
+        match self
+            .connections()
+            .get_mut(&id)
+            .filter(|c| Arc::ptr_eq(&c.writer, writer))
+        {
+            Some(connection) => connection.reader = Some(reader),
+            None => reader.abort(),
+        }
+    }
+
+    fn writer(&self, id: Id) -> Option<SharedWriter> {
+        self.connections().get(&id).map(|c| c.writer.clone())
     }
 
     /// Removes the connection `id` if it still refers to `writer`.
-    fn remove(&self, id: Id, writer: &Arc<Mutex<WebSocketWriter>>) {
+    fn remove(&self, id: Id, writer: &SharedWriter) {
         let mut connections = self.connections();
         if connections
             .get(&id)
-            .is_some_and(|current| Arc::ptr_eq(current, writer))
+            .is_some_and(|current| Arc::ptr_eq(&current.writer, writer))
         {
             connections.remove(&id);
         }
+    }
+
+    /// Removes and returns every connection opened by `window`.
+    fn take_window_connections(&self, window: &str) -> Vec<Connection> {
+        let mut connections = self.connections();
+        let ids: Vec<Id> = connections
+            .iter()
+            .filter(|(_, c)| c.window == window)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.into_iter()
+            .filter_map(|id| connections.remove(&id))
+            .collect()
     }
 }
 
@@ -248,9 +319,14 @@ async fn connect<R: Runtime>(
     // Register the writer before resolving, so a `send` issued right after `connect` finds it.
     let (write, mut read) = ws_stream.split();
     let writer = Arc::new(Mutex::new(write));
-    let id = window.state::<ConnectionManager>().insert(writer.clone());
+    let id = window
+        .state::<ConnectionManager>()
+        .insert(writer.clone(), window.label().to_string());
 
-    tauri::async_runtime::spawn(async move {
+    let reader_writer = writer.clone();
+    let app = window.app_handle().clone();
+    let reader = tauri::async_runtime::spawn(async move {
+        let writer = reader_writer;
         while let Some(message) = read.next().await {
             if let Ok(Message::Close(_)) = message {
                 window.state::<ConnectionManager>().remove(id, &writer);
@@ -287,6 +363,8 @@ async fn connect<R: Runtime>(
         // frame): the connection can no longer be used, so forget it.
         window.state::<ConnectionManager>().remove(id, &writer);
     });
+    app.state::<ConnectionManager>()
+        .set_reader(id, &writer, reader);
 
     Ok(id)
 }
@@ -298,7 +376,7 @@ async fn send(
     message: WebSocketMessage,
 ) -> Result<()> {
     // Clone the writer out so the map lock is not held while sending.
-    let writer = manager.connections().get(&id).cloned();
+    let writer = manager.writer(id);
     if let Some(writer) = writer {
         writer
             .lock()
@@ -353,6 +431,23 @@ impl Builder {
     pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
         PluginBuilder::new("websocket")
             .invoke_handler(tauri::generate_handler![connect, send])
+            .on_event(|app, event| {
+                // Connections are tied to the page that opened them: close them with its window
+                // instead of keeping the sockets open until the server hangs up.
+                if let RunEvent::WindowEvent {
+                    label,
+                    event: WindowEvent::Destroyed,
+                    ..
+                } = event
+                {
+                    let connections = app
+                        .state::<ConnectionManager>()
+                        .take_window_connections(label);
+                    for connection in connections {
+                        tauri::async_runtime::spawn(connection.close());
+                    }
+                }
+            })
             .setup(|app, _api| {
                 #[cfg(any(feature = "rustls-tls", feature = "rustls-tls-native-roots"))]
                 if (self.tls_connector.is_none()
