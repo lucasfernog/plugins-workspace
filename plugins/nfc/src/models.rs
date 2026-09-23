@@ -15,6 +15,8 @@ pub struct ScanRequest {
     ///
     /// When `true`, a following [`Nfc::write`](crate::Nfc::write) call writes to the tag that was
     /// scanned instead of starting a new session.
+    ///
+    /// On iOS the session is still closed by the system once its time limit (60 seconds) is reached.
     pub keep_session_alive: bool,
 }
 

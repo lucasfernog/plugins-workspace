@@ -51,6 +51,7 @@ impl<R: Runtime> Nfc<R> {
     /// disabled in the device settings.
     /// On iOS this is `false` when the `NFCReaderUsageDescription` entry is missing from the
     /// `Info.plist` file or when NFC tag reading is not available on the device.
+    /// On iOS the availability is checked once, when the plugin is loaded.
     pub fn is_available(&self) -> crate::Result<bool> {
         self.0
             .run_mobile_plugin::<IsAvailableResponse>("isAvailable", ())

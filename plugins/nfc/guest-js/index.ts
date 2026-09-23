@@ -121,6 +121,8 @@ export interface ScanOptions {
    * Whether the connection to the scanned tag must be kept open after the scan resolves,
    * so that a following {@link write} call writes to that tag instead of scanning a new one.
    * Defaults to `false`.
+   *
+   * On iOS the session is still closed by the system once its time limit (60 seconds) is reached.
    */
   keepSessionAlive?: boolean
   /** Message displayed in the UI. iOS only. */
@@ -458,6 +460,7 @@ export async function write(
  * Resolves to `false` on Android when the device has no NFC adapter or NFC is disabled in the
  * device settings, and on iOS when the `NFCReaderUsageDescription` entry is missing from the
  * `Info.plist` file or NFC tag reading is unavailable.
+ * On iOS the availability is checked once, when the plugin is loaded.
  *
  * @example
  * ```typescript
