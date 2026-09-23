@@ -213,14 +213,26 @@ mod imp {
     use std::path::PathBuf;
 
     pub fn reveal_items_in_dir(paths: &[PathBuf]) -> crate::Result<()> {
-        let connection = zbus::blocking::Connection::session()?;
+        let Some(first_path) = paths.first() else {
+            return Ok(());
+        };
 
-        reveal_with_filemanager1(paths, &connection).or_else(|e| {
-            // Fallback to opening the directory of the first item if revealing multiple items fails.
-            if let Some(first_path) = paths.first() {
-                reveal_with_open_uri_portal(first_path, &connection)
-            } else {
-                Err(e)
+        let revealed = zbus::blocking::Connection::session()
+            .map_err(crate::Error::from)
+            .and_then(|connection| {
+                reveal_with_filemanager1(paths, &connection).or_else(|e| {
+                    // Fallback to opening the directory of the first item through the desktop
+                    // portal, which does not support selecting multiple items.
+                    reveal_with_open_uri_portal(first_path, &connection).map_err(|_| e)
+                })
+            });
+
+        revealed.or_else(|e| {
+            // Last resort: open the parent directory with the default file manager,
+            // without selecting the item. Report the original error if that fails too.
+            match first_path.parent() {
+                Some(parent) => ::open::that_detached(parent).map_err(|_| e),
+                None => Err(e),
             }
         })
     }
@@ -253,30 +265,33 @@ mod imp {
         proxy.ShowItems(uri_strs, "")
     }
 
+    /// Opens the directory containing `path` with the `org.freedesktop.portal.OpenURI` portal,
+    /// see <https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.OpenURI.html>.
     fn reveal_with_open_uri_portal(
         path: &Path,
         connection: &zbus::blocking::Connection,
     ) -> crate::Result<()> {
-        let uri = url::Url::from_file_path(path)
-            .map_err(|_| crate::Error::FailedToConvertPathToFileUrl)?;
-
         #[zbus::proxy(
-            interface = "org.freedesktop.portal.Desktop",
-            default_service = "org.freedesktop.portal.OpenURI",
+            interface = "org.freedesktop.portal.OpenURI",
+            default_service = "org.freedesktop.portal.Desktop",
             default_path = "/org/freedesktop/portal/desktop"
         )]
-        trait PortalDesktop {
+        trait OpenURIPortal {
+            /// `OpenDirectory (IN s parent_window, IN h fd, IN a{sv} options, OUT o handle)`
             async fn OpenDirectory(
                 &self,
-                arg1: &str,
-                name: &str,
-                arg3: HashMap<&str, &str>,
-            ) -> crate::Result<()>;
+                parent_window: &str,
+                fd: zbus::zvariant::Fd<'_>,
+                options: HashMap<&str, zbus::zvariant::Value<'_>>,
+            ) -> crate::Result<zbus::zvariant::OwnedObjectPath>;
         }
 
-        let proxy = PortalDesktopProxyBlocking::new(connection)?;
+        let file = std::fs::File::open(path)?;
+        let proxy = OpenURIPortalProxyBlocking::new(connection)?;
 
-        proxy.OpenDirectory("", uri.as_str(), HashMap::new())
+        proxy
+            .OpenDirectory("", zbus::zvariant::Fd::from(&file), HashMap::new())
+            .map(|_| ())
     }
 }
 

@@ -72,5 +72,6 @@ pub async fn open_path<R: Runtime>(
 /// TODO: in the next major version, rename to `reveal_items_in_dir`
 #[tauri::command]
 pub async fn reveal_item_in_dir(paths: Vec<PathBuf>) -> crate::Result<()> {
-    crate::reveal_items_in_dir(&paths)
+    // revealing blocks on D-Bus / shell calls, keep it off the async runtime threads
+    tauri::async_runtime::spawn_blocking(move || crate::reveal_items_in_dir(&paths)).await?
 }
