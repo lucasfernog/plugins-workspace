@@ -6,7 +6,7 @@
 //!
 //! ## Cargo features
 //!
-//! - **specta**: Add support for [`specta::specta`](https://docs.rs/specta/2.0.0-rc.25/specta/attr.specta.html) on structs like [`ImpactFeedbackStyle`], [`NotificationFeedbackType`].
+//! - **specta**: Implement [`specta::Type`](https://docs.rs/specta/2.0.0-rc.22/specta/trait.Type.html) for [`ImpactFeedbackStyle`], [`NotificationFeedbackType`] and [`Error`], to generate TypeScript bindings for them.
 
 use tauri::{
     plugin::{Builder, TauriPlugin},
