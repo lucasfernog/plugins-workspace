@@ -445,13 +445,11 @@ pub async fn fetch_send<R: Runtime>(
 
     let status = res.status();
     let url = res.url().to_string();
-    let mut headers = Vec::new();
-    for (key, val) in res.headers().iter() {
-        headers.push((
-            key.as_str().into(),
-            String::from_utf8(val.as_bytes().to_vec())?,
-        ));
-    }
+    let headers = res
+        .headers()
+        .iter()
+        .map(|(key, val)| (key.as_str().into(), header_value_to_string(val)))
+        .collect();
 
     let mut resources_table = webview.resources_table();
     let rid = resources_table.add(ReqwestResponse(res));
@@ -463,6 +461,20 @@ pub async fn fetch_send<R: Runtime>(
         url,
         rid,
     })
+}
+
+/// Converts a response header value to the string handed to the frontend.
+///
+/// Values are decoded as UTF-8 when they only contain characters the JavaScript `Headers` class
+/// accepts (up to U+00FF). Anything else - invalid UTF-8 such as a Latin-1 `Content-Disposition`
+/// filename, or characters `Headers` would reject - is decoded byte by byte like browsers do
+/// (isomorphic decoding), instead of failing the whole request.
+fn header_value_to_string(value: &HeaderValue) -> String {
+    let bytes = value.as_bytes();
+    match std::str::from_utf8(bytes) {
+        Ok(s) if s.chars().all(|c| c <= '\u{ff}') => s.to_string(),
+        _ => bytes.iter().map(|&b| char::from(b)).collect(),
+    }
 }
 
 #[command]
@@ -623,6 +635,27 @@ mod tests {
     fn localhost_scope(port: u16) -> Option<Scope> {
         let entry = Arc::new(format!("http://localhost:{port}/*").parse().unwrap());
         Some(Scope::new(vec![entry], Vec::new()))
+    }
+
+    #[test]
+    fn header_values_are_decoded_without_failing() {
+        let value = |bytes: &[u8]| HeaderValue::from_bytes(bytes).unwrap();
+
+        // ASCII and UTF-8 values whose characters `Headers` accepts are kept as UTF-8
+        assert_eq!(header_value_to_string(&value(b"text/plain")), "text/plain");
+        assert_eq!(header_value_to_string(&value("café".as_bytes())), "café");
+
+        // invalid UTF-8 (a Latin-1 `é`) is decoded byte by byte
+        assert_eq!(
+            header_value_to_string(&value(b"attachment; filename=\"r\xe9sum\xe9.pdf\"")),
+            "attachment; filename=\"résumé.pdf\""
+        );
+
+        // UTF-8 characters above U+00FF would make `new Headers()` throw, so they are decoded
+        // byte by byte as well
+        let decoded = header_value_to_string(&value("日本".as_bytes()));
+        assert_eq!(decoded.len(), "日本".len() * 2);
+        assert!(decoded.chars().all(|c| c <= '\u{ff}'));
     }
 
     #[test]
