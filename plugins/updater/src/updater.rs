@@ -983,7 +983,7 @@ impl Update {
             )
         };
         if result as isize <= 32 {
-            return Err(crate::Error::Io(std::io::Error::last_os_error()));
+            return Err(crate::Error::Io(shell_execute_error(result as isize)));
         }
 
         std::process::exit(0);
@@ -1735,6 +1735,30 @@ fn encode_wide(string: impl AsRef<OsStr>) -> Vec<u16> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
+}
+
+/// Converts a failed `ShellExecuteW` return value (`<= 32`) into an error.
+///
+/// `ShellExecuteW` reports failures through its return value, not reliably through
+/// `GetLastError`.
+#[cfg(windows)]
+fn shell_execute_error(code: isize) -> std::io::Error {
+    use std::io::{Error, ErrorKind};
+
+    match code {
+        0 => Error::new(
+            ErrorKind::OutOfMemory,
+            "the system is out of memory or resources",
+        ),
+        // SE_ERR_FNF, SE_ERR_PNF, SE_ERR_ACCESSDENIED (also returned when the user declines the
+        // UAC prompt), SE_ERR_OOM and ERROR_BAD_FORMAT share the values of the Win32 error codes
+        2 | 3 | 5 | 8 | 11 => Error::from_raw_os_error(code as i32),
+        26 => Error::other("a sharing violation occurred"),
+        27 | 31 => Error::other("no application is associated with the installer"),
+        28..=30 => Error::other("the DDE transaction failed"),
+        32 => Error::other("the specified DLL was not found"),
+        _ => Error::other(format!("ShellExecuteW failed with code {code}")),
+    }
 }
 
 #[cfg(windows)]
