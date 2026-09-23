@@ -19,7 +19,7 @@
 )]
 
 use futures_util::{stream::SplitSink, SinkExt, StreamExt};
-use http::header::{HeaderName, HeaderValue};
+use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{ser::Serializer, Deserialize, Serialize};
 use tauri::{
     ipc::Channel,
@@ -160,6 +160,25 @@ enum WebSocketMessage {
     Close(Option<CloseFrame>),
 }
 
+/// Applies the user-provided `headers` to the handshake request headers.
+///
+/// The first value given for a name replaces any default value of the request (so e.g. `Host`
+/// can still be overridden), and further values for the same name are appended rather than
+/// replacing the previous ones.
+fn apply_headers(request_headers: &mut HeaderMap, headers: &[(String, String)]) -> Result<()> {
+    let mut seen = std::collections::HashSet::new();
+    for (k, v) in headers {
+        let header_name = HeaderName::from_str(k.as_str())?;
+        let header_value = HeaderValue::from_str(v.as_str())?;
+        if seen.insert(header_name.clone()) {
+            request_headers.insert(header_name, header_value);
+        } else {
+            request_headers.append(header_name, header_value);
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn connect<R: Runtime>(
     window: Window<R>,
@@ -171,11 +190,7 @@ async fn connect<R: Runtime>(
     let mut request = url.into_client_request()?;
 
     if let Some(headers) = config.as_ref().and_then(|c| c.headers.as_ref()) {
-        for (k, v) in headers {
-            let header_name = HeaderName::from_str(k.as_str())?;
-            let header_value = HeaderValue::from_str(v.as_str())?;
-            request.headers_mut().insert(header_name, header_value);
-        }
+        apply_headers(request.headers_mut(), headers)?;
     }
 
     #[cfg(any(
@@ -327,5 +342,43 @@ impl Builder {
                 Ok(())
             })
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_override_defaults_and_keep_duplicates() {
+        let mut request = "ws://example.com/socket".into_client_request().unwrap();
+        let pairs = |list: &[(&str, &str)]| {
+            list.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<Vec<_>>()
+        };
+        apply_headers(
+            request.headers_mut(),
+            &pairs(&[
+                ("Host", "override.example.com"),
+                ("X-Multi", "a"),
+                ("x-multi", "b"),
+            ]),
+        )
+        .unwrap();
+
+        let headers = request.headers();
+        let values = |name| {
+            headers
+                .get_all(name)
+                .iter()
+                .map(|v| v.to_str().unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(values("host"), ["override.example.com"]);
+        assert_eq!(values("x-multi"), ["a", "b"]);
+
+        assert!(apply_headers(request.headers_mut(), &pairs(&[("bad header", "v")])).is_err());
+        assert!(apply_headers(request.headers_mut(), &pairs(&[("x-ok", "bad\nvalue")])).is_err());
     }
 }
