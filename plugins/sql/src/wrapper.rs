@@ -44,9 +44,12 @@ pub enum DbPool {
 }
 
 // public methods
-/* impl DbPool {
-    /// Get the inner Sqlite Pool. Returns None for MySql and Postgres pools.
+impl DbPool {
+    /// Returns the inner SQLite pool, or `None` for MySQL and PostgreSQL pools.
+    ///
+    /// Only available with the `sqlite` Cargo feature.
     #[cfg(feature = "sqlite")]
+    #[allow(unreachable_patterns)]
     pub fn sqlite(&self) -> Option<&Pool<Sqlite>> {
         match self {
             DbPool::Sqlite(pool) => Some(pool),
@@ -54,8 +57,11 @@ pub enum DbPool {
         }
     }
 
-    /// Get the inner MySql Pool. Returns None for Sqlite and Postgres pools.
+    /// Returns the inner MySQL pool, or `None` for SQLite and PostgreSQL pools.
+    ///
+    /// Only available with the `mysql` Cargo feature.
     #[cfg(feature = "mysql")]
+    #[allow(unreachable_patterns)]
     pub fn mysql(&self) -> Option<&Pool<MySql>> {
         match self {
             DbPool::MySql(pool) => Some(pool),
@@ -63,15 +69,18 @@ pub enum DbPool {
         }
     }
 
-    /// Get the inner Postgres Pool. Returns None for MySql and Sqlite pools.
+    /// Returns the inner PostgreSQL pool, or `None` for SQLite and MySQL pools.
+    ///
+    /// Only available with the `postgres` Cargo feature.
     #[cfg(feature = "postgres")]
+    #[allow(unreachable_patterns)]
     pub fn postgres(&self) -> Option<&Pool<Postgres>> {
         match self {
             DbPool::Postgres(pool) => Some(pool),
             _ => None,
         }
     }
-} */
+}
 
 // private methods
 impl DbPool {
