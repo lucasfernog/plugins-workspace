@@ -203,10 +203,16 @@ async fn connect<R: Runtime>(
     )))]
     let (ws_stream, _) = connect_async_with_config(request, config.map(Into::into), false).await?;
 
+    // Register the writer before resolving, so a `send` issued right after `connect` finds it.
+    let (write, read) = ws_stream.split();
+    window
+        .state::<ConnectionManager>()
+        .0
+        .lock()
+        .await
+        .insert(id, write);
+
     tauri::async_runtime::spawn(async move {
-        let (write, read) = ws_stream.split();
-        let manager = window.state::<ConnectionManager>();
-        manager.0.lock().await.insert(id, write);
         read.for_each(move |message| {
             let window_ = window.clone();
             let on_message_ = on_message.clone();
