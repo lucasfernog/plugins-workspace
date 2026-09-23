@@ -377,10 +377,6 @@ type OpenDialogReturn<T extends OpenDialogOptions> = T['directory'] extends true
 async function open<T extends OpenDialogOptions>(
   options: T = {} as T
 ): Promise<OpenDialogReturn<T>> {
-  if (typeof options === 'object') {
-    Object.freeze(options)
-  }
-
   return await invoke('plugin:dialog|open', { options })
 }
 
@@ -411,10 +407,6 @@ async function open<T extends OpenDialogOptions>(
  * @since 2.0.0
  */
 async function save(options: SaveDialogOptions = {}): Promise<string | null> {
-  if (typeof options === 'object') {
-    Object.freeze(options)
-  }
-
   return await invoke('plugin:dialog|save', { options })
 }
 
@@ -461,8 +453,10 @@ async function message(
   message: string,
   options?: string | MessageDialogOptions
 ): Promise<MessageDialogResult> {
-  const opts = typeof options === 'string' ? { title: options } : options
-  if (opts && !opts.buttons && opts.okLabel) {
+  // copy the options so the caller's object is not modified
+  const opts: MessageDialogOptions =
+    typeof options === 'string' ? { title: options } : { ...options }
+  if (!opts.buttons && opts.okLabel) {
     opts.buttons = { ok: opts.okLabel }
   }
   return messageCommand(message, opts)
