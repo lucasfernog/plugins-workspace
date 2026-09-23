@@ -155,7 +155,7 @@ async fn upload(
     tokio::spawn(async move {
         // Read the file
         let file = File::open(&file_path).await?;
-        let file_len = file.metadata().await.unwrap().len();
+        let file_len = file.metadata().await?.len();
 
         // Get HTTP method (defaults to POST)
         let http_method = method.unwrap_or(HttpMethod::Post);
