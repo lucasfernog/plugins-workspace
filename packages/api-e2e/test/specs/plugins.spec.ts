@@ -106,6 +106,7 @@ const commonSurface: Surface<CommonPluginApi> = {
     'hostname'
   ],
   process: ['exit', 'relaunch'],
+  share: ['share'],
   shell: ['Command', 'Child', 'EventEmitter', 'open'],
   // the `Database` class itself
   sql: ['load', 'get'],

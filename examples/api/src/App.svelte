@@ -33,6 +33,7 @@
   import Geolocation from './views/Geolocation.svelte'
   import Haptics from './views/Haptics.svelte'
   import Torch from './views/Torch.svelte'
+  import Share from './views/Share.svelte'
   import Nfc from './views/Nfc.svelte'
   import Autostart from './views/Autostart.svelte'
   import DeepLink from './views/DeepLink.svelte'
@@ -176,6 +177,11 @@
       label: 'Biometric',
       component: Biometric,
       icon: 'i-ph-scan'
+    },
+    {
+      label: 'Share',
+      component: Share,
+      icon: 'i-ph-share-network'
     },
     isMobile && {
       label: 'Geolocation',

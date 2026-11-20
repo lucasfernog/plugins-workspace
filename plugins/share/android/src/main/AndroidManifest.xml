@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- hands the shared files to the receiving app as content:// URIs.
+             It is not exported: an app can only read a file it was sent. -->
+        <provider
+            android:name="app.tauri.share.ShareFileProvider"
+            android:authorities="${applicationId}.share.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/tauri_share_file_paths" />
+        </provider>
+    </application>
+</manifest>

@@ -136,6 +136,10 @@
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
     },
+    {
+      "identifier": "share:default",
+      "allow": [{ "path": "$APPDATA/**" }]
+    },
     "upload:default",
     "deep-link:default",
     "deep-link:allow-register",

@@ -83,7 +83,8 @@
         "updater",
         "geolocation",
         "haptics",
-        "torch"
+        "torch",
+        "share"
       ]
     },
     "api-example-js": {
@@ -108,7 +109,8 @@
         "shell-js",
         "store-js",
         "updater-js",
-        "torch-js"
+        "torch-js",
+        "share-js"
       ],
       "postversion": "pnpm install --no-frozen-lockfile"
     },
@@ -282,6 +284,14 @@
     },
     "process-js": {
       "path": "./plugins/process",
+      "manager": "javascript"
+    },
+    "share": {
+      "path": "./plugins/share",
+      "manager": "rust"
+    },
+    "share-js": {
+      "path": "./plugins/share",
       "manager": "javascript"
     },
     "shell": {

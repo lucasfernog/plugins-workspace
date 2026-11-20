@@ -24,6 +24,7 @@ import type * as Opener from '@tauri-apps/plugin-opener'
 import type * as Os from '@tauri-apps/plugin-os'
 import type * as Positioner from '@tauri-apps/plugin-positioner'
 import type * as Process from '@tauri-apps/plugin-process'
+import type * as Share from '@tauri-apps/plugin-share'
 import type * as Shell from '@tauri-apps/plugin-shell'
 import type * as Sql from '@tauri-apps/plugin-sql'
 import type * as Store from '@tauri-apps/plugin-store'
@@ -50,6 +51,7 @@ export interface CommonPluginApi {
   opener: typeof Opener
   os: typeof Os
   process: typeof Process
+  share: typeof Share
   shell: typeof Shell
   sql: typeof Sql.default
   store: typeof Store

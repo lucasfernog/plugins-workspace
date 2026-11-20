@@ -1,0 +1,16 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+This permission set configures which
+share features are by default exposed.
+
+#### Granted Permissions
+
+It allows opening the system share sheet for text and URLs.
+Sharing files additionally requires scope entries on the
+`allow-share` permission, there is no default file scope.
+
+"""
+
+permissions = ["allow-share"]

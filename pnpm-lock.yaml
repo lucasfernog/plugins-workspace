@@ -276,6 +276,9 @@ importers:
       '@tauri-apps/plugin-process':
         specifier: workspace:*
         version: link:../../plugins/process
+      '@tauri-apps/plugin-share':
+        specifier: workspace:*
+        version: link:../../plugins/share
       '@tauri-apps/plugin-shell':
         specifier: workspace:*
         version: link:../../plugins/shell
@@ -394,6 +397,9 @@ importers:
       '@tauri-apps/plugin-process':
         specifier: workspace:*
         version: link:../../plugins/process
+      '@tauri-apps/plugin-share':
+        specifier: workspace:*
+        version: link:../../plugins/share
       '@tauri-apps/plugin-shell':
         specifier: workspace:*
         version: link:../../plugins/shell
@@ -593,6 +599,12 @@ importers:
         version: 2.12.1
 
   plugins/process:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2.12.0
+        version: 2.12.1
+
+  plugins/share:
     dependencies:
       '@tauri-apps/api':
         specifier: ^2.12.0
