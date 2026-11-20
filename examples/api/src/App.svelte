@@ -30,6 +30,7 @@
   import WebRTC from './views/WebRTC.svelte'
   import Scanner from './views/Scanner.svelte'
   import Biometric from './views/Biometric.svelte'
+  import BackgroundTasks from './views/BackgroundTasks.svelte'
   import Geolocation from './views/Geolocation.svelte'
   import Haptics from './views/Haptics.svelte'
   import Torch from './views/Torch.svelte'
@@ -176,6 +177,11 @@
       label: 'Biometric',
       component: Biometric,
       icon: 'i-ph-scan'
+    },
+    isMobile && {
+      label: 'Background Tasks',
+      component: BackgroundTasks,
+      icon: 'i-ph-clock-countdown'
     },
     isMobile && {
       label: 'Geolocation',

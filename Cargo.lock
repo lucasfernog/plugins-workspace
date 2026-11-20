@@ -220,6 +220,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-automation",
  "tauri-plugin-autostart",
+ "tauri-plugin-background-tasks",
  "tauri-plugin-barcode-scanner",
  "tauri-plugin-biometric",
  "tauri-plugin-cli",
@@ -6744,6 +6745,20 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "tauri-plugin-background-tasks"
+version = "1.0.0"
+dependencies = [
+ "jni",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]

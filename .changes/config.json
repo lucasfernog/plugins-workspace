@@ -64,6 +64,7 @@
       "manager": "rust",
       "publish": false,
       "dependencies": [
+        "background-tasks",
         "barcode-scanner",
         "biometric",
         "log",
@@ -91,6 +92,7 @@
       "manager": "javascript",
       "publish": false,
       "dependencies": [
+        "background-tasks-js",
         "barcode-scanner-js",
         "biometric-js",
         "log-js",
@@ -125,6 +127,14 @@
     },
     "autostart-js": {
       "path": "./plugins/autostart",
+      "manager": "javascript"
+    },
+    "background-tasks": {
+      "path": "./plugins/background-tasks",
+      "manager": "rust"
+    },
+    "background-tasks-js": {
+      "path": "./plugins/background-tasks",
       "manager": "javascript"
     },
     "barcode-scanner": {

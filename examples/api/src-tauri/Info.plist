@@ -12,5 +12,14 @@
 		<string>Read and write to NFC tags for testing</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Read the device location for testing</string>
+		<key>BGTaskSchedulerPermittedIdentifiers</key>
+		<array>
+			<string>com.tauri.api.background-task</string>
+		</array>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>fetch</string>
+			<string>processing</string>
+		</array>
 	</dict>
 </plist>

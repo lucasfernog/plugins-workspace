@@ -1,0 +1,38 @@
+[package]
+name = "tauri-plugin-background-tasks"
+description = "Schedule background tasks written in Rust on Android and iOS."
+version = "1.0.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+links = "tauri-plugin-background-tasks"
+exclude = ["/guest-js", "/package.json", "/rollup.config.js", "/tsconfig.json"]
+
+[package.metadata.docs.rs]
+targets = ["x86_64-linux-android"]
+
+[package.metadata.platforms.support]
+windows = { level = "none", notes = "" }
+linux = { level = "none", notes = "" }
+macos = { level = "none", notes = "" }
+android = { level = "full", notes = "Uses WorkManager" }
+ios = { level = "full", notes = "Uses BGTaskScheduler" }
+
+[build-dependencies]
+tauri-plugin = { workspace = true, features = ["build"] }
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+tokio = { version = "1", features = ["sync"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri = { workspace = true, features = ["wry"] }

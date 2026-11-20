@@ -20,10 +20,44 @@ struct Reply {
 pub type SetupHook = Box<dyn FnOnce(&mut App) -> Result<(), Box<dyn std::error::Error>> + Send>;
 pub type OnEvent = Box<dyn FnMut(&AppHandle, RunEvent)>;
 
+/// The task the Background Tasks view schedules. On iOS it must be listed in the
+/// `BGTaskSchedulerPermittedIdentifiers` of `Info.plist`.
+#[cfg(mobile)]
+const BACKGROUND_TASK: &str = "com.tauri.api.background-task";
+
+#[cfg(mobile)]
+async fn background_task(ctx: tauri_plugin_background_tasks::TaskContext) {
+    log::info!(
+        "background task `{}` ran with input {}",
+        ctx.name(),
+        ctx.input()
+    );
+    // there is no app when Android starts the process only to run the task
+    if let Some(app) = ctx.app_handle::<tauri::Wry>() {
+        let _ = app.emit("background-task", ctx.input());
+    }
+}
+
+#[cfg(mobile)]
+fn background_tasks() -> tauri_plugin_background_tasks::Tasks {
+    tauri_plugin_background_tasks::Tasks::new().task(BACKGROUND_TASK, background_task)
+}
+
+// lets Android's WorkManager reach the tasks when the app is not running
+#[cfg(mobile)]
+tauri_plugin_background_tasks::export_tasks!(background_tasks);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
+
+    // registered on the builder, not in the setup hook: iOS only accepts background
+    // task launch handlers until the app finishes launching
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_background_tasks::init(background_tasks()));
+    }
 
     // WebDriver automation bridge for the plugins e2e suite (packages/api-e2e).
     // Registered as early as possible per the plugin's docs, behind the

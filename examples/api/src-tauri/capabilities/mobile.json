@@ -5,6 +5,10 @@
   "windows": ["main"],
   "platforms": ["android", "iOS"],
   "permissions": [
+    "background-tasks:default",
+    "background-tasks:allow-schedule",
+    "background-tasks:allow-cancel",
+    "background-tasks:allow-cancel-all",
     "nfc:allow-write",
     "nfc:allow-scan",
     "biometric:allow-authenticate",

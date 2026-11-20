@@ -1,0 +1,10 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+Allows listing the scheduled background tasks.
+
+Scheduling and cancelling tasks from the webview is not allowed by default. Grant
+`allow-schedule`, `allow-cancel` and `allow-cancel-all` to the windows that need them.
+"""
+permissions = ["allow-get-scheduled"]
