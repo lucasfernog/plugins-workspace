@@ -23,6 +23,7 @@
   import Shortcuts from './views/Shortcuts.svelte'
   import Shell from './views/Shell.svelte'
   import Opener from './views/Opener.svelte'
+  import SecureStorage from './views/SecureStorage.svelte'
   import Store from './views/Store.svelte'
   import Updater from './views/Updater.svelte'
   import Upload from './views/Upload.svelte'
@@ -116,6 +117,11 @@
       label: 'Store',
       component: Store,
       icon: 'i-codicon-file-code'
+    },
+    {
+      label: 'Secure Storage',
+      component: SecureStorage,
+      icon: 'i-codicon-key'
     },
     !isMobile && {
       label: 'Updater',

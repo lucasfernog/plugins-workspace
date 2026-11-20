@@ -79,6 +79,7 @@
         "os",
         "process",
         "shell",
+        "secure-storage",
         "store",
         "updater",
         "geolocation",
@@ -106,6 +107,7 @@
         "os-js",
         "process-js",
         "shell-js",
+        "secure-storage-js",
         "store-js",
         "updater-js",
         "torch-js"
@@ -215,6 +217,14 @@
     },
     "haptics-js": {
       "path": "./plugins/haptics",
+      "manager": "javascript"
+    },
+    "secure-storage": {
+      "path": "./plugins/secure-storage",
+      "manager": "rust"
+    },
+    "secure-storage-js": {
+      "path": "./plugins/secure-storage",
       "manager": "javascript"
     },
     "http": {

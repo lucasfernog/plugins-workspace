@@ -35,6 +35,7 @@ tauri-plugin-os = { path = "../../../plugins/os", version = "2.4.0" }
 tauri-plugin-process = { path = "../../../plugins/process", version = "2.4.0" }
 tauri-plugin-opener = { path = "../../../plugins/opener", version = "2.7.3" }
 tauri-plugin-shell = { path = "../../../plugins/shell", version = "2.6.0" }
+tauri-plugin-secure-storage = { path = "../../../plugins/secure-storage", version = "1.0.0" }
 tauri-plugin-store = { path = "../../../plugins/store", version = "2.5.1" }
 tauri-plugin-upload = { path = "../../../plugins/upload", version = "2.3.0" }
 tauri-plugin-deep-link = { path = "../../../plugins/deep-link", version = "2.4.10" }

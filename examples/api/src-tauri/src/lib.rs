@@ -54,6 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_secure_storage::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_upload::init())
         .plugin(tauri_plugin_deep_link::init())

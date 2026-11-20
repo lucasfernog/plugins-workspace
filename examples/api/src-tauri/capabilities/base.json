@@ -121,6 +121,7 @@
       ],
       "deny": ["$APPDATA/db/*.stronghold"]
     },
+    "secure-storage:default",
     "store:default",
     "opener:default",
     {

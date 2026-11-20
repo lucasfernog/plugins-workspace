@@ -75,6 +75,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             dbus \
+            gnome-keyring \
             xvfb \
             fluxbox \
             desktop-file-utils \
@@ -118,12 +119,15 @@ jobs:
         timeout-minutes: 45
         # A real window manager (fluxbox) is started so that window-state tests
         # (size restore) behave, and a session D-Bus so the notification and
-        # clipboard plugins can reach their desktop services.
+        # clipboard plugins can reach their desktop services. gnome-keyring is
+        # unlocked with a throwaway password to provide the Secret Service the
+        # secure-storage plugin stores its items in.
         env:
           E2E_SPEC_RETRIES: '1'
         run: |
           xvfb-run --auto-servernum -- dbus-run-session -- bash -c '
             fluxbox >/dev/null 2>&1 &
+            echo -n e2e | gnome-keyring-daemon --daemonize --unlock --components=secrets >/dev/null
             sleep 1
             pnpm test:api-e2e
           '
