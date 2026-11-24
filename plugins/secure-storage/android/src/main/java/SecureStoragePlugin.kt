@@ -7,6 +7,7 @@ package app.tauri.securestorage
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
@@ -18,7 +19,9 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.UnrecoverableKeyException
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -131,9 +134,19 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
 
     @Synchronized
     private fun write(key: String, value: String) {
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        // the Keystore provider generates a fresh random IV for every encryption
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey(create = true))
+        val cipher = try {
+            encryptCipher()
+        } catch (e: GeneralSecurityException) {
+            if (!isSecretKeyLost(e)) {
+                throw e
+            }
+            // the alias exists but its key can never be used again, so nothing could be
+            // stored until the app data is cleared: replace it. The values encrypted with
+            // it are already unreadable.
+            Logger.warn("secure-storage: the secret key is unusable, generating a new one: $e")
+            keyStore().deleteEntry(KEY_ALIAS)
+            encryptCipher()
+        }
         // binds the ciphertext to its key so entries cannot be swapped in the file
         cipher.updateAAD(key.toByteArray(Charsets.UTF_8))
         val ciphertext = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
@@ -143,9 +156,36 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    private fun encryptCipher(): Cipher {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        // the Keystore provider generates a fresh random IV for every encryption
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey(create = true))
+        return cipher
+    }
+
+    /** Whether [e] means that the existing secret key cannot be loaded or used anymore. */
+    private fun isSecretKeyLost(e: GeneralSecurityException): Boolean {
+        if (e !is UnrecoverableKeyException && e !is KeyPermanentlyInvalidatedException) {
+            return false
+        }
+        // the Keystore also reports temporary failures (e.g. the system being busy) as an
+        // unrecoverable key; the key must be kept then. Older versions cannot tell.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            var cause: Throwable? = e
+            while (cause != null) {
+                if (cause is android.security.KeyStoreException && cause.isTransientFailure) {
+                    return false
+                }
+                cause = cause.cause
+            }
+        }
+        return true
+    }
+
+    private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+
     private fun secretKey(create: Boolean): SecretKey? {
-        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        (keyStore().getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
         if (!create) {
             return null
         }
