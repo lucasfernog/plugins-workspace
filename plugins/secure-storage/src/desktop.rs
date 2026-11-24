@@ -50,6 +50,8 @@ impl<R: Runtime> SecureStorage<R> {
         let value = self.with_entry(key, |entry| match entry.get_secret() {
             Ok(value) => Ok(Some(value)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
+            // any of the duplicates: the next `set` or `remove` cleans them up
+            Err(keyring_core::Error::Ambiguous(duplicates)) => first_secret(&duplicates),
             Err(e) => Err(e),
         })?;
         Ok(value
@@ -68,7 +70,13 @@ impl<R: Runtime> SecureStorage<R> {
     pub fn set(&self, key: &str, value: &str) -> crate::Result<()> {
         // not `set_password`: the Windows store encodes passwords as UTF-16, which
         // halves the size limit for ASCII values. Every store reads the bytes back as UTF-8.
-        self.with_entry(key, |entry| entry.set_secret(value.as_bytes()))
+        self.with_entry(key, |entry| match entry.set_secret(value.as_bytes()) {
+            Err(keyring_core::Error::Ambiguous(duplicates)) => {
+                delete_all(&duplicates)?;
+                entry.set_secret(value.as_bytes())
+            }
+            result => result,
+        })
     }
 
     /// Removes the value stored under `key`. Does nothing if there is none.
@@ -81,6 +89,7 @@ impl<R: Runtime> SecureStorage<R> {
     pub fn remove(&self, key: &str) -> crate::Result<()> {
         self.with_entry(key, |entry| match entry.delete_credential() {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
+            Err(keyring_core::Error::Ambiguous(duplicates)) => delete_all(&duplicates),
             Err(e) => Err(e),
         })
     }
@@ -127,6 +136,32 @@ impl<R: Runtime> SecureStorage<R> {
             None => Ok(store.insert((self.connect)()?).clone()),
         }
     }
+}
+
+// A store can hold several items for one key: the Secret Service matches items by their
+// attributes in every collection, so a copy in a second keyring is a duplicate. The entry
+// of the key then fails every operation with `Ambiguous`, which hands out the duplicates.
+
+fn first_secret(duplicates: &[Entry]) -> keyring_core::Result<Option<Vec<u8>>> {
+    for duplicate in duplicates {
+        match duplicate.get_secret() {
+            Ok(value) => return Ok(Some(value)),
+            // removed in the meantime
+            Err(keyring_core::Error::NoEntry) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(None)
+}
+
+fn delete_all(duplicates: &[Entry]) -> keyring_core::Result<()> {
+    for duplicate in duplicates {
+        match duplicate.delete_credential() {
+            Ok(()) | Err(keyring_core::Error::NoEntry) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 fn platform_store() -> keyring_core::Result<Arc<CredentialStore>> {
@@ -209,6 +244,46 @@ mod tests {
         assert!(matches!(storage.get(""), Err(Error::EmptyKey)));
         assert!(matches!(storage.set("", "value"), Err(Error::EmptyKey)));
         assert!(matches!(storage.remove(""), Err(Error::EmptyKey)));
+    }
+
+    /// Stores two items under `token`, as a copy in a second keyring would.
+    fn storage_with_duplicates() -> SecureStorage<tauri::test::MockRuntime> {
+        let store: Arc<CredentialStore> = keyring_core::sample::Store::new().unwrap();
+        for comment in ["first", "second"] {
+            let modifiers = [("force-create", comment)].into();
+            let entry = store.build("com.tauri.a", "token", Some(&modifiers));
+            entry.unwrap();
+        }
+        let entry = store.build("com.tauri.a", "token", None).unwrap();
+        assert!(matches!(
+            entry.get_secret(),
+            Err(keyring_core::Error::Ambiguous(duplicates)) if duplicates.len() == 2
+        ));
+        storage("com.tauri.a", store)
+    }
+
+    #[test]
+    fn reads_a_duplicated_item() {
+        // the sample store creates the duplicates with an empty value
+        let storage = storage_with_duplicates();
+        assert_eq!(storage.get("token").unwrap().as_deref(), Some(""));
+    }
+
+    #[test]
+    fn set_replaces_a_duplicated_item() {
+        let storage = storage_with_duplicates();
+        storage.set("token", "s3cr3t").unwrap();
+        assert_eq!(storage.get("token").unwrap().as_deref(), Some("s3cr3t"));
+        // a single item is left
+        storage.remove("token").unwrap();
+        assert_eq!(storage.get("token").unwrap(), None);
+    }
+
+    #[test]
+    fn remove_deletes_a_duplicated_item() {
+        let storage = storage_with_duplicates();
+        storage.remove("token").unwrap();
+        assert_eq!(storage.get("token").unwrap(), None);
     }
 
     #[test]
