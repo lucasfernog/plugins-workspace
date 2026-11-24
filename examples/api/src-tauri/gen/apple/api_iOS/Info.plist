@@ -69,5 +69,14 @@
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).tauri-plugins-e2e-mixed</string>
 		</dict>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.tauri.api.background-task</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>
