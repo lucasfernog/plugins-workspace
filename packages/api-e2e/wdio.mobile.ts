@@ -11,6 +11,7 @@
 
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
@@ -159,8 +160,9 @@ export function mobileConfig(platform: MobilePlatform): WebdriverIO.Config {
                 '--debug',
                 '--target',
                 ios.name,
-                // Simulator builds are not code signed (see
-                // `additionalWebviewBundleIds` in `iosCapabilities`).
+                // Signing would need a development team and certificate,
+                // which CI does not have. `iosBuildEnv` embeds the
+                // entitlements a signed simulator build would carry.
                 '--no-sign'
               ]
             : [
@@ -171,7 +173,7 @@ export function mobileConfig(platform: MobilePlatform): WebdriverIO.Config {
                 '--target',
                 androidTarget()
               ],
-          ios ? {} : androidBuildEnv()
+          ios ? iosBuildEnv() : androidBuildEnv()
         )
       }
 
@@ -499,11 +501,10 @@ function iosCapabilities(
     'appium:app': app,
     'appium:bundleId': appId,
     // The driver looks the app up in the simulator's Web Inspector listing by
-    // bundle identifier. The inspector identifies an app by the
-    // `application-identifier` entitlement Xcode embeds when it code signs a
-    // simulator build (`__TEXT,__entitlements`); `--no-sign` skips signing
-    // altogether (`CODE_SIGNING_ALLOWED=NO`), so the entitlement is missing and
-    // the inspector falls back to `process-<executable name>`. Match that too.
+    // bundle identifier. The inspector identifies an app by its
+    // `application-identifier` entitlement (see `iosBuildEnv`); a build
+    // without one, such as an `E2E_APP_PATH` app built with plain `--no-sign`,
+    // is listed as `process-<executable name>` instead. Match that too.
     'appium:additionalWebviewBundleIds': [
       `process-${path.basename(app, '.app')}`
     ],
@@ -520,6 +521,62 @@ function iosCapabilities(
     'appium:simulatorStartupTimeout': 240_000,
     'appium:newCommandTimeout': 300
   }
+}
+
+/**
+ * Environment for the iOS simulator build.
+ *
+ * The simulator takes an app's entitlements from a `__TEXT,__entitlements`
+ * section of its executable, not from its code signature. Xcode links that
+ * section in when it signs a simulator build. `--no-sign` turns signing off
+ * (`CODE_SIGNING_ALLOWED=NO`), so the section is missing, and the keychain
+ * rejects every call from the app without an `application-identifier`
+ * entitlement (`errSecMissingEntitlement`, -34018). The secure-storage
+ * plugin needs the keychain.
+ *
+ * Re-signing the built app ad hoc with these entitlements does not help:
+ * macOS will not launch an ad-hoc signature that claims restricted
+ * entitlements. So the section is linked in at build time. The CLI gives
+ * xcodebuild no way to take extra build settings, and runs it with a cleared
+ * environment that keeps `PATH`. So the build puts a shim `xcodebuild` first
+ * on `PATH`, which sets `XCODE_XCCONFIG_FILE` to an xcconfig that adds the
+ * section to `OTHER_LDFLAGS`. The simulator does not check the team prefix.
+ */
+function iosBuildEnv(): NodeJS.ProcessEnv {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tauri-api-e2e-ios-'))
+  const entitlements = path.join(dir, 'simulator.entitlements')
+  const xcconfig = path.join(dir, 'simulator.xcconfig')
+  const shim = path.join(dir, 'bin')
+  const applicationIdentifier = `E2ETESTING.${appId}`
+  /* eslint-disable security/detect-non-literal-fs-filename */
+  fs.writeFileSync(
+    entitlements,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>application-identifier</key>
+  <string>${applicationIdentifier}</string>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>${applicationIdentifier}</string>
+  </array>
+</dict>
+</plist>
+`
+  )
+  fs.writeFileSync(
+    xcconfig,
+    `OTHER_LDFLAGS = $(inherited) -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker "${entitlements}"\n`
+  )
+  fs.mkdirSync(shim)
+  fs.writeFileSync(
+    path.join(shim, 'xcodebuild'),
+    `#!/bin/sh\nXCODE_XCCONFIG_FILE='${xcconfig}' exec /usr/bin/xcodebuild "$@"\n`,
+    { mode: 0o755 }
+  )
+  /* eslint-enable security/detect-non-literal-fs-filename */
+  return { PATH: `${shim}${path.delimiter}${process.env.PATH ?? ''}` }
 }
 
 /**

@@ -165,6 +165,12 @@ have webview debugging off, and Appium cannot see the page. `E2E_SKIP_BUILD` and
 `E2E_APP_PATH` (an `.apk` / simulator `.app`) work as on desktop. No config override is
 passed there: both things it turns on belong to desktop-only plugins.
 
+The iOS build is unsigned, but it still links the entitlements of a signed simulator build
+(`application-identifier`, `keychain-access-groups`) into the app, through a shim `xcodebuild`
+that sets `XCODE_XCCONFIG_FILE` (see `iosBuildEnv` in [`wdio.mobile.ts`](wdio.mobile.ts)).
+Without them the keychain rejects every call (OSStatus -34018) and the `secure-storage`
+spec fails. An `E2E_APP_PATH` app built with plain `--no-sign` has the same problem.
+
 ## Environment variables
 
 | Variable            | Purpose                                                                                  |
