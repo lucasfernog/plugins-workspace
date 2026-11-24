@@ -8,6 +8,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import app.tauri.Logger
@@ -17,8 +18,8 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
-import java.security.GeneralSecurityException
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -89,13 +90,26 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    /**
+     * Returns null only when there is no value or it is certain that it cannot be recovered.
+     * Any other Keystore failure is thrown, so a temporary one is not mistaken for a
+     * missing item.
+     */
     @Synchronized
     private fun read(key: String): String? {
         val stored = preferences.getString(key, null) ?: return null
+        val data = try {
+            Base64.decode(stored, Base64.NO_WRAP)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+        if (data == null || data.size < IV_LENGTH + TAG_LENGTH_BITS / 8) {
+            Logger.warn("secure-storage: \"$key\" is malformed, treating it as missing")
+            return null
+        }
+        // the secret key is gone when the preferences were restored from a backup
+        val secretKey = secretKey(create = false) ?: return null
         return try {
-            val data = Base64.decode(stored, Base64.NO_WRAP)
-            // the secret key is gone when the preferences were restored from a backup
-            val secretKey = secretKey(create = false) ?: return null
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
                 Cipher.DECRYPT_MODE,
@@ -104,13 +118,13 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
             )
             cipher.updateAAD(key.toByteArray(Charsets.UTF_8))
             String(cipher.doFinal(data, IV_LENGTH, data.size - IV_LENGTH), Charsets.UTF_8)
-        } catch (e: GeneralSecurityException) {
+        } catch (e: AEADBadTagException) {
             // encrypted with a key that no longer exists (backup restored on another
             // install) or tampered with: the value is unrecoverable
             Logger.warn("secure-storage: could not decrypt \"$key\", treating it as missing: $e")
             null
-        } catch (e: IllegalArgumentException) {
-            Logger.warn("secure-storage: \"$key\" is malformed, treating it as missing: $e")
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            Logger.warn("secure-storage: the key for \"$key\" was invalidated, treating it as missing: $e")
             null
         }
     }
