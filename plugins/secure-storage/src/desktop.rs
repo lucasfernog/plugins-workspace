@@ -19,6 +19,7 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 ) -> crate::Result<SecureStorage<R>> {
     Ok(SecureStorage {
         service: app.config().identifier.clone(),
+        connect: platform_store,
         store: Mutex::new(None),
         _marker: PhantomData,
     })
@@ -28,6 +29,8 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct SecureStorage<R: Runtime> {
     /// The service the items are stored under: the app identifier.
     service: String,
+    /// Connects to the credential store.
+    connect: fn() -> keyring_core::Result<Arc<CredentialStore>>,
     /// Connected on first use instead of at startup, so an app still launches when the
     /// credential store is unavailable (e.g. no Secret Service provider on Linux) and a
     /// later call can succeed once it is.
@@ -44,11 +47,14 @@ impl<R: Runtime> SecureStorage<R> {
     /// [`Error::Keyring`](crate::Error::Keyring) if the credential store cannot be reached
     /// or read, or the stored value is not valid UTF-8.
     pub fn get(&self, key: &str) -> crate::Result<Option<String>> {
-        match self.entry(key)?.get_secret() {
-            Ok(value) => Ok(Some(keyring_core::error::decode_password(value)?)),
+        let value = self.with_entry(key, |entry| match entry.get_secret() {
+            Ok(value) => Ok(Some(value)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+            Err(e) => Err(e),
+        })?;
+        Ok(value
+            .map(keyring_core::error::decode_password)
+            .transpose()?)
     }
 
     /// Stores `value` under `key`, replacing any existing value.
@@ -62,9 +68,7 @@ impl<R: Runtime> SecureStorage<R> {
     pub fn set(&self, key: &str, value: &str) -> crate::Result<()> {
         // not `set_password`: the Windows store encodes passwords as UTF-16, which
         // halves the size limit for ASCII values. Every store reads the bytes back as UTF-8.
-        self.entry(key)?
-            .set_secret(value.as_bytes())
-            .map_err(Into::into)
+        self.with_entry(key, |entry| entry.set_secret(value.as_bytes()))
     }
 
     /// Removes the value stored under `key`. Does nothing if there is none.
@@ -75,22 +79,53 @@ impl<R: Runtime> SecureStorage<R> {
     /// [`Error::Keyring`](crate::Error::Keyring) if the credential store cannot be reached
     /// or fails to delete the item.
     pub fn remove(&self, key: &str) -> crate::Result<()> {
-        match self.entry(key)?.delete_credential() {
+        self.with_entry(key, |entry| match entry.delete_credential() {
             Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(e),
+        })
+    }
+
+    /// Runs `operation` on the entry of `key`.
+    ///
+    /// A store can hold a session that dies with the provider: the Secret Service one is
+    /// opened when connecting and is gone once GNOME Keyring or KWallet restarts. So when
+    /// the platform fails, the operation is retried once on a new connection instead of
+    /// failing until the app restarts.
+    fn with_entry<T>(
+        &self,
+        key: &str,
+        operation: impl Fn(&Entry) -> keyring_core::Result<T>,
+    ) -> crate::Result<T> {
+        validate_key(key)?;
+        let run = |store: &CredentialStore| {
+            store
+                .build(&self.service, key, None)
+                .and_then(|entry| operation(&entry))
+        };
+        let store = self.store(None)?;
+        match run(&*store) {
+            Err(keyring_core::Error::PlatformFailure(_)) => Ok(run(&*self.store(Some(&store))?)?),
+            result => Ok(result?),
         }
     }
 
-    fn entry(&self, key: &str) -> crate::Result<Entry> {
-        validate_key(key)?;
-        let store = {
-            let mut store = self.store.lock().unwrap();
-            match &*store {
-                Some(store) => store.clone(),
-                None => store.insert(platform_store()?).clone(),
-            }
-        };
-        store.build(&self.service, key, None).map_err(Into::into)
+    /// Returns the cached connection to the credential store, connecting first if there
+    /// is none or it is the `stale` one.
+    fn store(
+        &self,
+        stale: Option<&Arc<CredentialStore>>,
+    ) -> keyring_core::Result<Arc<CredentialStore>> {
+        let mut store = self.store.lock().unwrap();
+        // another thread may have replaced the stale connection already
+        if let (Some(stale), Some(current)) = (stale, &*store)
+            && Arc::ptr_eq(stale, current)
+        {
+            *store = None;
+        }
+        match &*store {
+            Some(store) => Ok(store.clone()),
+            None => Ok(store.insert((self.connect)()?).clone()),
+        }
     }
 }
 
@@ -123,6 +158,7 @@ mod tests {
     ) -> SecureStorage<tauri::test::MockRuntime> {
         SecureStorage {
             service: service.into(),
+            connect: || keyring_core::sample::Store::new().map(|store| store as _),
             store: Mutex::new(Some(store)),
             _marker: PhantomData,
         }
@@ -173,6 +209,25 @@ mod tests {
         assert!(matches!(storage.get(""), Err(Error::EmptyKey)));
         assert!(matches!(storage.set("", "value"), Err(Error::EmptyKey)));
         assert!(matches!(storage.remove(""), Err(Error::EmptyKey)));
+    }
+
+    #[test]
+    fn reconnects_when_the_platform_fails() {
+        let failure = || keyring_core::Error::PlatformFailure("session is closed".into());
+        let stale: Arc<CredentialStore> = keyring_core::mock::Store::new().unwrap();
+        let entry = stale.build("com.tauri.a", "token", None).unwrap();
+        entry.set_secret(b"stale").unwrap();
+        let storage = storage("com.tauri.a", stale.clone());
+
+        // the mock fails once; the retry runs on the store `connect` returns, which is empty
+        let mock: &keyring_core::mock::Cred = entry.as_any().downcast_ref().unwrap();
+        mock.set_error(failure());
+        assert_eq!(storage.get("token").unwrap(), None);
+
+        // and that store is kept for the calls that follow
+        storage.set("token", "fresh").unwrap();
+        assert_eq!(storage.get("token").unwrap().as_deref(), Some("fresh"));
+        assert_eq!(entry.get_secret().unwrap(), b"stale");
     }
 
     /// Talks to the real credential store of the machine, which needs a desktop session
