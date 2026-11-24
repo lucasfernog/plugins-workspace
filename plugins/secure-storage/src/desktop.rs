@@ -98,7 +98,15 @@ fn platform_store() -> keyring_core::Result<Arc<CredentialStore>> {
     #[cfg(target_os = "macos")]
     let store = apple_native_keyring_store::keychain::Store::new()?;
     #[cfg(windows)]
-    let store = windows_native_keyring_store::Store::new()?;
+    let store = {
+        // Credentials are named `{key}@{identifier}`. The store refuses an identifier that
+        // contains the divider, so the last `@` always separates the two and no key of one
+        // app can name a credential of another. The default divider is `.`, which
+        // identifiers contain: `token.com` of `example.app` would be `token` of
+        // `com.example.app`.
+        let config = [("divider", "@"), ("service_no_divider", "true")];
+        windows_native_keyring_store::Store::new_with_configuration(&config.into())?
+    };
     #[cfg(not(any(target_os = "macos", windows)))]
     let store = zbus_secret_service_keyring_store::Store::new()?;
     Ok(store)
