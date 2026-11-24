@@ -44,8 +44,8 @@ impl<R: Runtime> SecureStorage<R> {
     /// [`Error::Keyring`](crate::Error::Keyring) if the credential store cannot be reached
     /// or read, or the stored value is not valid UTF-8.
     pub fn get(&self, key: &str) -> crate::Result<Option<String>> {
-        match self.entry(key)?.get_password() {
-            Ok(value) => Ok(Some(value)),
+        match self.entry(key)?.get_secret() {
+            Ok(value) => Ok(Some(keyring_core::error::decode_password(value)?)),
             Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(e) => Err(e.into()),
         }
@@ -58,9 +58,13 @@ impl<R: Runtime> SecureStorage<R> {
     /// Returns [`Error::EmptyKey`](crate::Error::EmptyKey) if `key` is empty and
     /// [`Error::Keyring`](crate::Error::Keyring) if the credential store cannot be reached
     /// or rejects the item, e.g. because it exceeds the platform's size limit
-    /// (2560 bytes on Windows).
+    /// (2560 bytes of UTF-8 on Windows).
     pub fn set(&self, key: &str, value: &str) -> crate::Result<()> {
-        self.entry(key)?.set_password(value).map_err(Into::into)
+        // not `set_password`: the Windows store encodes passwords as UTF-16, which
+        // halves the size limit for ASCII values. Every store reads the bytes back as UTF-8.
+        self.entry(key)?
+            .set_secret(value.as_bytes())
+            .map_err(Into::into)
     }
 
     /// Removes the value stored under `key`. Does nothing if there is none.
@@ -127,6 +131,11 @@ mod tests {
         storage.set("token", "ünïcödé 🔑").unwrap();
         assert_eq!(storage.get("token").unwrap().as_deref(), Some("ünïcödé 🔑"));
         assert_eq!(storage.get("other").unwrap(), None);
+
+        // the largest value the Windows Credential Manager accepts
+        let large = "a".repeat(2560);
+        storage.set("token", &large).unwrap();
+        assert_eq!(storage.get("token").unwrap(), Some(large));
 
         storage.remove("token").unwrap();
         assert_eq!(storage.get("token").unwrap(), None);
