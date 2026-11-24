@@ -69,10 +69,14 @@ class SecureStoragePlugin: Plugin {
     let args = try invoke.parseArgs(SetItemArgs.self)
     let data = Data(args.value.utf8)
 
-    var status = SecItemUpdate(
-      query(args.key) as CFDictionary,
-      [kSecValueData as String: data] as CFDictionary
-    )
+    let update = {
+      SecItemUpdate(
+        self.query(args.key) as CFDictionary,
+        [kSecValueData as String: data] as CFDictionary
+      )
+    }
+
+    var status = update()
     if status == errSecItemNotFound {
       var attributes = query(args.key)
       attributes[kSecValueData as String] = data
@@ -80,6 +84,10 @@ class SecureStoragePlugin: Plugin {
       // background work keeps working), and never synced or restored to another device
       attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
       status = SecItemAdd(attributes as CFDictionary, nil)
+      if status == errSecDuplicateItem {
+        // a concurrent call added the item between the update and the add
+        status = update()
+      }
     }
 
     if status == errSecSuccess {
